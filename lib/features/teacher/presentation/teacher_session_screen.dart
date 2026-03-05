@@ -59,6 +59,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   bool _isSelectingDraftMissions = false;
   bool _isDeletingDraftMissions = false;
   final Set<String> _selectedDraftMissionIds = <String>{};
+  final Set<String> _sendingResultMissionIds = <String>{};
 
   @override
   void initState() {
@@ -253,6 +254,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 const SizedBox(height: AppSpacing.item),
                 _LatestAssignedMissionsPanel(
                   missions: recentMissions,
+                  sendingResultMissionIds: _sendingResultMissionIds,
                   onEdit: (mission) => _openMissionBuilder(
                     workspace: workspace,
                     subject: SubjectSummary(
@@ -266,6 +268,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   ),
                   onMoveBackToDraft: (mission) =>
                       _moveMissionBackToDraft(workspace, mission),
+                  onSendResult: (mission) =>
+                      _sendMissionResult(workspace, mission),
                   onViewResult: (mission) =>
                       _openResultReport(workspace, mission),
                 ),
@@ -928,6 +932,62 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _sendMissionResult(
+    TeacherWorkspaceData workspace,
+    MissionPayload mission,
+  ) async {
+    final resultPackageId = mission.latestResultPackageId.trim();
+    if (resultPackageId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No result package is available yet for this mission.'),
+        ),
+      );
+      return;
+    }
+
+    if (_sendingResultMissionIds.contains(mission.id)) {
+      return;
+    }
+
+    setState(() {
+      _sendingResultMissionIds.add(mission.id);
+    });
+
+    try {
+      // WHY: One-tap send from the mission list reduces friction for teachers
+      // when they need to deliver many completed results quickly.
+      await _api.sendTeacherResultPackage(
+        token: workspace.session.token,
+        resultPackageId: resultPackageId,
+        recipients: const [],
+        sendInApp: true,
+        sendEmail: true,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Result sent for "${mission.title}".')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sendingResultMissionIds.remove(mission.id);
+        });
+      }
+    }
   }
 
   void _toggleDraftSelectionMode(List<MissionPayload> visibleDraftMissions) {
@@ -2218,14 +2278,18 @@ class _DraftMissionsPanel extends StatelessWidget {
 class _LatestAssignedMissionsPanel extends StatelessWidget {
   const _LatestAssignedMissionsPanel({
     required this.missions,
+    required this.sendingResultMissionIds,
     required this.onEdit,
     required this.onMoveBackToDraft,
+    required this.onSendResult,
     required this.onViewResult,
   });
 
   final List<MissionPayload> missions;
+  final Set<String> sendingResultMissionIds;
   final ValueChanged<MissionPayload> onEdit;
   final ValueChanged<MissionPayload> onMoveBackToDraft;
+  final ValueChanged<MissionPayload> onSendResult;
   final ValueChanged<MissionPayload> onViewResult;
 
   @override
@@ -2382,6 +2446,9 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
               final hasResultPackage = mission.latestResultPackageId
                   .trim()
                   .isNotEmpty;
+              final isSendingResult = sendingResultMissionIds.contains(
+                mission.id,
+              );
               return Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.compact),
                 child: _MissionCard(
@@ -2397,15 +2464,21 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
                   topProgressLabel:
                       '$scoreCorrect/$scoreTotal score · $earnedXp/$rewardXp XP',
                   secondaryActionLabel: hasResultPackage
-                      ? 'View result report'
+                      ? (isSendingResult ? 'Sending result...' : 'Send result')
                       : 'Move back to draft',
-                  onSecondaryTap: () => hasResultPackage
-                      ? onViewResult(mission)
-                      : onMoveBackToDraft(mission),
+                  onSecondaryTap: hasResultPackage
+                      ? (isSendingResult ? null : () => onSendResult(mission))
+                      : () => onMoveBackToDraft(mission),
                   tertiaryActionLabel: hasResultPackage
-                      ? 'Move back to draft'
+                      ? 'View result report'
                       : null,
                   onTertiaryTap: hasResultPackage
+                      ? () => onViewResult(mission)
+                      : null,
+                  quaternaryActionLabel: hasResultPackage
+                      ? 'Move back to draft'
+                      : null,
+                  onQuaternaryTap: hasResultPackage
                       ? () => onMoveBackToDraft(mission)
                       : null,
                   onTap: () => onEdit(mission),
@@ -2896,6 +2969,8 @@ class _MissionCard extends StatelessWidget {
     this.onSecondaryTap,
     this.tertiaryActionLabel,
     this.onTertiaryTap,
+    this.quaternaryActionLabel,
+    this.onQuaternaryTap,
     this.showSelectionControl = false,
     this.isSelected = false,
     this.onSelectionTap,
@@ -2912,6 +2987,8 @@ class _MissionCard extends StatelessWidget {
   final VoidCallback? onSecondaryTap;
   final String? tertiaryActionLabel;
   final VoidCallback? onTertiaryTap;
+  final String? quaternaryActionLabel;
+  final VoidCallback? onQuaternaryTap;
   final bool showSelectionControl;
   final bool isSelected;
   final VoidCallback? onSelectionTap;
@@ -3084,6 +3161,27 @@ class _MissionCard extends StatelessWidget {
                             ),
                             child: Text(
                               tertiaryActionLabel!,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: AppPalette.navy,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                          ),
+                        ],
+                        if (quaternaryActionLabel != null &&
+                            onQuaternaryTap != null) ...[
+                          const SizedBox(height: 6),
+                          TextButton(
+                            onPressed: onQuaternaryTap,
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(0, 0),
+                              padding: EdgeInsets.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              alignment: Alignment.centerLeft,
+                            ),
+                            child: Text(
+                              quaternaryActionLabel!,
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
                                     color: AppPalette.navy,
