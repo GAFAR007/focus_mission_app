@@ -17,6 +17,7 @@ import 'dart:math' as math;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -47,6 +48,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     with SingleTickerProviderStateMixin {
   final FocusMissionApi _api = FocusMissionApi();
   final math.Random _random = math.Random();
+  static const int _essaySubmissionMinWords = 100;
   static const Map<int, int> _requiredCorrectByTotal = {
     5: 4,
     8: 6,
@@ -54,6 +56,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     15: 11,
     20: 14,
   };
+  final TextEditingController _essaySubmissionController =
+      TextEditingController();
 
   int _currentIndex = 0;
   final Map<int, int> _answers = <int, int>{};
@@ -124,6 +128,18 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         .length;
   }
 
+  String get _essaySubmissionText => _essaySubmissionController.text.trim();
+
+  int get _essaySubmissionWordCount {
+    if (_essaySubmissionText.isEmpty) {
+      return 0;
+    }
+    return _essaySubmissionText
+        .split(RegExp(r'\s+'))
+        .where((word) => word.trim().isNotEmpty)
+        .length;
+  }
+
   int _minimumCorrectForSubmit(int totalCount) {
     if (totalCount <= 0) {
       return 0;
@@ -171,6 +187,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     _xpPulseTimer?.cancel();
     _confettiController.dispose();
     _celebrationPlayer?.dispose();
+    _essaySubmissionController.dispose();
     super.dispose();
   }
 
@@ -506,11 +523,16 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         targetBlankCount > 0 && completedBlanks >= targetBlankCount;
     final isComplete =
         completedSentences >= totalSentences && totalSentences > 0;
+    final isSubmissionFormUnlocked = isComplete && allRequiredBlanksComplete;
+    final submissionWordCount = _essaySubmissionWordCount;
+    final hasSubmissionEssayMinimum =
+        submissionWordCount >= _essaySubmissionMinWords;
     final canSubmit =
         isComplete &&
         allRequiredBlanksComplete &&
         hasWordMinimum &&
-        !exceedsWordMaximum;
+        !exceedsWordMaximum &&
+        hasSubmissionEssayMinimum;
     final currentSentenceIndex = math.min(
       completedSentences,
       math.max(0, displayedSentences.length - 1),
@@ -712,6 +734,88 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                         ],
                       ),
               ),
+              if (isSubmissionFormUnlocked) ...[
+                const SizedBox(height: AppSpacing.section),
+                Text(
+                  'Write an essay based on your above understanding',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                SoftPanel(
+                  colors: const [Color(0xFFFFFEF8), Color(0xFFFFF5DE)],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Minimum $_essaySubmissionMinWords words',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Shortcuts(
+                        shortcuts: const <ShortcutActivator, Intent>{
+                          SingleActivator(
+                            LogicalKeyboardKey.keyV,
+                            control: true,
+                          ): DoNothingAndStopPropagationIntent(),
+                          SingleActivator(
+                            LogicalKeyboardKey.keyV,
+                            meta: true,
+                          ): DoNothingAndStopPropagationIntent(),
+                          SingleActivator(
+                            LogicalKeyboardKey.insert,
+                            shift: true,
+                          ): DoNothingAndStopPropagationIntent(),
+                        },
+                        child: TextField(
+                          controller: _essaySubmissionController,
+                          minLines: 6,
+                          maxLines: 10,
+                          enableInteractiveSelection: false,
+                          onChanged: (_) {
+                            setState(() {
+                              _errorMessage = null;
+                            });
+                          },
+                          decoration: InputDecoration(
+                            hintText:
+                                'Write your final essay response here using what you learned above.',
+                            filled: true,
+                            fillColor: const Color(0xFFFFFFFF),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: const BorderSide(
+                                color: Color(0xFFD7E2F3),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: const BorderSide(
+                                color: AppPalette.primaryBlue,
+                                width: 1.4,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Final essay words: $submissionWordCount / $_essaySubmissionMinWords',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: hasSubmissionEssayMinimum
+                              ? AppPalette.aqua
+                              : AppPalette.orange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: AppSpacing.section),
               GradientButton(
                 label: canSubmit
@@ -724,6 +828,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                     ? 'Finish all blanks before submit'
                     : !hasWordMinimum
                     ? 'Reach minimum words to submit'
+                    : !hasSubmissionEssayMinimum
+                    ? 'Write at least 100 words to submit'
                     : 'Reduce words to submit',
                 colors: canSubmit
                     ? const [AppPalette.primaryBlue, AppPalette.sun]
@@ -1620,6 +1726,17 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
           });
           return;
         }
+
+        if (_essaySubmissionWordCount < _essaySubmissionMinWords) {
+          setState(() {
+            _isSubmitting = false;
+            // WHY: Final submission requires a student-authored response after
+            // completing guided sentence selections.
+            _errorMessage =
+                'Write at least $_essaySubmissionMinWords words in the final essay response before submitting.';
+          });
+          return;
+        }
       }
 
       final completedCount = isEssayBuilder
@@ -1790,8 +1907,14 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
     return {
       'sentenceResponses': sentenceResponses,
-      'finalEssayText': _essayParagraph,
-      'finalWordCount': _essayWordCount,
+      'guidedEssayText': _essayParagraph,
+      'submissionEssayText': _essaySubmissionText,
+      'finalEssayText': _essaySubmissionText.isNotEmpty
+          ? _essaySubmissionText
+          : _essayParagraph,
+      'finalWordCount': _essaySubmissionText.isNotEmpty
+          ? _essaySubmissionWordCount
+          : _essayWordCount,
       'blankCompletedCount': _essayCompletedBlankCount,
       'blankTargetCount': _essayTargetBlankCount,
     };
