@@ -2463,24 +2463,18 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
                   topProgressRatio: scoreRatio,
                   topProgressLabel:
                       '$scoreCorrect/$scoreTotal score · $earnedXp/$rewardXp XP',
-                  secondaryActionLabel: hasResultPackage
-                      ? (isSendingResult ? 'Sending result...' : 'Send result')
-                      : 'Move back to draft',
-                  onSecondaryTap: hasResultPackage
-                      ? (isSendingResult ? null : () => onSendResult(mission))
-                      : () => onMoveBackToDraft(mission),
-                  tertiaryActionLabel: hasResultPackage
-                      ? 'View result report'
+                  secondaryActionLabel: isSendingResult
+                      ? 'Sending result...'
+                      : 'Send result',
+                  onSecondaryTap: hasResultPackage && !isSendingResult
+                      ? () => onSendResult(mission)
                       : null,
+                  tertiaryActionLabel: 'View result',
                   onTertiaryTap: hasResultPackage
                       ? () => onViewResult(mission)
                       : null,
-                  quaternaryActionLabel: hasResultPackage
-                      ? 'Move back to draft'
-                      : null,
-                  onQuaternaryTap: hasResultPackage
-                      ? () => onMoveBackToDraft(mission)
-                      : null,
+                  quaternaryActionLabel: 'Move back to draft',
+                  onQuaternaryTap: () => onMoveBackToDraft(mission),
                   onTap: () => onEdit(mission),
                 ),
               );
@@ -2996,6 +2990,11 @@ class _MissionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final handleSelectionTap = onSelectionTap ?? onTap;
+    final showProminentResultActions =
+        secondaryActionLabel != null || tertiaryActionLabel != null;
+    final hasDisabledResultAction =
+        (secondaryActionLabel != null && onSecondaryTap == null) ||
+        (tertiaryActionLabel != null && onTertiaryTap == null);
 
     return Material(
       color: Colors.transparent,
@@ -3118,6 +3117,65 @@ class _MissionCard extends StatelessWidget {
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
+                        if (showProminentResultActions) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppPalette.sky.withValues(alpha: 0.22),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Result actions',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: AppPalette.navy,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    if (secondaryActionLabel != null)
+                                      _MissionActionButton(
+                                        label: secondaryActionLabel!,
+                                        icon: Icons.send_rounded,
+                                        onTap: onSecondaryTap,
+                                        colors: const [
+                                          AppPalette.sun,
+                                          AppPalette.orange,
+                                        ],
+                                      ),
+                                    if (tertiaryActionLabel != null)
+                                      _MissionActionButton(
+                                        label: tertiaryActionLabel!,
+                                        icon: Icons.visibility_rounded,
+                                        onTap: onTertiaryTap,
+                                        colors: const [
+                                          AppPalette.primaryBlue,
+                                          AppPalette.aqua,
+                                        ],
+                                      ),
+                                  ],
+                                ),
+                                if (hasDisabledResultAction) ...[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Buttons unlock after this mission has a saved result package.',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: AppPalette.textMuted),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         Text(
                           actionLabel,
@@ -3127,48 +3185,6 @@ class _MissionCard extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                               ),
                         ),
-                        if (secondaryActionLabel != null &&
-                            onSecondaryTap != null) ...[
-                          const SizedBox(height: 6),
-                          TextButton(
-                            onPressed: onSecondaryTap,
-                            style: TextButton.styleFrom(
-                              minimumSize: const Size(0, 0),
-                              padding: EdgeInsets.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              alignment: Alignment.centerLeft,
-                            ),
-                            child: Text(
-                              secondaryActionLabel!,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: AppPalette.navy,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                          ),
-                        ],
-                        if (tertiaryActionLabel != null &&
-                            onTertiaryTap != null) ...[
-                          const SizedBox(height: 6),
-                          TextButton(
-                            onPressed: onTertiaryTap,
-                            style: TextButton.styleFrom(
-                              minimumSize: const Size(0, 0),
-                              padding: EdgeInsets.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              alignment: Alignment.centerLeft,
-                            ),
-                            child: Text(
-                              tertiaryActionLabel!,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: AppPalette.navy,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                          ),
-                        ],
                         if (quaternaryActionLabel != null &&
                             onQuaternaryTap != null) ...[
                           const SizedBox(height: 6),
@@ -3272,6 +3288,73 @@ class _MissionMiniPill extends StatelessWidget {
         style: Theme.of(
           context,
         ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+      ),
+    );
+  }
+}
+
+class _MissionActionButton extends StatelessWidget {
+  const _MissionActionButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    required this.colors,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final isEnabled = onTap != null;
+    return Opacity(
+      opacity: isEnabled ? 1 : 0.58,
+      child: Material(
+        color: Colors.transparent,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: isEnabled ? LinearGradient(colors: colors) : null,
+            color: isEnabled ? null : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: AppPalette.textMuted.withValues(alpha: 0.35),
+            ),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 140),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      icon,
+                      size: 16,
+                      color: isEnabled ? Colors.white : AppPalette.textMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: isEnabled ? Colors.white : AppPalette.textMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
