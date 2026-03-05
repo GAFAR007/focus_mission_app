@@ -47,6 +47,13 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     with SingleTickerProviderStateMixin {
   final FocusMissionApi _api = FocusMissionApi();
   final math.Random _random = math.Random();
+  static const Map<int, int> _requiredCorrectByTotal = {
+    5: 4,
+    8: 6,
+    10: 7,
+    15: 11,
+    20: 14,
+  };
 
   int _currentIndex = 0;
   final Map<int, int> _answers = <int, int>{};
@@ -115,6 +122,13 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         .split(RegExp(r'\s+'))
         .where((word) => word.trim().isNotEmpty)
         .length;
+  }
+
+  int _minimumCorrectForSubmit(int totalCount) {
+    if (totalCount <= 0) {
+      return 0;
+    }
+    return _requiredCorrectByTotal[totalCount] ?? 0;
   }
 
   @override
@@ -849,8 +863,11 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         // WHY: Lock progression only when the learner chooses the right answer,
         // so the correct option is never revealed after a wrong tap.
         _answers[_currentIndex] = index;
+        _errorMessage = null;
+      } else {
+        // WHY: A clear retry cue reduces ambiguity after a wrong answer.
+        _errorMessage = 'Not quite. Tap Retry to try again.';
       }
-      _errorMessage = null;
       _showXpPulse = true;
       _xpPulsePositive = isCorrect;
       _xpPulseValue = previewXp;
@@ -1134,7 +1151,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     if (!answerLocked &&
         selectedIndex != null &&
         selectedIndex != question.correctIndex) {
-      return 'Try Again';
+      return 'Retry';
     }
 
     if (!answerLocked) {
@@ -1605,6 +1622,24 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         }
       }
 
+      final completedCount = isEssayBuilder
+          ? _essayTotalCount
+          : _mission.questions.length;
+      final correctCount = isEssayBuilder
+          ? _essaySentences.length
+          : _correctAnswers();
+      final requiredCorrect = _minimumCorrectForSubmit(completedCount);
+      if (requiredCorrect > 0 && correctCount < requiredCorrect) {
+        setState(() {
+          _isSubmitting = false;
+          // WHY: Configured mission sizes enforce explicit minimum-correct
+          // thresholds; below-threshold attempts must retry.
+          _errorMessage =
+              'You need at least $requiredCorrect out of $completedCount correct before submitting. Please retry.';
+        });
+        return;
+      }
+
       // WHY: XP and focus are awarded only after the full mission is completed,
       // which keeps progress tied to finished work instead of partial attempts.
       debugPrint(
@@ -1618,12 +1653,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         sessionType: widget.startedMission.sessionType,
         missionId: _mission.id,
         focusScore: isEssayBuilder ? _essayFocusScore() : _focusScore(),
-        correctAnswers: isEssayBuilder
-            ? _essaySentences.length
-            : _correctAnswers(),
-        completedQuestions: isEssayBuilder
-            ? _essayTotalCount
-            : _mission.questions.length,
+        correctAnswers: correctCount,
+        completedQuestions: completedCount,
         behaviourStatus: _behaviourStatus(),
         notes: isEssayBuilder
             ? _essayParagraph
@@ -1652,7 +1683,6 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       if (!mounted) {
         return;
       }
-
       setState(() => _errorMessage = error.toString());
     } finally {
       if (mounted) {
