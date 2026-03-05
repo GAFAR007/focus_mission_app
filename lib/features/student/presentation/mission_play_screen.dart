@@ -147,6 +147,34 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     return _requiredCorrectByTotal[totalCount] ?? 0;
   }
 
+  bool _isWordChar(String char) {
+    return RegExp(r'[A-Za-z0-9]').hasMatch(char);
+  }
+
+  String _joinEssaySegments(List<String> segments) {
+    var result = '';
+    for (final raw in segments) {
+      final segment = raw.trim();
+      if (segment.isEmpty) {
+        continue;
+      }
+      if (result.isEmpty) {
+        result = segment;
+        continue;
+      }
+
+      final leftChar = result[result.length - 1];
+      final rightChar = segment[0];
+      final needsSpace = _isWordChar(leftChar) && _isWordChar(rightChar);
+      result = '$result${needsSpace ? ' ' : ''}$segment';
+    }
+
+    return result
+        .replaceAll(RegExp(r'\s+([,.;:!?])'), r'$1')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -538,7 +566,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       math.max(0, displayedSentences.length - 1),
     );
     final activeSentence = displayedSentences.isNotEmpty
-        ? displayedSentences[currentSentenceIndex]
+        ? (isComplete ? null : displayedSentences[currentSentenceIndex])
         : null;
     final activePreview = activeSentence == null
         ? ''
@@ -1165,32 +1193,32 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   }
 
   String _buildEssaySentenceText(EssayBuilderSentence sentence) {
-    final buffer = StringBuffer();
+    final segments = <String>[];
     for (final part in sentence.parts) {
       if (part.isBlank) {
         final selectedKey = _essaySelections[part.blankId];
-        buffer.write(part.options[selectedKey] ?? '');
+        segments.add(part.options[selectedKey] ?? '');
       } else {
-        buffer.write(part.value);
+        segments.add(part.value);
       }
     }
-    return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return _joinEssaySegments(segments);
   }
 
   String _buildEssaySentencePreview(EssayBuilderSentence sentence) {
-    final buffer = StringBuffer();
+    final segments = <String>[];
     for (final part in sentence.parts) {
       if (part.isBlank) {
         final selectedKey = _essaySelections[part.blankId];
         final selected = selectedKey == null
             ? '____'
             : (part.options[selectedKey] ?? '____');
-        buffer.write(selected);
+        segments.add(selected);
       } else {
-        buffer.write(part.value);
+        segments.add(part.value);
       }
     }
-    return buffer.toString();
+    return _joinEssaySegments(segments);
   }
 
   List<InlineSpan> _buildEssaySentencePreviewSpans(
