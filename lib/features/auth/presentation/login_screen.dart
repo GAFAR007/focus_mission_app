@@ -304,6 +304,7 @@ class _LoginScreenState extends State<LoginScreen> {
       case 'teacher':
         return TeacherSessionScreen(session: session);
       case 'mentor':
+      case 'management':
         return MentorOverviewScreen(session: session);
       default:
         throw const FocusMissionApiException('Unsupported user role.');

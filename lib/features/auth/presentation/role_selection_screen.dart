@@ -1,7 +1,7 @@
 /**
  * WHAT:
  * RoleSelectionScreen is the first screen that lets the user pick student,
- * teacher, or mentor login.
+ * teacher, mentor, or management login.
  * WHY:
  * The product has distinct role workspaces, so the app begins with one clear
  * branching decision before any authenticated flow starts.
@@ -85,6 +85,11 @@ class RoleSelectionScreen extends StatelessWidget {
             RoleCard(
               role: UserRole.mentor,
               onTap: () => _openRole(context, UserRole.mentor),
+            ),
+            const SizedBox(height: AppSpacing.item),
+            RoleCard(
+              role: UserRole.management,
+              onTap: () => _openRole(context, UserRole.management),
             ),
           ],
         ),

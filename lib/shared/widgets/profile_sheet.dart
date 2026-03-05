@@ -656,6 +656,8 @@ String _roleLabel(String? role) {
       return 'Teacher';
     case 'mentor':
       return 'Learning Mentor';
+    case 'management':
+      return 'Management';
     default:
       return 'Profile';
   }

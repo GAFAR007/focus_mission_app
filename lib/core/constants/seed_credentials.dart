@@ -35,6 +35,7 @@ abstract final class SeedCredentials {
   static const studentEmail = 'student@focusmission.app';
   static const teacherEmail = 'ict.teacher@focusmission.app';
   static const mentorEmail = 'mentor@focusmission.app';
+  static const managementEmail = 'aqsa.bi@flexiblelearning.org.uk';
 
   static const demoAccounts = <DemoAccount>[
     DemoAccount(name: 'Mohammed', email: studentEmail, role: UserRole.student),
@@ -114,6 +115,11 @@ abstract final class SeedCredentials {
       email: mentorEmail,
       role: UserRole.mentor,
     ),
+    DemoAccount(
+      name: 'Aqsa Bi | SEN',
+      email: managementEmail,
+      role: UserRole.management,
+    ),
   ];
 
   static List<DemoAccount> forRole(UserRole role) {
@@ -128,6 +134,7 @@ abstract final class SeedCredentials {
         return studentPassword;
       case UserRole.teacher:
       case UserRole.mentor:
+      case UserRole.management:
         return staffPassword;
     }
   }
