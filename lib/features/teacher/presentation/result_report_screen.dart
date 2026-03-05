@@ -111,6 +111,89 @@ Map<String, String> _extractQuestionOptions(Map<String, dynamic> question) {
   return normalized;
 }
 
+Map<String, String> _extractBlankOptions(Map<String, dynamic> blank) {
+  final normalized = <String, String>{'A': '', 'B': '', 'C': '', 'D': ''};
+  final rawOptions = blank['options'];
+  if (rawOptions is Map<dynamic, dynamic>) {
+    for (final letter in normalized.keys) {
+      normalized[letter] = (rawOptions[letter] ?? '').toString().trim();
+    }
+  }
+
+  final selectedLetter = (blank['chosenOptionLetter'] ?? '')
+      .toString()
+      .trim()
+      .toUpperCase();
+  final selectedText = (blank['chosenOptionText'] ?? '').toString().trim();
+  final correctLetter = (blank['correctOptionLetter'] ?? '')
+      .toString()
+      .trim()
+      .toUpperCase();
+  final correctText = (blank['correctOptionText'] ?? '').toString().trim();
+
+  if (selectedLetter.isNotEmpty && normalized.containsKey(selectedLetter)) {
+    normalized[selectedLetter] = normalized[selectedLetter]!.isNotEmpty
+        ? normalized[selectedLetter]!
+        : selectedText;
+  }
+  if (correctLetter.isNotEmpty && normalized.containsKey(correctLetter)) {
+    normalized[correctLetter] = normalized[correctLetter]!.isNotEmpty
+        ? normalized[correctLetter]!
+        : correctText;
+  }
+
+  return normalized;
+}
+
+Map<String, dynamic>? _findEssayDraftBlank({
+  required Map<String, dynamic>? missionDraftJson,
+  required String sentenceId,
+  required int sentenceIndex,
+  required String blankId,
+  required int blankIndex,
+}) {
+  final draftSentences =
+      missionDraftJson?['sentences'] as List<dynamic>? ?? const [];
+  Map<String, dynamic>? draftSentence;
+
+  if (sentenceId.trim().isNotEmpty) {
+    for (final item in draftSentences) {
+      final sentence = (item as Map<dynamic, dynamic>).cast<String, dynamic>();
+      if ((sentence['id'] ?? '').toString().trim() == sentenceId.trim()) {
+        draftSentence = sentence;
+        break;
+      }
+    }
+  }
+  if (draftSentence == null &&
+      sentenceIndex >= 0 &&
+      sentenceIndex < draftSentences.length) {
+    draftSentence = (draftSentences[sentenceIndex] as Map<dynamic, dynamic>)
+        .cast<String, dynamic>();
+  }
+  if (draftSentence == null) {
+    return null;
+  }
+
+  final parts = draftSentence['parts'] as List<dynamic>? ?? const [];
+  final blankParts = parts
+      .where((item) => (item as Map<dynamic, dynamic>)['type'] == 'blank')
+      .map((item) => (item as Map<dynamic, dynamic>).cast<String, dynamic>())
+      .toList(growable: false);
+
+  if (blankId.trim().isNotEmpty) {
+    for (final blank in blankParts) {
+      if ((blank['blankId'] ?? '').toString().trim() == blankId.trim()) {
+        return blank;
+      }
+    }
+  }
+  if (blankIndex >= 0 && blankIndex < blankParts.length) {
+    return blankParts[blankIndex];
+  }
+  return null;
+}
+
 class ResultReportScreen extends StatefulWidget {
   const ResultReportScreen({
     super.key,
@@ -258,7 +341,10 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                     children: [
                       _MetaPanel(resultPackage: resultPackage),
                       const SizedBox(height: AppSpacing.item),
-                      _EvidencePanel(resultPackage: resultPackage),
+                      _EvidencePanel(
+                        resultPackage: resultPackage,
+                        missionDraftJson: widget.mission.draftJson,
+                      ),
                     ],
                   ),
                 ),
@@ -595,9 +681,13 @@ class _MetaPanel extends StatelessWidget {
 }
 
 class _EvidencePanel extends StatelessWidget {
-  const _EvidencePanel({required this.resultPackage});
+  const _EvidencePanel({
+    required this.resultPackage,
+    required this.missionDraftJson,
+  });
 
   final ResultPackageData resultPackage;
+  final Map<String, dynamic>? missionDraftJson;
 
   @override
   Widget build(BuildContext context) {
@@ -632,7 +722,10 @@ class _EvidencePanel extends StatelessWidget {
             const SizedBox(height: AppSpacing.compact),
           ],
           if (format == 'ESSAY_BUILDER')
-            _EssayEvidence(evidence: evidence)
+            _EssayEvidence(
+              evidence: evidence,
+              missionDraftJson: missionDraftJson,
+            )
           else
             _QuestionEvidence(evidence: evidence),
         ],
@@ -920,9 +1013,13 @@ class _QuestionEvidence extends StatelessWidget {
 }
 
 class _EssayEvidence extends StatelessWidget {
-  const _EssayEvidence({required this.evidence});
+  const _EssayEvidence({
+    required this.evidence,
+    required this.missionDraftJson,
+  });
 
   final Map<String, dynamic> evidence;
+  final Map<String, dynamic>? missionDraftJson;
 
   @override
   Widget build(BuildContext context) {
@@ -943,12 +1040,30 @@ class _EssayEvidence extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(AppSpacing.item),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.78),
+            gradient: const LinearGradient(
+              colors: [Color(0xFFEFFAF5), Color(0xFFE9F4FF)],
+            ),
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            border: Border.all(color: AppPalette.sky.withValues(alpha: 0.5)),
           ),
-          child: Text(
-            'Tries to complete: ${triesToComplete <= 0 ? 1 : triesToComplete}',
-            style: Theme.of(context).textTheme.bodySmall,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Summary', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 6),
+              Text(
+                'Tries to complete: ${triesToComplete <= 0 ? 1 : triesToComplete}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Text(
+                'Blank progress: $blankCompletionCount/$blankTargetCount',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Text(
+                'Word count: $finalWordCount',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ),
         ),
         const SizedBox(height: AppSpacing.compact),
@@ -956,10 +1071,22 @@ class _EssayEvidence extends StatelessWidget {
           final index = entry.key;
           final sentence = (entry.value as Map<dynamic, dynamic>)
               .cast<String, dynamic>();
+          final sentenceId = (sentence['sentenceId'] ?? '').toString().trim();
+          final role = (sentence['role'] ?? '').toString().toLowerCase().trim();
           final bullets =
               sentence['learnFirstBullets'] as List<dynamic>? ?? const [];
           final blankSelections =
               sentence['blankSelections'] as List<dynamic>? ?? const [];
+          final accentColor = role == 'topic'
+              ? AppPalette.primaryBlue
+              : role == 'conclusion'
+              ? AppPalette.mint
+              : AppPalette.sun;
+          final surfaceColor = role == 'topic'
+              ? const Color(0xFFEAF2FF)
+              : role == 'conclusion'
+              ? const Color(0xFFEFFAF5)
+              : const Color(0xFFFFF7EE);
 
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.compact),
@@ -967,46 +1094,281 @@ class _EssayEvidence extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.item),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.78),
+                color: surfaceColor,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(color: accentColor.withValues(alpha: 0.5)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Sentence ${index + 1} · ${(sentence['role'] ?? '').toString()}',
-                    style: Theme.of(context).textTheme.titleSmall,
+                  Row(
+                    children: [
+                      Text(
+                        'Sentence ${index + 1}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: accentColor.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          role.isEmpty ? 'detail' : role,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppPalette.navy,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  ...bullets.map(
-                    (bullet) => Text(
-                      '• ${bullet.toString()}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                  if (blankSelections.isNotEmpty) ...[
+                  if (bullets.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text(
-                      'Blank selections',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textMuted,
-                        fontWeight: FontWeight.w700,
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Learn First',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppPalette.navy,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 6),
+                          ...bullets.map(
+                            (bullet) => Text(
+                              '• ${bullet.toString()}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    ...blankSelections.map((blank) {
+                  ],
+                  if (blankSelections.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ...blankSelections.asMap().entries.map((blankEntry) {
+                      final blankIndex = blankEntry.key;
+                      final blank = blankEntry.value;
                       final item = (blank as Map<dynamic, dynamic>)
                           .cast<String, dynamic>();
-                      return Text(
-                        '${(item['chosenOptionLetter'] ?? '').toString()}: ${(item['chosenOptionText'] ?? '').toString()}',
-                        style: Theme.of(context).textTheme.bodySmall,
+                      final blankId = (item['blankId'] ?? '').toString().trim();
+                      var hint = (item['hint'] ?? '').toString().trim();
+                      var selectedLetter = (item['chosenOptionLetter'] ?? '')
+                          .toString()
+                          .trim()
+                          .toUpperCase();
+                      var selectedText = (item['chosenOptionText'] ?? '')
+                          .toString()
+                          .trim();
+                      var correctLetter = (item['correctOptionLetter'] ?? '')
+                          .toString()
+                          .trim()
+                          .toUpperCase();
+                      var correctText = (item['correctOptionText'] ?? '')
+                          .toString()
+                          .trim();
+                      final optionMap = _extractBlankOptions(item);
+                      final draftBlank = _findEssayDraftBlank(
+                        missionDraftJson: missionDraftJson,
+                        sentenceId: sentenceId,
+                        sentenceIndex: index,
+                        blankId: blankId,
+                        blankIndex: blankIndex,
+                      );
+                      if (draftBlank != null) {
+                        if (hint.isEmpty) {
+                          hint = (draftBlank['hint'] ?? '').toString().trim();
+                        }
+                        final draftOptions =
+                            draftBlank['options'] as Map<dynamic, dynamic>? ??
+                            const {};
+                        for (final letter in ['A', 'B', 'C', 'D']) {
+                          if ((optionMap[letter] ?? '').trim().isEmpty) {
+                            optionMap[letter] = (draftOptions[letter] ?? '')
+                                .toString()
+                                .trim();
+                          }
+                        }
+                        if (correctLetter.isEmpty) {
+                          final draftCorrect =
+                              (draftBlank['correctOption'] ?? '')
+                                  .toString()
+                                  .trim()
+                                  .toUpperCase();
+                          if (['A', 'B', 'C', 'D'].contains(draftCorrect)) {
+                            correctLetter = draftCorrect;
+                          }
+                        }
+                      }
+                      if (!['A', 'B', 'C', 'D'].contains(selectedLetter)) {
+                        selectedLetter = '';
+                      }
+                      if (!['A', 'B', 'C', 'D'].contains(correctLetter)) {
+                        correctLetter = '';
+                      }
+                      if (selectedText.isEmpty && selectedLetter.isNotEmpty) {
+                        selectedText = (optionMap[selectedLetter] ?? '').trim();
+                      }
+                      if (correctText.isEmpty && correctLetter.isNotEmpty) {
+                        correctText = (optionMap[correctLetter] ?? '').trim();
+                      }
+
+                      return Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppPalette.sky.withValues(alpha: 0.55),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              blankId.isNotEmpty
+                                  ? 'Blank ${blankIndex + 1} · $blankId'
+                                  : 'Blank ${blankIndex + 1}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: AppPalette.navy,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            if (hint.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Hint: $hint',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: AppPalette.textMuted),
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            ...['A', 'B', 'C', 'D'].map((letter) {
+                              final optionText = (optionMap[letter] ?? '')
+                                  .trim();
+                              final isCorrect = letter == correctLetter;
+                              final isSelected = letter == selectedLetter;
+                              final isSelectedWrong = isSelected && !isCorrect;
+
+                              Color tileColor = Colors.white;
+                              Color borderColor = AppPalette.sky.withValues(
+                                alpha: 0.5,
+                              );
+                              if (isCorrect) {
+                                tileColor = const Color(0xFFEAF9EE);
+                                borderColor = AppPalette.mint.withValues(
+                                  alpha: 0.85,
+                                );
+                              } else if (isSelectedWrong) {
+                                tileColor = const Color(0xFFFFF0E3);
+                                borderColor = AppPalette.orange.withValues(
+                                  alpha: 0.8,
+                                );
+                              } else if (isSelected) {
+                                tileColor = const Color(0xFFEAF2FF);
+                                borderColor = AppPalette.primaryBlue.withValues(
+                                  alpha: 0.6,
+                                );
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: tileColor,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: borderColor),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        '$letter) ',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: AppPalette.navy,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          optionText.isEmpty ? '-' : optionText,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: AppPalette.navy,
+                                              ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Correct: ${correctLetter.isNotEmpty ? '$correctLetter) ' : ''}$correctText',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: AppPalette.mint.withValues(
+                                      alpha: 0.95,
+                                    ),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            Text(
+                              'Selected: ${selectedLetter.isNotEmpty ? '$selectedLetter) ' : ''}${selectedText.isNotEmpty ? selectedText : 'No selection recorded'}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: AppPalette.navy,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                          ],
+                        ),
                       );
                     }),
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'No blank evidence available for this sentence.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 8),
                   Text(
                     (sentence['fullSentenceOutput'] ?? '').toString(),
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppPalette.navy,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
