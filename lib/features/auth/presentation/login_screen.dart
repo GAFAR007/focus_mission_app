@@ -23,6 +23,7 @@ import '../../../shared/widgets/avatar_badge.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/soft_panel.dart';
+import '../../management/presentation/management_overview_screen.dart';
 import '../../mentor/presentation/mentor_overview_screen.dart';
 import '../../student/presentation/student_dashboard_screen.dart';
 import '../../teacher/presentation/teacher_session_screen.dart';
@@ -304,8 +305,9 @@ class _LoginScreenState extends State<LoginScreen> {
       case 'teacher':
         return TeacherSessionScreen(session: session);
       case 'mentor':
-      case 'management':
         return MentorOverviewScreen(session: session);
+      case 'management':
+        return ManagementOverviewScreen(session: session);
       default:
         throw const FocusMissionApiException('Unsupported user role.');
     }
