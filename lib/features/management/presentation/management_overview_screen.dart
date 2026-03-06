@@ -1,13 +1,14 @@
 /**
  * WHAT:
  * ManagementOverviewScreen provides a dedicated management workspace after
- * management users sign in.
+ * management users sign in, including user creation and result review.
  * WHY:
- * Management users need their own section to monitor student delivery and
- * outcomes without being routed into the mentor-branded experience.
+ * Management users need their own section to monitor student delivery,
+ * outcomes, and staff/student setup without being routed into mentor flows.
  * HOW:
  * Load mentor-compatible workspace data from the API, show management-focused
- * summary cards, student switching, notifications, and timetable visibility.
+ * summary cards, allow creation of student/teacher accounts, and expose
+ * subject-filtered result review for assigned students.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -40,18 +41,36 @@ class ManagementOverviewScreen extends StatefulWidget {
 
 class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   final FocusMissionApi _api = FocusMissionApi();
+  final GlobalKey<FormState> _createUserFormKey = GlobalKey<FormState>();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _subjectSpecialtyController =
+      TextEditingController();
 
   late AuthSession _session;
   late Future<_ManagementScreenData> _future;
   String _selectedStudentId = '';
   String _selectedSubject = _allSubjectsFilterLabel;
+  String _createRole = 'student';
   NotificationInboxData? _notificationInbox;
+  bool _isCreatingUser = false;
+  AppUser? _lastCreatedUser;
 
   @override
   void initState() {
     super.initState();
     _session = widget.session;
     _future = _loadWorkspace();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _subjectSpecialtyController.dispose();
+    super.dispose();
   }
 
   Future<_ManagementScreenData> _loadWorkspace() async {
@@ -195,6 +214,145 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                           ),
                         ],
                       ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  colors: const [Color(0xFFFFFCF6), Color(0xFFFFF3E4)],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Create Student Or Teacher',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Management can create new student and teacher accounts from here.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          _CreateRoleChip(
+                            label: 'Student',
+                            selected: _createRole == 'student',
+                            onTap: () =>
+                                setState(() => _createRole = 'student'),
+                          ),
+                          _CreateRoleChip(
+                            label: 'Teacher',
+                            selected: _createRole == 'teacher',
+                            onTap: () =>
+                                setState(() => _createRole = 'teacher'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      Form(
+                        key: _createUserFormKey,
+                        child: Column(
+                          children: [
+                            TextFormField(
+                              controller: _nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Full name',
+                                hintText: 'Enter full name',
+                              ),
+                              validator: (value) {
+                                if ((value ?? '').trim().isEmpty) {
+                                  return 'Enter a name.';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _emailController,
+                              decoration: const InputDecoration(
+                                labelText: 'Email',
+                                hintText: 'name@school.org',
+                              ),
+                              validator: (value) {
+                                final email = (value ?? '').trim();
+                                if (email.isEmpty || !email.contains('@')) {
+                                  return 'Enter a valid email.';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _passwordController,
+                              obscureText: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Password',
+                                hintText: 'At least 8 characters',
+                              ),
+                              validator: (value) {
+                                if ((value ?? '').length < 8) {
+                                  return 'Use at least 8 characters.';
+                                }
+                                return null;
+                              },
+                            ),
+                            if (_createRole == 'teacher') ...[
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _subjectSpecialtyController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Subject specialty',
+                                  hintText: 'English, Science, Business',
+                                ),
+                                validator: (value) {
+                                  if (_createRole == 'teacher' &&
+                                      (value ?? '').trim().isEmpty) {
+                                    return 'Enter a subject specialty.';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _isCreatingUser
+                              ? null
+                              : _createManagedUser,
+                          icon: const Icon(Icons.person_add_alt_1_rounded),
+                          label: Text(
+                            _isCreatingUser
+                                ? 'Creating account...'
+                                : 'Create ${_createRole == 'student' ? 'Student' : 'Teacher'}',
+                          ),
+                        ),
+                      ),
+                      if (_lastCreatedUser != null) ...[
+                        const SizedBox(height: AppSpacing.compact),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(AppSpacing.item),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.78),
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.radiusMd,
+                            ),
+                          ),
+                          child: Text(
+                            'Created: ${_lastCreatedUser!.name} · ${_lastCreatedUser!.role} · ${_lastCreatedUser!.email ?? ''}',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -418,6 +576,72 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _createManagedUser() async {
+    if (!_createUserFormKey.currentState!.validate() || _isCreatingUser) {
+      return;
+    }
+
+    setState(() => _isCreatingUser = true);
+    try {
+      final createdUser = await _api.createManagementUser(
+        token: _session.token,
+        role: _createRole,
+        name: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        subjectSpecialty: _subjectSpecialtyController.text.trim(),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _lastCreatedUser = createdUser;
+        _nameController.clear();
+        _emailController.clear();
+        _passwordController.clear();
+        _subjectSpecialtyController.clear();
+        if (createdUser.role == 'student') {
+          final nextAssignedStudents = {
+            ..._session.user.assignedStudents,
+            createdUser.id,
+          }.toList(growable: false);
+          // WHY: Newly created students should appear immediately in the
+          // management workspace without forcing a logout/login cycle.
+          _session = _session.copyWith(
+            user: _session.user.copyWith(
+              assignedStudents: nextAssignedStudents,
+            ),
+          );
+          _selectedStudentId = createdUser.id;
+          _selectedSubject = _allSubjectsFilterLabel;
+          _notificationInbox = null;
+          _future = _loadWorkspace();
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${createdUser.role == 'student' ? 'Student' : 'Teacher'} account created.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isCreatingUser = false);
+      }
+    }
   }
 
   Future<void> _openNotification(AppNotification notification) async {
@@ -682,6 +906,44 @@ class _SubjectFilterChip extends StatelessWidget {
           gradient: selected
               ? const LinearGradient(
                   colors: [AppPalette.primaryBlue, AppPalette.aqua],
+                )
+              : null,
+          color: selected ? null : Colors.white.withValues(alpha: 0.78),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: selected ? Colors.white : AppPalette.navy,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateRoleChip extends StatelessWidget {
+  const _CreateRoleChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Ink(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: selected
+              ? const LinearGradient(
+                  colors: [AppPalette.sun, AppPalette.orange],
                 )
               : null,
           color: selected ? null : Colors.white.withValues(alpha: 0.78),

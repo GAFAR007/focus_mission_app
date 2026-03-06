@@ -377,6 +377,34 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<AppUser> createManagementUser({
+    required String token,
+    required String role,
+    required String name,
+    required String email,
+    required String password,
+    String subjectSpecialty = '',
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/management/users',
+      token: token,
+      body: {
+        'role': role,
+        'name': name,
+        'email': email,
+        'password': password,
+        if (subjectSpecialty.trim().isNotEmpty)
+          'subjectSpecialty': subjectSpecialty.trim(),
+      },
+    );
+
+    return AppUser.fromJson(
+      (json['user'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
   Future<List<MissionPayload>> fetchTeacherDraftMissions({
     required String token,
     required String studentId,
