@@ -202,6 +202,7 @@ class ResultReportScreen extends StatefulWidget {
     required this.student,
     required this.resultPackageId,
     required this.api,
+    this.readOnly = false,
   });
 
   final AuthSession session;
@@ -209,6 +210,7 @@ class ResultReportScreen extends StatefulWidget {
   final StudentSummary student;
   final String resultPackageId;
   final FocusMissionApi api;
+  final bool readOnly;
 
   @override
   State<ResultReportScreen> createState() => _ResultReportScreenState();
@@ -239,6 +241,13 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
   }
 
   Future<ResultPackageData> _loadResultPackage() async {
+    if (widget.readOnly) {
+      return widget.api.getManagementResultPackage(
+        token: widget.session.token,
+        resultPackageId: widget.resultPackageId,
+      );
+    }
+
     return widget.api.getTeacherResultPackage(
       token: widget.session.token,
       resultPackageId: widget.resultPackageId,
@@ -322,7 +331,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                 ),
                 const SizedBox(height: AppSpacing.compact),
                 Text(
-                  'Result Report',
+                  widget.readOnly ? 'Student Result Report' : 'Result Report',
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 6),
@@ -348,13 +357,15 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.item),
-                _buildScreenshotPanel(
-                  absoluteScreenshotUrl: absoluteScreenshotUrl,
-                  hasScreenshot: effectiveScreenshotUrl.trim().isNotEmpty,
-                ),
-                const SizedBox(height: AppSpacing.item),
-                _buildSendPanel(resultPackage),
+                if (!widget.readOnly) ...[
+                  const SizedBox(height: AppSpacing.item),
+                  _buildScreenshotPanel(
+                    absoluteScreenshotUrl: absoluteScreenshotUrl,
+                    hasScreenshot: effectiveScreenshotUrl.trim().isNotEmpty,
+                  ),
+                  const SizedBox(height: AppSpacing.item),
+                  _buildSendPanel(resultPackage),
+                ],
               ],
             ),
           );

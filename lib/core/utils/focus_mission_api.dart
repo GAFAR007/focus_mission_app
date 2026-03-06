@@ -357,6 +357,26 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<List<MissionPayload>> fetchManagementStudentResults({
+    required String token,
+    required String studentId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/management/students/$studentId/results',
+      token: token,
+    );
+    final missions = json['missions'] as List<dynamic>? ?? const [];
+
+    return missions
+        .map(
+          (item) => MissionPayload.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<List<MissionPayload>> fetchTeacherDraftMissions({
     required String token,
     required String studentId,
@@ -1040,6 +1060,22 @@ class FocusMissionApi {
     final json = await _requestJson(
       'GET',
       '/teacher/results/$resultPackageId',
+      token: token,
+    );
+
+    return ResultPackageData.fromJson(
+      (json['resultPackage'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<ResultPackageData> getManagementResultPackage({
+    required String token,
+    required String resultPackageId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/management/results/$resultPackageId',
       token: token,
     );
 

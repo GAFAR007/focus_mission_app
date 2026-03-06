@@ -24,6 +24,9 @@ import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
+import '../../teacher/presentation/result_report_screen.dart';
+
+const _allSubjectsFilterLabel = 'All subjects';
 
 class ManagementOverviewScreen extends StatefulWidget {
   const ManagementOverviewScreen({super.key, required this.session});
@@ -39,8 +42,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   final FocusMissionApi _api = FocusMissionApi();
 
   late AuthSession _session;
-  late Future<MentorWorkspaceData> _future;
+  late Future<_ManagementScreenData> _future;
   String _selectedStudentId = '';
+  String _selectedSubject = _allSubjectsFilterLabel;
   NotificationInboxData? _notificationInbox;
 
   @override
@@ -50,20 +54,27 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     _future = _loadWorkspace();
   }
 
-  Future<MentorWorkspaceData> _loadWorkspace() async {
+  Future<_ManagementScreenData> _loadWorkspace() async {
     final workspace = await _api.loadMentorWorkspace(
       mentorSession: _session,
       selectedStudentId: _selectedStudentId,
     );
+    final recentResults = await _api.fetchManagementStudentResults(
+      token: _session.token,
+      studentId: workspace.selectedStudent.id,
+    );
     _selectedStudentId = workspace.selectedStudent.id;
     _notificationInbox ??= workspace.notificationInbox;
-    return workspace;
+    return _ManagementScreenData(
+      workspace: workspace,
+      recentResults: recentResults,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return FocusScaffold(
-      child: FutureBuilder<MentorWorkspaceData>(
+      child: FutureBuilder<_ManagementScreenData>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -77,9 +88,18 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
             );
           }
 
-          final workspace = snapshot.data!;
+          final data = snapshot.data!;
+          final workspace = data.workspace;
           final overview = workspace.overview;
           final inbox = _notificationInbox ?? workspace.notificationInbox;
+          final subjectFilters = _buildSubjectFilters(data.recentResults);
+          final selectedSubject = subjectFilters.contains(_selectedSubject)
+              ? _selectedSubject
+              : _allSubjectsFilterLabel;
+          final filteredResults = _filterResults(
+            data.recentResults,
+            selectedSubject,
+          );
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(AppSpacing.screen),
@@ -158,10 +178,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                           StatChip(
                             value: '${overview.metrics.weeklyXp}',
                             label: '${workspace.selectedStudent.name} XP',
-                            colors: const [
-                              AppPalette.sun,
-                              AppPalette.orange,
-                            ],
+                            colors: const [AppPalette.sun, AppPalette.orange],
                           ),
                           StatChip(
                             value: '${overview.metrics.completedMissions}',
@@ -174,10 +191,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                           StatChip(
                             value: '${inbox.unreadCount}',
                             label: 'Unread alerts',
-                            colors: const [
-                              AppPalette.sun,
-                              AppPalette.orange,
-                            ],
+                            colors: const [AppPalette.sun, AppPalette.orange],
                           ),
                         ],
                       ),
@@ -201,6 +215,74 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   subtitle:
                       'Confirm lesson coverage across week and month for the selected student.',
                   entries: workspace.timetable,
+                ),
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Student Results',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Filter by subject and open a full read-only result report for any completed mission.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: subjectFilters
+                            .map(
+                              (subject) => _SubjectFilterChip(
+                                label: subject,
+                                selected: subject == selectedSubject,
+                                onTap: () =>
+                                    setState(() => _selectedSubject = subject),
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                      const SizedBox(height: AppSpacing.item),
+                      if (filteredResults.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(AppSpacing.item),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.78),
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.radiusMd,
+                            ),
+                          ),
+                          child: Text(
+                            data.recentResults.isEmpty
+                                ? 'No saved result packages were found for this student yet.'
+                                : 'No results match this subject filter.',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        )
+                      else
+                        ...filteredResults.map(
+                          (mission) => Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.compact,
+                            ),
+                            child: _ManagementResultCard(
+                              mission: mission,
+                              onView: () => _openResultReport(
+                                mission: mission,
+                                student: workspace.selectedStudent,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
@@ -301,9 +383,41 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       // WHY: Notifications and selected overview are student-specific, so
       // the screen refreshes immediately after switching student context.
       _selectedStudentId = selectedStudentId;
+      _selectedSubject = _allSubjectsFilterLabel;
       _notificationInbox = null;
       _future = _loadWorkspace();
     });
+  }
+
+  Future<void> _openResultReport({
+    required MissionPayload mission,
+    required StudentSummary student,
+  }) async {
+    final resultPackageId = mission.latestResultPackageId.trim();
+
+    if (resultPackageId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This mission does not have a saved result package yet.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ResultReportScreen(
+          session: _session,
+          mission: mission,
+          student: student,
+          resultPackageId: resultPackageId,
+          api: _api,
+          readOnly: true,
+        ),
+      ),
+    );
   }
 
   Future<void> _openNotification(AppNotification notification) async {
@@ -364,6 +478,42 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       notifications: updatedNotifications,
     );
   }
+
+  List<String> _buildSubjectFilters(List<MissionPayload> missions) {
+    final labels = <String>{_allSubjectsFilterLabel};
+
+    for (final mission in missions) {
+      final subjectName = (mission.subject?.name ?? '').trim();
+      if (subjectName.isNotEmpty) {
+        labels.add(subjectName);
+      }
+    }
+
+    return labels.toList(growable: false);
+  }
+
+  List<MissionPayload> _filterResults(
+    List<MissionPayload> missions,
+    String subject,
+  ) {
+    if (subject == _allSubjectsFilterLabel) {
+      return missions;
+    }
+
+    return missions
+        .where((mission) => (mission.subject?.name ?? '').trim() == subject)
+        .toList(growable: false);
+  }
+}
+
+class _ManagementScreenData {
+  const _ManagementScreenData({
+    required this.workspace,
+    required this.recentResults,
+  });
+
+  final MentorWorkspaceData workspace;
+  final List<MissionPayload> recentResults;
 }
 
 class _SelectedStudentCard extends StatelessWidget {
@@ -508,6 +658,149 @@ class _TopIconButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SubjectFilterChip extends StatelessWidget {
+  const _SubjectFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Ink(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: selected
+              ? const LinearGradient(
+                  colors: [AppPalette.primaryBlue, AppPalette.aqua],
+                )
+              : null,
+          color: selected ? null : Colors.white.withValues(alpha: 0.78),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: selected ? Colors.white : AppPalette.navy,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ManagementResultCard extends StatelessWidget {
+  const _ManagementResultCard({required this.mission, required this.onView});
+
+  final MissionPayload mission;
+  final VoidCallback onView;
+
+  @override
+  Widget build(BuildContext context) {
+    final subjectName = (mission.subject?.name ?? '').trim().isEmpty
+        ? 'No subject'
+        : mission.subject!.name.trim();
+    final scoreTotal = mission.scoreTotal > 0
+        ? mission.scoreTotal
+        : mission.questionCount;
+    final scoreLabel =
+        '${mission.scoreCorrect}/$scoreTotal (${mission.scorePercent}%)';
+    final dateLabel = _formatManagementMissionDate(
+      mission.availableOnDate ?? mission.publishedAt ?? mission.createdAt,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  mission.title,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppPalette.sky.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  subjectName,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$scoreLabel score · ${mission.xpEarned}/${mission.xpReward} XP',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${mission.draftFormat == 'ESSAY_BUILDER' ? 'Essay Builder' : '${mission.questionCount} questions'} · ${mission.sessionType} · $dateLabel',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          if (mission.taskCodes.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Tasks: ${mission.taskCodes.join(', ')}',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.compact),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onView,
+              icon: const Icon(Icons.visibility_rounded),
+              label: const Text('View Result'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatManagementMissionDate(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return 'No date';
+  }
+  final parsed = DateTime.tryParse(value)?.toLocal();
+  if (parsed == null) {
+    return value;
+  }
+  return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
 }
 
 class _LoadingState extends StatelessWidget {
