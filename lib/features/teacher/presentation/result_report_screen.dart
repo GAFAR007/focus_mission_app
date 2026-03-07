@@ -49,6 +49,26 @@ String _formatReportDateTime(String? value) {
   return '${parsed.year}-$month-$day $hour:$minute';
 }
 
+double _asDoubleValue(dynamic value) {
+  if (value is double) {
+    return value;
+  }
+  if (value is int) {
+    return value.toDouble();
+  }
+  if (value is num) {
+    return value.toDouble();
+  }
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String _formatOneDecimal(double value) {
+  final normalized = value % 1 == 0
+      ? value.toInt().toString()
+      : value.toStringAsFixed(1);
+  return normalized;
+}
+
 Map<String, String> _extractQuestionOptions(Map<String, dynamic> question) {
   final normalized = <String, String>{'A': '', 'B': '', 'C': '', 'D': ''};
   final rawOptions = question['options'];
@@ -219,14 +239,20 @@ class ResultReportScreen extends StatefulWidget {
 class _ResultReportScreenState extends State<ResultReportScreen> {
   final TextEditingController _recipientsController = TextEditingController();
   final GlobalKey _reportBoundaryKey = GlobalKey();
+  final Map<int, TextEditingController> _theoryScoreControllers =
+      <int, TextEditingController>{};
+  final Map<int, TextEditingController> _theoryFeedbackControllers =
+      <int, TextEditingController>{};
 
   late Future<ResultPackageData> _future;
   bool _isSending = false;
   bool _isCapturing = false;
+  bool _isSavingTheoryScore = false;
   bool _sendInApp = true;
   bool _sendEmail = true;
   bool _attachScreenshot = true;
   String _screenshotUrl = '';
+  String _theoryControllerSeed = '';
 
   @override
   void initState() {
@@ -237,6 +263,12 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
   @override
   void dispose() {
     _recipientsController.dispose();
+    for (final controller in _theoryScoreControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _theoryFeedbackControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -258,6 +290,415 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     setState(() {
       _future = _loadResultPackage();
     });
+  }
+
+  List<Map<String, dynamic>> _theoryQuestions(ResultPackageData resultPackage) {
+    final questions =
+        resultPackage.evidence['questions'] as List<dynamic>? ?? const [];
+    return questions
+        .map((item) => (item as Map<dynamic, dynamic>).cast<String, dynamic>())
+        .toList(growable: false);
+  }
+
+  void _syncTheoryReviewControllers(ResultPackageData resultPackage) {
+    if (resultPackage.missionType != 'THEORY') {
+      return;
+    }
+
+    final questions = _theoryQuestions(resultPackage);
+    final nextSeed =
+        '${resultPackage.id}:${resultPackage.updatedAt ?? ''}:${questions.length}';
+    if (_theoryControllerSeed == nextSeed) {
+      return;
+    }
+
+    for (final controller in _theoryScoreControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _theoryFeedbackControllers.values) {
+      controller.dispose();
+    }
+    _theoryScoreControllers.clear();
+    _theoryFeedbackControllers.clear();
+
+    for (var index = 0; index < questions.length; index += 1) {
+      final question = questions[index];
+      final scoreValue = question['teacherScorePercent'];
+      _theoryScoreControllers[index] = TextEditingController(
+        text: scoreValue == null ? '' : scoreValue.toString(),
+      );
+      _theoryFeedbackControllers[index] = TextEditingController(
+        text: (question['teacherFeedback'] ?? '').toString(),
+      );
+    }
+
+    _theoryControllerSeed = nextSeed;
+  }
+
+  int? _parseTheoryScore(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final parsed = int.tryParse(trimmed);
+    if (parsed == null || parsed < 0 || parsed > 100) {
+      return null;
+    }
+    return parsed;
+  }
+
+  bool _allTheoryScoresValid(ResultPackageData resultPackage) {
+    final questions = _theoryQuestions(resultPackage);
+    if (questions.isEmpty) {
+      return false;
+    }
+    for (var index = 0; index < questions.length; index += 1) {
+      final controller = _theoryScoreControllers[index];
+      if (controller == null || _parseTheoryScore(controller.text) == null) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  double _draftTheoryAverage(ResultPackageData resultPackage) {
+    final questions = _theoryQuestions(resultPackage);
+    if (questions.isEmpty) {
+      return 0;
+    }
+    var total = 0;
+    var count = 0;
+    for (var index = 0; index < questions.length; index += 1) {
+      final controller = _theoryScoreControllers[index];
+      final parsed = controller == null
+          ? null
+          : _parseTheoryScore(controller.text);
+      if (parsed == null) {
+        continue;
+      }
+      total += parsed;
+      count += 1;
+    }
+    if (count == 0) {
+      return 0;
+    }
+    return total / count;
+  }
+
+  int _draftTheoryProjectedXp(ResultPackageData resultPackage) {
+    final average = _draftTheoryAverage(resultPackage);
+    final xpMax = _asIntValue(resultPackage.evidence['xpMax']);
+    final safeXpMax = xpMax <= 0 ? 50 : xpMax;
+    return ((average / 100) * safeXpMax).round();
+  }
+
+  Future<void> _saveTheoryScores(ResultPackageData resultPackage) async {
+    if (_isSavingTheoryScore) {
+      return;
+    }
+
+    final questions = _theoryQuestions(resultPackage);
+    if (questions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No theory questions were found to score.'),
+        ),
+      );
+      return;
+    }
+
+    if (!_allTheoryScoresValid(resultPackage)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Enter a score between 0 and 100 for every theory question.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final payload = <Map<String, dynamic>>[];
+    for (var index = 0; index < questions.length; index += 1) {
+      final scoreController = _theoryScoreControllers[index];
+      final feedbackController = _theoryFeedbackControllers[index];
+      final parsedScore = scoreController == null
+          ? null
+          : _parseTheoryScore(scoreController.text);
+      if (parsedScore == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Each theory question must have a valid score.'),
+          ),
+        );
+        return;
+      }
+      payload.add({
+        'questionIndex': index,
+        'teacherScorePercent': parsedScore,
+        'teacherFeedback': feedbackController?.text.trim() ?? '',
+      });
+    }
+
+    setState(() => _isSavingTheoryScore = true);
+    try {
+      final updatedResultPackage = await widget.api
+          .scoreTeacherTheoryResultPackage(
+            token: widget.session.token,
+            resultPackageId: widget.resultPackageId,
+            questions: payload,
+          );
+
+      if (!mounted) {
+        return;
+      }
+
+      // WHY: Resetting the controller seed forces the saved teacher scores to
+      // rehydrate from the backend snapshot, which keeps local edit state aligned
+      // with the audited result package after scoring or rescoring.
+      _theoryControllerSeed = '';
+      setState(() {
+        _future = Future<ResultPackageData>.value(updatedResultPackage);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Theory score saved and XP updated.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingTheoryScore = false);
+      }
+    }
+  }
+
+  Widget _buildTheoryReviewPanel(ResultPackageData resultPackage) {
+    final evidence = resultPackage.evidence;
+    final questions = _theoryQuestions(resultPackage);
+    final reviewStatus = (evidence['reviewStatus'] ?? 'pending_review')
+        .toString()
+        .trim();
+    final xpMax = _asIntValue(evidence['xpMax']);
+    final safeXpMax = xpMax <= 0 ? 50 : xpMax;
+    final storedAverage = _asDoubleValue(
+      evidence['averageTeacherScorePercent'],
+    );
+    final liveAverage = _draftTheoryAverage(resultPackage);
+    final averageToShow = _allTheoryScoresValid(resultPackage)
+        ? liveAverage
+        : storedAverage;
+    final projectedXp = _allTheoryScoresValid(resultPackage)
+        ? _draftTheoryProjectedXp(resultPackage)
+        : _asIntValue(evidence['xpAwarded']);
+    final actionLabel = reviewStatus == 'scored'
+        ? 'Update Theory Score'
+        : 'Finalize Theory Score';
+    final buttonEnabled =
+        _allTheoryScoresValid(resultPackage) && !_isSavingTheoryScore;
+
+    return SoftPanel(
+      colors: const [Color(0xFFFFFBF1), Color(0xFFEAF4FF)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Theory Review', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(
+            'Score each theory answer out of 100. Theory missions keep a fixed $safeXpMax XP budget.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _Pill(
+                label:
+                    'Review: ${reviewStatus == 'scored' ? 'Scored' : 'Pending review'}',
+              ),
+              _Pill(label: 'Average: ${_formatOneDecimal(averageToShow)}%'),
+              _Pill(label: 'Projected XP: $projectedXp/$safeXpMax'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          ...questions.asMap().entries.map((entry) {
+            final index = entry.key;
+            final question = entry.value;
+            final minimumWordCount = _asIntValue(question['minimumWordCount']);
+            final studentWordCount = _asIntValue(question['studentWordCount']);
+            final meetsMinimumWords = question['meetsMinimumWords'] == true;
+            final learnFirst = (question['learnFirst'] ?? '').toString().trim();
+            final expectedAnswer = (question['expectedAnswer'] ?? '')
+                .toString()
+                .trim();
+            final studentAnswer = (question['studentAnswer'] ?? '')
+                .toString()
+                .trim();
+            final scoreController = _theoryScoreControllers[index]!;
+            final feedbackController = _theoryFeedbackControllers[index]!;
+
+            return Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: AppSpacing.compact),
+              padding: const EdgeInsets.all(AppSpacing.item),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(
+                  color: meetsMinimumWords
+                      ? AppPalette.mint.withValues(alpha: 0.45)
+                      : AppPalette.orange.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Theory ${index + 1}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: meetsMinimumWords
+                              ? AppPalette.mint.withValues(alpha: 0.2)
+                              : AppPalette.sun.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$studentWordCount/$minimumWordCount words',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppPalette.navy,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    (question['questionText'] ?? '').toString(),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppPalette.navy,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (learnFirst.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Learn First',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      learnFirst,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                    ),
+                  ],
+                  if (expectedAnswer.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Expected answer',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      expectedAnswer,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.mint.withValues(alpha: 0.95),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Text(
+                    'Student answer',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FBFF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      studentAnswer.isEmpty
+                          ? 'No written answer recorded.'
+                          : studentAnswer,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: scoreController,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'Teacher score (0-100)',
+                      hintText: 'Enter a score out of 100',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: feedbackController,
+                    minLines: 2,
+                    maxLines: 4,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'Teacher feedback (optional)',
+                      hintText: 'Add short, concrete feedback for this answer.',
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 4),
+          IgnorePointer(
+            ignoring: !buttonEnabled,
+            child: Opacity(
+              opacity: buttonEnabled ? 1 : 0.5,
+              child: GradientButton(
+                label: _isSavingTheoryScore
+                    ? 'Saving theory score...'
+                    : actionLabel,
+                colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+                onPressed: () => _saveTheoryScores(resultPackage),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -302,6 +743,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
           }
 
           final resultPackage = snapshot.data!;
+          _syncTheoryReviewControllers(resultPackage);
           final effectiveScreenshotUrl = _screenshotUrl.trim().isNotEmpty
               ? _screenshotUrl.trim()
               : _latestScreenshotFromLogs(resultPackage.sendLogs);
@@ -343,12 +785,24 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _StatusPanel(resultPackage: resultPackage),
+                if (!widget.readOnly &&
+                    resultPackage.missionType == 'THEORY') ...[
+                  const SizedBox(height: AppSpacing.item),
+                  _buildTheoryReviewPanel(resultPackage),
+                ],
                 const SizedBox(height: AppSpacing.item),
                 RepaintBoundary(
                   key: _reportBoundaryKey,
                   child: Column(
                     children: [
                       _MetaPanel(resultPackage: resultPackage),
+                      if (resultPackage.certification != null) ...[
+                        const SizedBox(height: AppSpacing.item),
+                        _CertificationPanel(
+                          certification: resultPackage.certification!,
+                          missionType: resultPackage.missionType,
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.item),
                       _EvidencePanel(
                         resultPackage: resultPackage,
@@ -634,6 +1088,26 @@ class _StatusPanel extends StatelessWidget {
       resultPackage.evidence['triesToComplete'] ??
           resultPackage.evidence['completionAttemptNumber'],
     );
+    final isTheory = resultPackage.missionType == 'THEORY';
+    final reviewStatus =
+        (resultPackage.evidence['reviewStatus'] ?? 'pending_review')
+            .toString()
+            .trim();
+    final theoryAverage = _asDoubleValue(
+      resultPackage.evidence['averageTeacherScorePercent'],
+    );
+    final theoryXpMax = _asIntValue(resultPackage.evidence['xpMax']);
+    final safeTheoryXpMax = theoryXpMax <= 0 ? 50 : theoryXpMax;
+    final scoreLabel = isTheory
+        ? reviewStatus == 'scored'
+              ? 'Average: ${_formatOneDecimal(theoryAverage)}%'
+              : 'Score: Pending review'
+        : 'Score: ${resultPackage.meta.scoreCorrect}/${resultPackage.meta.scoreTotal} (${resultPackage.meta.scorePercent}%)';
+    final xpLabel = isTheory
+        ? reviewStatus == 'scored'
+              ? 'XP: ${resultPackage.meta.xpAwarded}/$safeTheoryXpMax'
+              : 'XP: Pending'
+        : 'XP: ${resultPackage.meta.xpAwarded}';
     return SoftPanel(
       colors: const [Color(0xFFEFFAF5), Color(0xFFE5F4FF)],
       child: Wrap(
@@ -641,13 +1115,15 @@ class _StatusPanel extends StatelessWidget {
         runSpacing: 10,
         children: [
           _Pill(label: 'Type: ${resultPackage.missionType}'),
+          if (isTheory)
+            _Pill(
+              label:
+                  'Review: ${reviewStatus == 'scored' ? 'Scored' : 'Pending review'}',
+            ),
           _Pill(label: 'Send: ${resultPackage.latestSendStatus}'),
-          _Pill(
-            label:
-                'Score: ${resultPackage.meta.scoreCorrect}/${resultPackage.meta.scoreTotal} (${resultPackage.meta.scorePercent}%)',
-          ),
+          _Pill(label: scoreLabel),
           _Pill(label: 'Tries: ${triesToComplete <= 0 ? 1 : triesToComplete}'),
-          _Pill(label: 'XP: ${resultPackage.meta.xpAwarded}'),
+          _Pill(label: xpLabel),
         ],
       ),
     );
@@ -685,6 +1161,161 @@ class _MetaPanel extends StatelessWidget {
             value: _formatReportDateTime(meta.submitTime),
           ),
           _MetaRow(label: 'Duration', value: '${meta.durationSeconds}s'),
+        ],
+      ),
+    );
+  }
+}
+
+class _CertificationPanel extends StatelessWidget {
+  const _CertificationPanel({
+    required this.certification,
+    required this.missionType,
+  });
+
+  final MissionCertificationSummary certification;
+  final String missionType;
+
+  Color get _accentColor {
+    switch (certification.certificationPassStatus) {
+      case 'passed':
+        return AppPalette.mint;
+      case 'pending_review':
+        return AppPalette.sun;
+      case 'not_passed':
+        return const Color(0xFFFF8DA1);
+      default:
+        return AppPalette.primaryBlue;
+    }
+  }
+
+  String get _statusLabel {
+    switch (certification.certificationPassStatus) {
+      case 'passed':
+        return 'Passed';
+      case 'pending_review':
+        return 'Pending review';
+      case 'not_passed':
+        return 'Not passed';
+      default:
+        return 'Not eligible';
+    }
+  }
+
+  String get _countsTowardLabel {
+    if (certification.certificationCounted) {
+      return 'Yes';
+    }
+    return certification.certificationEligible ? 'Not yet' : 'No';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = certification.reason.trim();
+    final taskCode = certification.certificationTaskCode.trim();
+    final requiredCodes = certification.requiredTaskCodes;
+    final isTheoryPendingReview =
+        missionType == 'THEORY' &&
+        certification.certificationPassStatus == 'pending_review';
+
+    return SoftPanel(
+      colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Certification',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: _accentColor.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  _statusLabel,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: _accentColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            certification.certificationEnabled
+                ? certification.certificationLabel
+                : 'This subject does not currently use task-focus certification.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _Pill(label: 'Counts toward certification: $_countsTowardLabel'),
+              _Pill(
+                label: taskCode.isEmpty
+                    ? 'Task focus: None'
+                    : 'Task focus: $taskCode',
+              ),
+              if (certification.certificationEligible)
+                _Pill(
+                  label:
+                      'Score used: ${certification.scorePercent.toStringAsFixed(1)}%',
+                ),
+            ],
+          ),
+          if (requiredCodes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Required task focuses',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: requiredCodes
+                  .map(
+                    (code) => _Pill(
+                      label: taskCode == code ? '$code · selected' : code,
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ],
+          if (isTheoryPendingReview || reason.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.compact),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.item),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.82),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(color: _accentColor.withValues(alpha: 0.42)),
+              ),
+              child: Text(
+                isTheoryPendingReview
+                    ? 'Does not count yet until scored. ${reason.isEmpty ? '' : reason}'
+                    : reason,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -764,6 +1395,15 @@ class _TheoryEvidence extends StatelessWidget {
     final completedResponsesCount = _asIntValue(
       evidence['completedResponsesCount'],
     );
+    final reviewStatus = (evidence['reviewStatus'] ?? 'pending_review')
+        .toString()
+        .trim();
+    final averageTeacherScorePercent = _asDoubleValue(
+      evidence['averageTeacherScorePercent'],
+    );
+    final xpAwarded = _asIntValue(evidence['xpAwarded']);
+    final xpMax = _asIntValue(evidence['xpMax']);
+    final safeXpMax = xpMax <= 0 ? 50 : xpMax;
 
     if (questions.isEmpty) {
       return const Text('No theory evidence available.');
@@ -799,6 +1439,18 @@ class _TheoryEvidence extends StatelessWidget {
                 'Responses meeting minimum words: $completedResponsesCount/${questions.length}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              Text(
+                'Review status: ${reviewStatus == 'scored' ? 'Scored' : 'Pending review'}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Text(
+                'Average teacher score: ${reviewStatus == 'scored' ? '${_formatOneDecimal(averageTeacherScorePercent)}%' : 'Pending'}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Text(
+                'XP awarded: ${reviewStatus == 'scored' ? '$xpAwarded/$safeXpMax' : 'Pending'}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
           ),
         ),
@@ -813,6 +1465,11 @@ class _TheoryEvidence extends StatelessWidget {
           final studentAnswer = (question['studentAnswer'] ?? '').toString();
           final learnFirst = (question['learnFirst'] ?? '').toString();
           final expectedAnswer = (question['expectedAnswer'] ?? '').toString();
+          final teacherScorePercent = question['teacherScorePercent'];
+          final teacherFeedback = (question['teacherFeedback'] ?? '')
+              .toString()
+              .trim();
+          final scoredAt = (question['scoredAt'] ?? '').toString().trim();
 
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.compact),
@@ -928,6 +1585,43 @@ class _TheoryEvidence extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (teacherScorePercent != null) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppPalette.primaryBlue.withValues(
+                              alpha: 0.14,
+                            ),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            'Teacher score: ${teacherScorePercent.toString()}/100',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppPalette.primaryBlue,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                        if (scoredAt.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Scored ${_formatReportDateTime(scoredAt)}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: AppPalette.textMuted),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Text(
                     'Student answer',
@@ -953,6 +1647,31 @@ class _TheoryEvidence extends StatelessWidget {
                       ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
                     ),
                   ),
+                  if (teacherFeedback.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Teacher feedback',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF2FF),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        teacherFeedback,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -115,6 +115,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
               .toList(growable: false);
           final recentMissions = _recentMissions ?? workspace.recentMissions;
           final targets = _targets ?? workspace.targets;
+          final studentCertification =
+              workspace.selectedDashboard.subjectCertification;
           final notificationInbox =
               _notificationInbox ?? workspace.notificationInbox;
           final teacherCriteria = criteria
@@ -181,6 +183,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                     icon: const Icon(Icons.insights_rounded),
                     label: const Text('Open analytics'),
                   ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                _TeacherCertificationPanel(
+                  certifications: studentCertification,
+                  studentName: workspace.selectedStudent.name,
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _TeacherCriterionPanel(
@@ -2446,6 +2453,23 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
               final hasResultPackage = mission.latestResultPackageId
                   .trim()
                   .isNotEmpty;
+              final isTheoryPendingReview =
+                  mission.draftFormat == 'THEORY' &&
+                  hasResultPackage &&
+                  earnedXp == 0 &&
+                  mission.scoreTotal <= 0;
+              final topProgressRatio = isTheoryPendingReview
+                  ? 0.0
+                  : mission.draftFormat == 'THEORY' && hasResultPackage
+                  ? (mission.scorePercent.clamp(0, 100) / 100)
+                  : scoreRatio;
+              final topProgressLabel = isTheoryPendingReview
+                  ? 'Pending review · XP pending'
+                  : mission.draftFormat == 'THEORY' && hasResultPackage
+                  ? '${mission.scorePercent}% scored · $earnedXp/$rewardXp XP'
+                  : mission.draftFormat == 'THEORY'
+                  ? 'Awaiting submission · $earnedXp/$rewardXp XP'
+                  : '$scoreCorrect/$scoreTotal score · $earnedXp/$rewardXp XP';
               final isSendingResult = sendingResultMissionIds.contains(
                 mission.id,
               );
@@ -2460,9 +2484,8 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
                         mission.createdAt,
                   ),
                   actionLabel: 'Edit mission',
-                  topProgressRatio: scoreRatio,
-                  topProgressLabel:
-                      '$scoreCorrect/$scoreTotal score · $earnedXp/$rewardXp XP',
+                  topProgressRatio: topProgressRatio,
+                  topProgressLabel: topProgressLabel,
                   secondaryActionLabel: isSendingResult
                       ? 'Sending result...'
                       : 'Send result',
@@ -2948,6 +2971,231 @@ class _MissionDraftProgress {
   final int totalXp;
   final int filledXp;
   final double ratio;
+}
+
+class _TeacherCertificationPanel extends StatelessWidget {
+  const _TeacherCertificationPanel({
+    required this.certifications,
+    required this.studentName,
+  });
+
+  final List<SubjectCertificationSummary> certifications;
+  final String studentName;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftPanel(
+      colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Task-focus certification',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Plan the next qualifying mission from the remaining task focuses. This runs beside assessment progress, not instead of it.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          if (certifications.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.item),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              child: Text(
+                'No subject certification templates are active for $studentName yet.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            )
+          else
+            ...certifications.map(
+              (certification) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+                child: _TeacherCertificationCard(certification: certification),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeacherCertificationCard extends StatelessWidget {
+  const _TeacherCertificationCard({required this.certification});
+
+  final SubjectCertificationSummary certification;
+
+  CertificationEvidenceRow? _evidenceForTaskCode(String taskCode) {
+    for (final row in certification.evidenceRows) {
+      if (row.taskCode == taskCode) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isUnlocked = certification.certificateUnlocked;
+    final remainingText = certification.remainingTaskCodes.isEmpty
+        ? 'All required task focuses are complete.'
+        : 'Still needed: ${certification.remainingTaskCodes.join(', ')}';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      certification.subjectName,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      certification.certificationLabel,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: (isUnlocked ? AppPalette.mint : AppPalette.sun)
+                      .withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  isUnlocked
+                      ? 'Certificate unlocked'
+                      : '${certification.passedTaskCodes.length}/${certification.requiredTaskCodes.length} passed',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: isUnlocked ? AppPalette.mint : AppPalette.orange,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            remainingText,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${certification.completionPercentage}% complete · Average on passed focuses ${certification.averagePassedScorePercent.toStringAsFixed(1)}%',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: certification.requiredTaskCodes
+                .map((taskCode) {
+                  final evidence = _evidenceForTaskCode(taskCode);
+                  return _TeacherCertificationChip(
+                    taskCode: taskCode,
+                    status: evidence?.status ?? 'not_started',
+                    scorePercent: evidence?.bestScorePercent ?? 0,
+                  );
+                })
+                .toList(growable: false),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeacherCertificationChip extends StatelessWidget {
+  const _TeacherCertificationChip({
+    required this.taskCode,
+    required this.status,
+    required this.scorePercent,
+  });
+
+  final String taskCode;
+  final String status;
+  final double scorePercent;
+
+  @override
+  Widget build(BuildContext context) {
+    late final Color backgroundColor;
+    late final Color borderColor;
+    late final Color textColor;
+
+    switch (status) {
+      case 'passed':
+        backgroundColor = const Color(0xFFE8FFF0);
+        borderColor = const Color(0xFF8DDBAC);
+        textColor = const Color(0xFF157347);
+        break;
+      case 'pending_review':
+        backgroundColor = const Color(0xFFFFF7E5);
+        borderColor = const Color(0xFFF4CD79);
+        textColor = const Color(0xFFB27300);
+        break;
+      case 'not_passed':
+        backgroundColor = const Color(0xFFFFF0F0);
+        borderColor = const Color(0xFFFFB3B3);
+        textColor = const Color(0xFFB42318);
+        break;
+      default:
+        backgroundColor = const Color(0xFFF5F8FF);
+        borderColor = const Color(0xFFD5E6FF);
+        textColor = AppPalette.navy;
+        break;
+    }
+
+    final label = status == 'passed'
+        ? '$taskCode · ${scorePercent.toStringAsFixed(0)}%'
+        : status == 'pending_review'
+        ? '$taskCode · Pending'
+        : taskCode;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: textColor,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
 }
 
 class _MissionCard extends StatelessWidget {

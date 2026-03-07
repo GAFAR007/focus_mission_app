@@ -28,6 +28,19 @@ import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import '../../teacher/presentation/result_report_screen.dart';
 
 const _allSubjectsFilterLabel = 'All subjects';
+const _allCertificationSubjectsFilterLabel = 'All certification subjects';
+const List<String> _certificationTaskCodeOptions = [
+  'P1',
+  'P2',
+  'P3',
+  'P4',
+  'P5',
+  'P6',
+  'M1',
+  'M2',
+  'D1',
+  'D2',
+];
 
 class ManagementOverviewScreen extends StatefulWidget {
   const ManagementOverviewScreen({super.key, required this.session});
@@ -47,15 +60,22 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _subjectSpecialtyController =
       TextEditingController();
+  final TextEditingController _certificationLabelController =
+      TextEditingController();
 
   late AuthSession _session;
   late Future<_ManagementScreenData> _future;
   String _selectedStudentId = '';
   String _selectedSubject = _allSubjectsFilterLabel;
+  String _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
+  String _selectedCertificationEditorSubjectId = '';
   String _createRole = 'student';
   NotificationInboxData? _notificationInbox;
   bool _isCreatingUser = false;
+  bool _isSavingCertification = false;
+  bool _certificationEnabled = false;
   AppUser? _lastCreatedUser;
+  final Set<String> _selectedCertificationTaskCodes = <String>{};
 
   @override
   void initState() {
@@ -70,6 +90,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _subjectSpecialtyController.dispose();
+    _certificationLabelController.dispose();
     super.dispose();
   }
 
@@ -82,12 +103,138 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       token: _session.token,
       studentId: workspace.selectedStudent.id,
     );
+    final certifications = await _api.fetchManagementStudentCertification(
+      token: _session.token,
+      studentId: workspace.selectedStudent.id,
+    );
+    final certificationSubjects = await _api
+        .fetchManagementCertificationSubjects(token: _session.token);
     _selectedStudentId = workspace.selectedStudent.id;
     _notificationInbox ??= workspace.notificationInbox;
+    _syncCertificationEditor(certificationSubjects);
+    final certificationFilters = _buildCertificationFilters(certifications);
+    if (!certificationFilters.contains(_selectedCertificationSubject)) {
+      _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
+    }
     return _ManagementScreenData(
       workspace: workspace,
       recentResults: recentResults,
+      certifications: certifications,
+      certificationSubjects: certificationSubjects,
     );
+  }
+
+  void _syncCertificationEditor(List<SubjectCertificationSettings> subjects) {
+    if (subjects.isEmpty) {
+      _selectedCertificationEditorSubjectId = '';
+      _certificationEnabled = false;
+      _selectedCertificationTaskCodes.clear();
+      _certificationLabelController.text = 'Course Certification';
+      return;
+    }
+
+    final selected = subjects.firstWhere(
+      (subject) => subject.subjectId == _selectedCertificationEditorSubjectId,
+      orElse: () => subjects.first,
+    );
+
+    _selectedCertificationEditorSubjectId = selected.subjectId;
+    _certificationEnabled = selected.certificationEnabled;
+    _selectedCertificationTaskCodes
+      ..clear()
+      ..addAll(selected.requiredCertificationTaskCodes);
+    _certificationLabelController.text = selected.certificationLabel;
+  }
+
+  void _selectCertificationEditorSubject(
+    String subjectId,
+    List<SubjectCertificationSettings> subjects,
+  ) {
+    final selected = subjects.firstWhere(
+      (subject) => subject.subjectId == subjectId,
+      orElse: () => subjects.first,
+    );
+
+    setState(() {
+      _selectedCertificationEditorSubjectId = selected.subjectId;
+      _certificationEnabled = selected.certificationEnabled;
+      _selectedCertificationTaskCodes
+        ..clear()
+        ..addAll(selected.requiredCertificationTaskCodes);
+      _certificationLabelController.text = selected.certificationLabel;
+    });
+  }
+
+  void _toggleCertificationTaskCode(String taskCode) {
+    setState(() {
+      if (_selectedCertificationTaskCodes.contains(taskCode)) {
+        _selectedCertificationTaskCodes.remove(taskCode);
+      } else {
+        _selectedCertificationTaskCodes.add(taskCode);
+      }
+    });
+  }
+
+  Future<void> _saveCertificationTemplate() async {
+    if (_selectedCertificationEditorSubjectId.trim().isEmpty ||
+        _isSavingCertification) {
+      return;
+    }
+
+    if (_certificationEnabled && _selectedCertificationTaskCodes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Pick at least one required task focus before enabling certification.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSavingCertification = true);
+    try {
+      final updated = await _api.updateManagementSubjectCertification(
+        token: _session.token,
+        subjectId: _selectedCertificationEditorSubjectId,
+        certificationEnabled: _certificationEnabled,
+        requiredCertificationTaskCodes: _selectedCertificationTaskCodes.toList(
+          growable: false,
+        )..sort(),
+        certificationLabel: _certificationLabelController.text.trim().isEmpty
+            ? 'Course Certification'
+            : _certificationLabelController.text.trim(),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _selectedCertificationEditorSubjectId = updated.subjectId;
+        _certificationEnabled = updated.certificationEnabled;
+        _selectedCertificationTaskCodes
+          ..clear()
+          ..addAll(updated.requiredCertificationTaskCodes);
+        _certificationLabelController.text = updated.certificationLabel;
+        _future = _loadWorkspace();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Certification settings saved.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingCertification = false);
+      }
+    }
   }
 
   @override
@@ -119,6 +266,26 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
             data.recentResults,
             selectedSubject,
           );
+          final certificationFilters = _buildCertificationFilters(
+            data.certifications,
+          );
+          final selectedCertificationSubject =
+              certificationFilters.contains(_selectedCertificationSubject)
+              ? _selectedCertificationSubject
+              : _allCertificationSubjectsFilterLabel;
+          final filteredCertifications = _filterCertifications(
+            data.certifications,
+            selectedCertificationSubject,
+          );
+          final selectedCertificationSettings =
+              data.certificationSubjects.isEmpty
+              ? null
+              : data.certificationSubjects.firstWhere(
+                  (subject) =>
+                      subject.subjectId ==
+                      _selectedCertificationEditorSubjectId,
+                  orElse: () => data.certificationSubjects.first,
+                );
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(AppSpacing.screen),
@@ -214,6 +381,204 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                           ),
                         ],
                       ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Task-focus certification',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Track which required task focuses this student has already passed for each subject.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: certificationFilters
+                            .map(
+                              (subject) => _SubjectFilterChip(
+                                label: subject,
+                                selected:
+                                    subject == selectedCertificationSubject,
+                                onTap: () => setState(
+                                  () => _selectedCertificationSubject = subject,
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                      const SizedBox(height: AppSpacing.item),
+                      if (filteredCertifications.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(AppSpacing.item),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.78),
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.radiusMd,
+                            ),
+                          ),
+                          child: Text(
+                            'No certification templates are active for this student yet.',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        )
+                      else
+                        ...filteredCertifications.map(
+                          (certification) => Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.compact,
+                            ),
+                            child: _ManagementCertificationCard(
+                              certification: certification,
+                              missionByResultPackageId: {
+                                for (final mission in data.recentResults)
+                                  mission.latestResultPackageId.trim(): mission,
+                              },
+                              onOpenResult: (mission) => _openResultReport(
+                                mission: mission,
+                                student: workspace.selectedStudent,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  colors: const [Color(0xFFFFFCF6), Color(0xFFFFF3E4)],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Certification Setup',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Choose which task focuses a student must pass to unlock the subject certificate. Changes are blocked after live evidence exists.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      if (data.certificationSubjects.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(AppSpacing.item),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.78),
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.radiusMd,
+                            ),
+                          ),
+                          child: Text(
+                            'No subjects are available to configure yet.',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        )
+                      else ...[
+                        DropdownButtonFormField<String>(
+                          initialValue:
+                              selectedCertificationSettings?.subjectId,
+                          decoration: const InputDecoration(
+                            labelText: 'Subject',
+                          ),
+                          items: data.certificationSubjects
+                              .map(
+                                (subject) => DropdownMenuItem<String>(
+                                  value: subject.subjectId,
+                                  child: Text(subject.subjectName),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            _selectCertificationEditorSubject(
+                              value,
+                              data.certificationSubjects,
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        SwitchListTile.adaptive(
+                          value: _certificationEnabled,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Enable certification'),
+                          subtitle: const Text(
+                            'Use task-focus passes to unlock a subject certificate.',
+                          ),
+                          onChanged: (value) =>
+                              setState(() => _certificationEnabled = value),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _certificationLabelController,
+                          decoration: const InputDecoration(
+                            labelText: 'Certificate label',
+                            hintText: 'Course Certification',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Required task focuses',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: _certificationTaskCodeOptions
+                              .map(
+                                (taskCode) => _CreateRoleChip(
+                                  label: taskCode,
+                                  icon: Icons.flag_rounded,
+                                  selected: _selectedCertificationTaskCodes
+                                      .contains(taskCode),
+                                  onTap: () =>
+                                      _toggleCertificationTaskCode(taskCode),
+                                ),
+                              )
+                              .toList(growable: false),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _selectedCertificationTaskCodes.isEmpty
+                              ? 'No task focuses selected yet.'
+                              : 'Required: ${(_selectedCertificationTaskCodes.toList(growable: false)..sort()).join(', ')}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                        const SizedBox(height: AppSpacing.compact),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _isSavingCertification
+                                ? null
+                                : _saveCertificationTemplate,
+                            icon: const Icon(Icons.save_rounded),
+                            label: Text(
+                              _isSavingCertification
+                                  ? 'Saving certification...'
+                                  : 'Save Certification Setup',
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -742,16 +1107,274 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         .where((mission) => (mission.subject?.name ?? '').trim() == subject)
         .toList(growable: false);
   }
+
+  List<String> _buildCertificationFilters(
+    List<SubjectCertificationSummary> certifications,
+  ) {
+    final labels = <String>{_allCertificationSubjectsFilterLabel};
+
+    for (final certification in certifications) {
+      final subjectName = certification.subjectName.trim();
+      if (subjectName.isNotEmpty) {
+        labels.add(subjectName);
+      }
+    }
+
+    return labels.toList(growable: false);
+  }
+
+  List<SubjectCertificationSummary> _filterCertifications(
+    List<SubjectCertificationSummary> certifications,
+    String subject,
+  ) {
+    if (subject == _allCertificationSubjectsFilterLabel) {
+      return certifications;
+    }
+
+    return certifications
+        .where((certification) => certification.subjectName.trim() == subject)
+        .toList(growable: false);
+  }
+}
+
+class _ManagementCertificationCard extends StatelessWidget {
+  const _ManagementCertificationCard({
+    required this.certification,
+    required this.missionByResultPackageId,
+    required this.onOpenResult,
+  });
+
+  final SubjectCertificationSummary certification;
+  final Map<String, MissionPayload> missionByResultPackageId;
+  final ValueChanged<MissionPayload> onOpenResult;
+
+  @override
+  Widget build(BuildContext context) {
+    final isUnlocked = certification.certificateUnlocked;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      certification.subjectName,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      certification.certificationLabel,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: (isUnlocked ? AppPalette.mint : AppPalette.sun)
+                      .withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  isUnlocked
+                      ? 'Certificate unlocked'
+                      : '${certification.passedTaskCodes.length}/${certification.requiredTaskCodes.length} passed',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: isUnlocked ? AppPalette.mint : AppPalette.orange,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            certification.remainingTaskCodes.isEmpty
+                ? 'All required task focuses are complete.'
+                : 'Still needed: ${certification.remainingTaskCodes.join(', ')}',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${certification.completionPercentage}% complete · Average on passed focuses ${certification.averagePassedScorePercent.toStringAsFixed(1)}%',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          ...certification.requiredTaskCodes.map((taskCode) {
+            final evidence = certification.evidenceRows.firstWhere(
+              (row) => row.taskCode == taskCode,
+              orElse: () => CertificationEvidenceRow(
+                taskCode: taskCode,
+                status: 'not_started',
+                bestScorePercent: 0,
+                bestMissionId: '',
+                bestResultPackageId: '',
+                missionType: '',
+                completedAt: null,
+                reason: '',
+              ),
+            );
+            final linkedMission =
+                missionByResultPackageId[evidence.bestResultPackageId.trim()];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _ManagementCertificationEvidenceRow(
+                evidence: evidence,
+                onOpenResult: linkedMission == null
+                    ? null
+                    : () => onOpenResult(linkedMission),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManagementCertificationEvidenceRow extends StatelessWidget {
+  const _ManagementCertificationEvidenceRow({
+    required this.evidence,
+    required this.onOpenResult,
+  });
+
+  final CertificationEvidenceRow evidence;
+  final VoidCallback? onOpenResult;
+
+  @override
+  Widget build(BuildContext context) {
+    late final Color badgeColor;
+    late final Color textColor;
+    late final String statusLabel;
+
+    switch (evidence.status) {
+      case 'passed':
+        badgeColor = const Color(0xFFE8FFF0);
+        textColor = const Color(0xFF157347);
+        statusLabel = 'Passed';
+        break;
+      case 'pending_review':
+        badgeColor = const Color(0xFFFFF7E5);
+        textColor = const Color(0xFFB27300);
+        statusLabel = 'Pending review';
+        break;
+      case 'not_passed':
+        badgeColor = const Color(0xFFFFF0F0);
+        textColor = const Color(0xFFB42318);
+        statusLabel = 'Not passed';
+        break;
+      default:
+        badgeColor = const Color(0xFFF5F8FF);
+        textColor = AppPalette.navy;
+        statusLabel = 'Not started';
+        break;
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.compact),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FBFF),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: const Color(0xFFD9E7FF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                evidence.taskCode,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: textColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (evidence.bestScorePercent > 0)
+                Text(
+                  '${evidence.bestScorePercent.toStringAsFixed(1)}%',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(color: AppPalette.navy),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            evidence.reason.trim().isEmpty
+                ? evidence.status == 'passed'
+                      ? 'Best evidence: ${evidence.missionType} mission'
+                      : 'No linked result evidence yet.'
+                : evidence.reason,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          if (onOpenResult != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onOpenResult,
+                icon: const Icon(Icons.visibility_rounded),
+                label: const Text('Open evidence'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _ManagementScreenData {
   const _ManagementScreenData({
     required this.workspace,
     required this.recentResults,
+    required this.certifications,
+    required this.certificationSubjects,
   });
 
   final MentorWorkspaceData workspace;
   final List<MissionPayload> recentResults;
+  final List<SubjectCertificationSummary> certifications;
+  final List<SubjectCertificationSettings> certificationSubjects;
 }
 
 class _SelectedStudentCard extends StatelessWidget {
@@ -1003,8 +1626,21 @@ class _ManagementResultCard extends StatelessWidget {
     final scoreTotal = mission.scoreTotal > 0
         ? mission.scoreTotal
         : mission.questionCount;
+    final hasResultPackage = mission.latestResultPackageId.trim().isNotEmpty;
+    final earnedXp = mission.xpEarned < 0
+        ? 0
+        : (mission.xpEarned > mission.xpReward
+              ? mission.xpReward
+              : mission.xpEarned);
     final scoreLabel =
         '${mission.scoreCorrect}/$scoreTotal (${mission.scorePercent}%)';
+    final theorySummary = mission.draftFormat == 'THEORY'
+        ? hasResultPackage && earnedXp == 0 && mission.scoreTotal <= 0
+              ? 'Pending review · XP pending'
+              : hasResultPackage
+              ? '${mission.scorePercent}% scored · $earnedXp/${mission.xpReward} XP'
+              : 'Awaiting submission · $earnedXp/${mission.xpReward} XP'
+        : '$scoreLabel score · $earnedXp/${mission.xpReward} XP';
     final dateLabel = _formatManagementMissionDate(
       mission.availableOnDate ?? mission.publishedAt ?? mission.createdAt,
     );
@@ -1047,7 +1683,7 @@ class _ManagementResultCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '$scoreLabel score · ${mission.xpEarned}/${mission.xpReward} XP',
+            theorySummary,
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),

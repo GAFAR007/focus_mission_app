@@ -130,6 +130,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   UploadedSourceDraft? _uploadedSource;
   List<_EditableQuestionController> _questionEditors = const [];
   bool _didAutoOpenAssessmentMode = false;
+  List<SubjectCertificationSummary> _studentCertification = const [];
 
   bool get _hasDraft => _draftMission != null;
   bool get _isPublishedMission => _draftMission?.isPublished ?? false;
@@ -139,11 +140,23 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   bool get _isAssessmentPublishLocked =>
       _isAssessmentMode && _selectedTaskCodes.isEmpty;
   bool get _isTheoryDraft => _draftFormat == 'THEORY';
+  bool get _isCertificationQualifyingFormat =>
+      _draftFormat == 'ESSAY_BUILDER' ||
+      _draftFormat == 'THEORY' ||
+      (_draftFormat == 'QUESTIONS' && _questionCount >= 10);
   bool get _usesFixedXpReward =>
       _isAssessmentMode || _isTheoryDraft || _draftFormat == 'ESSAY_BUILDER';
   String get _effectiveDifficulty => _isAssessmentMode ? 'hard' : _difficulty;
   int get _effectiveXpReward =>
       _usesFixedXpReward ? _assessmentXpReward : _xpReward;
+  SubjectCertificationSummary? get _selectedSubjectCertification {
+    for (final certification in _studentCertification) {
+      if (certification.subjectId == widget.subject.id) {
+        return certification;
+      }
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -170,6 +183,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         _openAssessmentModeScreen();
       });
     }
+
+    _loadStudentCertification();
   }
 
   @override
@@ -701,6 +716,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             context,
           ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
         ),
+        if (_selectedSubjectCertification != null) ...[
+          const SizedBox(height: AppSpacing.item),
+          _buildCertificationHelperPanel(context),
+        ],
         if (_rawUploadedSourceText.trim().isNotEmpty) ...[
           const SizedBox(height: AppSpacing.item),
           Text(
@@ -910,6 +929,103 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           ),
         ],
       ],
+    );
+  }
+
+  Future<void> _loadStudentCertification() async {
+    try {
+      final certification = await widget.api.fetchTeacherStudentCertification(
+        token: widget.session.token,
+        studentId: widget.student.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _studentCertification = certification;
+      });
+    } catch (error) {
+      // WHY: Certification helper copy should never block mission authoring, so
+      // the builder fails soft if the secondary certification request fails.
+    }
+  }
+
+  Widget _buildCertificationHelperPanel(BuildContext context) {
+    final certification = _selectedSubjectCertification!;
+    final selectedSingleTaskCode = _selectedTaskCodes.length == 1
+        ? _selectedTaskCodes.first
+        : '';
+    final selectedTaskIsRequired =
+        selectedSingleTaskCode.isNotEmpty &&
+        certification.requiredTaskCodes.contains(selectedSingleTaskCode);
+    final helperText = !_isCertificationQualifyingFormat
+        ? 'This mission will not count toward certification because only essays, theory, and 10+ question missions qualify.'
+        : _selectedTaskCodes.isEmpty
+        ? 'To count toward certification, choose exactly one task focus.'
+        : _selectedTaskCodes.length > 1
+        ? 'This mission will not count toward certification because more than one task focus is selected.'
+        : !selectedTaskIsRequired
+        ? '$selectedSingleTaskCode is not part of this subject certification template.'
+        : 'Groq will generate this draft only for $selectedSingleTaskCode. This mission can count toward certification if the student passes it.';
+
+    return SoftPanel(
+      colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Task-focus certification',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            certification.certificationLabel,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: certification.requiredTaskCodes
+                .map((taskCode) {
+                  final isPassed = certification.passedTaskCodes.contains(
+                    taskCode,
+                  );
+                  final isRemaining = certification.remainingTaskCodes.contains(
+                    taskCode,
+                  );
+                  return _CertificationFocusChip(
+                    taskCode: taskCode,
+                    status: isPassed
+                        ? 'passed'
+                        : isRemaining
+                        ? 'remaining'
+                        : 'required',
+                  );
+                })
+                .toList(growable: false),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            certification.remainingTaskCodes.isEmpty
+                ? 'All required task focuses are already passed for this subject.'
+                : 'Remaining for ${widget.student.name}: ${certification.remainingTaskCodes.join(', ')}',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            helperText,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.navy,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -3762,6 +3878,49 @@ class _CountChip extends StatelessWidget {
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
             color: selected ? Colors.white : AppPalette.navy,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CertificationFocusChip extends StatelessWidget {
+  const _CertificationFocusChip({required this.taskCode, required this.status});
+
+  final String taskCode;
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color backgroundColor;
+    final Color textColor;
+
+    switch (status) {
+      case 'passed':
+        backgroundColor = const Color(0xFFE8FFF0);
+        textColor = const Color(0xFF157347);
+        break;
+      case 'remaining':
+        backgroundColor = const Color(0xFFFFF4DE);
+        textColor = const Color(0xFFAF6A00);
+        break;
+      default:
+        backgroundColor = Colors.white.withValues(alpha: 0.78);
+        textColor = AppPalette.navy;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        taskCode,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: textColor,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

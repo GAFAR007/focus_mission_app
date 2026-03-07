@@ -246,6 +246,7 @@ class StudentDashboardData {
     required this.recentSessions,
     required this.dailyXp,
     required this.subjectProgress,
+    required this.subjectCertification,
     this.today,
   });
 
@@ -254,6 +255,7 @@ class StudentDashboardData {
   final List<SessionSummary> recentSessions;
   final DailyXpSummary dailyXp;
   final List<SubjectProgressSummary> subjectProgress;
+  final List<SubjectCertificationSummary> subjectCertification;
 
   factory StudentDashboardData.fromJson(Map<String, dynamic> json) {
     final sessions = (json['recentSessions'] as List<dynamic>? ?? const [])
@@ -266,6 +268,10 @@ class StudentDashboardData {
       subjectProgress: (json['subjectProgress'] as List<dynamic>? ?? const [])
           .map((item) => SubjectProgressSummary.fromJson(_asMap(item)))
           .toList(growable: false),
+      subjectCertification:
+          (json['subjectCertification'] as List<dynamic>? ?? const [])
+              .map((item) => SubjectCertificationSummary.fromJson(_asMap(item)))
+              .toList(growable: false),
       today: _asNullableMap(json['today']) == null
           ? null
           : TodaySchedule.fromJson(_asMap(json['today'])),
@@ -372,6 +378,134 @@ class SubjectProgressSummary {
       averageScore: _asInt(json['averageScore']),
       completionPercentage: _asInt(json['completionPercentage']),
       badgeUnlocked: json['badgeUnlocked'] == true,
+    );
+  }
+}
+
+class CertificationEvidenceRow {
+  const CertificationEvidenceRow({
+    required this.taskCode,
+    required this.status,
+    required this.bestScorePercent,
+    required this.bestMissionId,
+    required this.bestResultPackageId,
+    required this.missionType,
+    required this.completedAt,
+    required this.reason,
+  });
+
+  final String taskCode;
+  final String status;
+  final double bestScorePercent;
+  final String bestMissionId;
+  final String bestResultPackageId;
+  final String missionType;
+  final String? completedAt;
+  final String reason;
+
+  bool get isPassed => status == 'passed';
+  bool get isPendingReview => status == 'pending_review';
+  bool get isNotStarted => status == 'not_started';
+
+  factory CertificationEvidenceRow.fromJson(Map<String, dynamic> json) {
+    return CertificationEvidenceRow(
+      taskCode: (json['taskCode'] ?? '').toString(),
+      status: (json['status'] ?? 'not_started').toString(),
+      bestScorePercent: _asDouble(json['bestScorePercent']),
+      bestMissionId: (json['bestMissionId'] ?? '').toString(),
+      bestResultPackageId: (json['bestResultPackageId'] ?? '').toString(),
+      missionType: (json['missionType'] ?? '').toString(),
+      completedAt: json['completedAt']?.toString(),
+      reason: (json['reason'] ?? '').toString(),
+    );
+  }
+}
+
+class SubjectCertificationSummary {
+  const SubjectCertificationSummary({
+    required this.subjectId,
+    required this.subjectName,
+    required this.subjectIcon,
+    required this.subjectColor,
+    required this.certificationEnabled,
+    required this.certificationLabel,
+    required this.requiredTaskCodes,
+    required this.passedTaskCodes,
+    required this.remainingTaskCodes,
+    required this.completionPercentage,
+    required this.averagePassedScorePercent,
+    required this.certificateUnlocked,
+    required this.awardRecorded,
+    required this.evidenceRows,
+  });
+
+  final String subjectId;
+  final String subjectName;
+  final String subjectIcon;
+  final String subjectColor;
+  final bool certificationEnabled;
+  final String certificationLabel;
+  final List<String> requiredTaskCodes;
+  final List<String> passedTaskCodes;
+  final List<String> remainingTaskCodes;
+  final int completionPercentage;
+  final double averagePassedScorePercent;
+  final bool certificateUnlocked;
+  final bool awardRecorded;
+  final List<CertificationEvidenceRow> evidenceRows;
+
+  factory SubjectCertificationSummary.fromJson(Map<String, dynamic> json) {
+    return SubjectCertificationSummary(
+      subjectId: (json['subjectId'] ?? '').toString(),
+      subjectName: (json['subjectName'] ?? '').toString(),
+      subjectIcon: (json['subjectIcon'] ?? '').toString(),
+      subjectColor: (json['subjectColor'] ?? '').toString(),
+      certificationEnabled: json['certificationEnabled'] == true,
+      certificationLabel: (json['certificationLabel'] ?? '').toString(),
+      requiredTaskCodes: _asStringList(json['requiredTaskCodes']),
+      passedTaskCodes: _asStringList(json['passedTaskCodes']),
+      remainingTaskCodes: _asStringList(json['remainingTaskCodes']),
+      completionPercentage: _asInt(json['completionPercentage']),
+      averagePassedScorePercent: _asDouble(json['averagePassedScorePercent']),
+      certificateUnlocked: json['certificateUnlocked'] == true,
+      awardRecorded: json['awardRecorded'] == true,
+      evidenceRows: (json['evidenceRows'] as List<dynamic>? ?? const [])
+          .map((item) => CertificationEvidenceRow.fromJson(_asMap(item)))
+          .toList(growable: false),
+    );
+  }
+}
+
+class SubjectCertificationSettings {
+  const SubjectCertificationSettings({
+    required this.subjectId,
+    required this.subjectName,
+    required this.subjectIcon,
+    required this.subjectColor,
+    required this.certificationEnabled,
+    required this.requiredCertificationTaskCodes,
+    required this.certificationLabel,
+  });
+
+  final String subjectId;
+  final String subjectName;
+  final String subjectIcon;
+  final String subjectColor;
+  final bool certificationEnabled;
+  final List<String> requiredCertificationTaskCodes;
+  final String certificationLabel;
+
+  factory SubjectCertificationSettings.fromJson(Map<String, dynamic> json) {
+    return SubjectCertificationSettings(
+      subjectId: (json['subjectId'] ?? '').toString(),
+      subjectName: (json['subjectName'] ?? '').toString(),
+      subjectIcon: (json['subjectIcon'] ?? '').toString(),
+      subjectColor: (json['subjectColor'] ?? '').toString(),
+      certificationEnabled: json['certificationEnabled'] == true,
+      requiredCertificationTaskCodes: _asStringList(
+        json['requiredCertificationTaskCodes'],
+      ),
+      certificationLabel: (json['certificationLabel'] ?? '').toString(),
     );
   }
 }
@@ -1036,6 +1170,8 @@ class CompleteMissionResult {
     required this.dailyXp,
     required this.resultPackageId,
     this.sessionXpAwarded = 0,
+    this.theoryReviewStatus = '',
+    this.theoryXpPending = false,
   });
 
   final AppUser student;
@@ -1043,6 +1179,8 @@ class CompleteMissionResult {
   final DailyXpSummary dailyXp;
   final String resultPackageId;
   final int sessionXpAwarded;
+  final String theoryReviewStatus;
+  final bool theoryXpPending;
 
   factory CompleteMissionResult.fromJson(Map<String, dynamic> json) {
     final dailyXpJson = _asMap(json['dailyXp']);
@@ -1055,6 +1193,8 @@ class CompleteMissionResult {
       sessionXpAwarded: _asInt(
         sessionLog['totalXpAwarded'] ?? sessionLog['xpAwarded'],
       ),
+      theoryReviewStatus: (json['theoryReviewStatus'] ?? '').toString(),
+      theoryXpPending: json['theoryXpPending'] == true,
     );
   }
 }
@@ -1236,6 +1376,7 @@ class ResultPackageData {
     required this.latestSendStatus,
     required this.createdAt,
     required this.updatedAt,
+    required this.certification,
     required this.sendLogs,
   });
 
@@ -1249,6 +1390,7 @@ class ResultPackageData {
   final String latestSendStatus;
   final String? createdAt;
   final String? updatedAt;
+  final MissionCertificationSummary? certification;
   final List<ResultSendLog> sendLogs;
 
   factory ResultPackageData.fromJson(Map<String, dynamic> json) {
@@ -1263,9 +1405,51 @@ class ResultPackageData {
       latestSendStatus: (json['latestSendStatus'] ?? 'not_sent').toString(),
       createdAt: json['createdAt']?.toString(),
       updatedAt: json['updatedAt']?.toString(),
+      certification: _asNullableMap(json['certification']) == null
+          ? null
+          : MissionCertificationSummary.fromJson(_asMap(json['certification'])),
       sendLogs: (json['sendLogs'] as List<dynamic>? ?? const [])
           .map((item) => ResultSendLog.fromJson(_asMap(item)))
           .toList(growable: false),
+    );
+  }
+}
+
+class MissionCertificationSummary {
+  const MissionCertificationSummary({
+    required this.certificationEnabled,
+    required this.certificationLabel,
+    required this.requiredTaskCodes,
+    required this.certificationEligible,
+    required this.certificationTaskCode,
+    required this.certificationCounted,
+    required this.certificationPassStatus,
+    required this.reason,
+    required this.scorePercent,
+  });
+
+  final bool certificationEnabled;
+  final String certificationLabel;
+  final List<String> requiredTaskCodes;
+  final bool certificationEligible;
+  final String certificationTaskCode;
+  final bool certificationCounted;
+  final String certificationPassStatus;
+  final String reason;
+  final double scorePercent;
+
+  factory MissionCertificationSummary.fromJson(Map<String, dynamic> json) {
+    return MissionCertificationSummary(
+      certificationEnabled: json['certificationEnabled'] == true,
+      certificationLabel: (json['certificationLabel'] ?? '').toString(),
+      requiredTaskCodes: _asStringList(json['requiredTaskCodes']),
+      certificationEligible: json['certificationEligible'] == true,
+      certificationTaskCode: (json['certificationTaskCode'] ?? '').toString(),
+      certificationCounted: json['certificationCounted'] == true,
+      certificationPassStatus:
+          (json['certificationPassStatus'] ?? 'not_eligible').toString(),
+      reason: (json['reason'] ?? '').toString(),
+      scorePercent: _asDouble(json['scorePercent']),
     );
   }
 }
@@ -2067,6 +2251,18 @@ int _asInt(Object? value) {
   }
 
   return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+double _asDouble(Object? value) {
+  if (value is double) {
+    return value;
+  }
+
+  if (value is num) {
+    return value.toDouble();
+  }
+
+  return double.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 Map<String, dynamic> _asMap(Object? value) {

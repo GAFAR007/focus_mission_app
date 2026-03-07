@@ -377,6 +377,89 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<List<SubjectCertificationSummary>> fetchTeacherStudentCertification({
+    required String token,
+    required String studentId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/teacher/students/$studentId/certification',
+      token: token,
+    );
+    final certifications = json['certifications'] as List<dynamic>? ?? const [];
+
+    return certifications
+        .map(
+          (item) => SubjectCertificationSummary.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<SubjectCertificationSummary>>
+  fetchManagementStudentCertification({
+    required String token,
+    required String studentId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/management/students/$studentId/certification',
+      token: token,
+    );
+    final certifications = json['certifications'] as List<dynamic>? ?? const [];
+
+    return certifications
+        .map(
+          (item) => SubjectCertificationSummary.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<SubjectCertificationSettings>>
+  fetchManagementCertificationSubjects({required String token}) async {
+    final json = await _requestJson(
+      'GET',
+      '/management/subjects',
+      token: token,
+    );
+    final subjects = json['subjects'] as List<dynamic>? ?? const [];
+
+    return subjects
+        .map(
+          (item) => SubjectCertificationSettings.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<SubjectCertificationSettings> updateManagementSubjectCertification({
+    required String token,
+    required String subjectId,
+    required bool certificationEnabled,
+    required List<String> requiredCertificationTaskCodes,
+    String certificationLabel = 'Course Certification',
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/management/subjects/$subjectId/certification',
+      token: token,
+      body: {
+        'certificationEnabled': certificationEnabled,
+        'requiredCertificationTaskCodes': requiredCertificationTaskCodes,
+        'certificationLabel': certificationLabel,
+      },
+    );
+
+    return SubjectCertificationSettings.fromJson(
+      (json['certification'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
   Future<AppUser> createManagementUser({
     required String token,
     required String role,
@@ -1092,6 +1175,24 @@ class FocusMissionApi {
       'GET',
       '/teacher/results/$resultPackageId',
       token: token,
+    );
+
+    return ResultPackageData.fromJson(
+      (json['resultPackage'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<ResultPackageData> scoreTeacherTheoryResultPackage({
+    required String token,
+    required String resultPackageId,
+    required List<Map<String, dynamic>> questions,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/results/$resultPackageId/score-theory',
+      token: token,
+      body: {'questions': questions},
     );
 
     return ResultPackageData.fromJson(

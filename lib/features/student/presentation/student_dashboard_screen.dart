@@ -243,6 +243,27 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                   ),
                 const SizedBox(height: AppSpacing.section),
                 Text(
+                  'Task-focus certification',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpacing.item),
+                if (data.dashboard.subjectCertification.isEmpty)
+                  const SoftPanel(
+                    child: Text(
+                      'No subject certification templates are active yet. Your teacher or management team will add them when the course is ready.',
+                    ),
+                  )
+                else
+                  ...data.dashboard.subjectCertification.map(
+                    (certification) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.item),
+                      child: _SubjectCertificationCard(
+                        certification: certification,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: AppSpacing.section),
+                Text(
                   'Qualification journey',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
@@ -1190,6 +1211,169 @@ class _MiniPill extends StatelessWidget {
         style: Theme.of(
           context,
         ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+      ),
+    );
+  }
+}
+
+class _SubjectCertificationCard extends StatelessWidget {
+  const _SubjectCertificationCard({required this.certification});
+
+  final SubjectCertificationSummary certification;
+
+  CertificationEvidenceRow? _evidenceForTaskCode(String taskCode) {
+    for (final row in certification.evidenceRows) {
+      if (row.taskCode == taskCode) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftPanel(
+      colors: certification.certificateUnlocked
+          ? const [Color(0xFFF5FFF6), Color(0xFFE8FFF0)]
+          : const [Color(0xFFFFFCF6), Color(0xFFFFF3E4)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      certification.subjectName,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      certification.certificationLabel,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _MiniPill(
+                label: certification.certificateUnlocked
+                    ? 'Certificate unlocked'
+                    : '${certification.passedTaskCodes.length}/${certification.requiredTaskCodes.length} passed',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            certification.certificateUnlocked
+                ? 'All required task focuses are complete.'
+                : certification.remainingTaskCodes.isEmpty
+                ? 'Task focuses are ready to score.'
+                : 'Still needed: ${certification.remainingTaskCodes.join(', ')}',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 12),
+          LinearProgressIndicator(
+            minHeight: 10,
+            value: (certification.completionPercentage / 100).clamp(0, 1),
+            borderRadius: BorderRadius.circular(999),
+            backgroundColor: Colors.white.withValues(alpha: 0.66),
+            valueColor: AlwaysStoppedAnimation<Color>(
+              certification.certificateUnlocked
+                  ? AppPalette.mint
+                  : AppPalette.sun,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${certification.completionPercentage}% complete · Average on passed focuses ${certification.averagePassedScorePercent.toStringAsFixed(1)}%',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: certification.requiredTaskCodes
+                .map((taskCode) {
+                  final evidence = _evidenceForTaskCode(taskCode);
+                  return _TaskCodePill(
+                    taskCode: taskCode,
+                    status: evidence?.status ?? 'not_started',
+                    scorePercent: evidence?.bestScorePercent ?? 0,
+                  );
+                })
+                .toList(growable: false),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TaskCodePill extends StatelessWidget {
+  const _TaskCodePill({
+    required this.taskCode,
+    required this.status,
+    required this.scorePercent,
+  });
+
+  final String taskCode;
+  final String status;
+  final double scorePercent;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color backgroundColor;
+    final Color borderColor;
+    final Color textColor;
+    switch (status) {
+      case 'passed':
+        backgroundColor = const Color(0xFFE8FFF0);
+        borderColor = const Color(0xFF7AD9A6);
+        textColor = const Color(0xFF157347);
+        break;
+      case 'pending_review':
+        backgroundColor = const Color(0xFFFFF7E5);
+        borderColor = const Color(0xFFF2C56B);
+        textColor = const Color(0xFFAF6A00);
+        break;
+      case 'not_passed':
+        backgroundColor = const Color(0xFFFFF0F0);
+        borderColor = const Color(0xFFFFB3B3);
+        textColor = const Color(0xFFB42318);
+        break;
+      default:
+        backgroundColor = Colors.white.withValues(alpha: 0.74);
+        borderColor = const Color(0xFFD5E6FF);
+        textColor = AppPalette.navy;
+        break;
+    }
+
+    final label = status == 'passed'
+        ? '$taskCode · ${scorePercent.toStringAsFixed(0)}%'
+        : status == 'pending_review'
+        ? '$taskCode · Pending'
+        : taskCode;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: textColor,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
