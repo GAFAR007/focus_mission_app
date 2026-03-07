@@ -224,32 +224,46 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Create Student Or Teacher',
+                        _createRole == 'student'
+                            ? 'Add New Student'
+                            : 'Add New Teacher',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Management can create new student and teacher accounts from here.',
+                        _createRole == 'student'
+                            ? 'Create a student account and add that learner to management immediately.'
+                            : 'Create a teacher account with a subject specialty.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppPalette.textMuted,
                         ),
                       ),
                       const SizedBox(height: AppSpacing.compact),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
+                      Text(
+                        'Account type',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
                         children: [
-                          _CreateRoleChip(
-                            label: 'Student',
-                            selected: _createRole == 'student',
-                            onTap: () =>
-                                setState(() => _createRole = 'student'),
+                          Expanded(
+                            child: _CreateRoleChip(
+                              label: 'Student',
+                              icon: Icons.school_rounded,
+                              selected: _createRole == 'student',
+                              onTap: () =>
+                                  setState(() => _createRole = 'student'),
+                            ),
                           ),
-                          _CreateRoleChip(
-                            label: 'Teacher',
-                            selected: _createRole == 'teacher',
-                            onTap: () =>
-                                setState(() => _createRole = 'teacher'),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _CreateRoleChip(
+                              label: 'Teacher',
+                              icon: Icons.menu_book_rounded,
+                              selected: _createRole == 'teacher',
+                              onTap: () =>
+                                  setState(() => _createRole = 'teacher'),
+                            ),
                           ),
                         ],
                       ),
@@ -925,11 +939,13 @@ class _SubjectFilterChip extends StatelessWidget {
 class _CreateRoleChip extends StatelessWidget {
   const _CreateRoleChip({
     required this.label,
+    required this.icon,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
+  final IconData icon;
   final bool selected;
   final VoidCallback onTap;
 
@@ -939,21 +955,34 @@ class _CreateRoleChip extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
       child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          gradient: selected
-              ? const LinearGradient(
-                  colors: [AppPalette.sun, AppPalette.orange],
-                )
-              : null,
-          color: selected ? null : Colors.white.withValues(alpha: 0.78),
+          color: selected
+              ? const Color(0xFFFFE2B8)
+              : Colors.white.withValues(alpha: 0.86),
           borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: selected ? Colors.white : AppPalette.navy,
+          border: Border.all(
+            color: selected ? AppPalette.orange : AppPalette.sky,
+            width: selected ? 2 : 1,
           ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? AppPalette.orange : AppPalette.textMuted,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppPalette.navy,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ],
         ),
       ),
     );
