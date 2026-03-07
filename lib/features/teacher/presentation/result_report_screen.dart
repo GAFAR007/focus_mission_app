@@ -347,6 +347,37 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     return parsed;
   }
 
+  void _setTheoryScoreValue(int questionIndex, int score) {
+    final controller = _theoryScoreControllers[questionIndex];
+    if (controller == null) {
+      return;
+    }
+
+    final normalizedScore = score.clamp(0, 100);
+    controller.text = normalizedScore.toString();
+    setState(() {});
+  }
+
+  void _adjustTheoryScoreValue(int questionIndex, int delta) {
+    final controller = _theoryScoreControllers[questionIndex];
+    if (controller == null) {
+      return;
+    }
+
+    final currentScore = _parseTheoryScore(controller.text) ?? 70;
+    _setTheoryScoreValue(questionIndex, currentScore + delta);
+  }
+
+  void _clearTheoryScoreValue(int questionIndex) {
+    final controller = _theoryScoreControllers[questionIndex];
+    if (controller == null) {
+      return;
+    }
+
+    controller.clear();
+    setState(() {});
+  }
+
   bool _allTheoryScoresValid(ResultPackageData resultPackage) {
     final questions = _theoryQuestions(resultPackage);
     if (questions.isEmpty) {
@@ -603,6 +634,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
             final feedbackController = _theoryFeedbackControllers[index]!;
             final currentScore = _parseTheoryScore(scoreController.text);
             final showsPassLevel = currentScore != null && currentScore >= 70;
+            final displayScore = currentScore ?? 70;
 
             return Container(
               width: double.infinity,
@@ -745,13 +777,158 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: scoreController,
-                    keyboardType: TextInputType.number,
-                    onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
-                      labelText: 'Teacher score (/100)',
-                      hintText: 'Examples: 60, 75, 100',
+                  Row(
+                    children: [
+                      Text(
+                        'Teacher score (/100)',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: currentScore == null
+                            ? null
+                            : () => _clearTheoryScoreValue(index),
+                        child: const Text('Clear'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [40, 55, 70, 85, 100]
+                        .map((score) {
+                          final selected = currentScore == score;
+                          return InkWell(
+                            onTap: () => _setTheoryScoreValue(index, score),
+                            borderRadius: BorderRadius.circular(999),
+                            child: Ink(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? AppPalette.primaryBlue.withValues(
+                                        alpha: 0.14,
+                                      )
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: selected
+                                      ? AppPalette.primaryBlue
+                                      : const Color(0xFFD9E7FF),
+                                ),
+                              ),
+                              child: Text(
+                                '$score',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: selected
+                                          ? AppPalette.primaryBlue
+                                          : AppPalette.navy,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                            ),
+                          );
+                        })
+                        .toList(growable: false),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FBFF),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFD9E7FF)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            FilledButton.tonalIcon(
+                              onPressed: () =>
+                                  _adjustTheoryScoreValue(index, -5),
+                              icon: const Icon(Icons.remove_rounded),
+                              label: const Text('5'),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    currentScore == null
+                                        ? 'Score not set yet'
+                                        : '$displayScore / 100',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          color: AppPalette.navy,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    currentScore == null
+                                        ? 'Tap a preset or move the slider to set the score.'
+                                        : showsPassLevel
+                                        ? 'Pass-level answer for this question'
+                                        : 'Below pass-level for this question',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: currentScore == null
+                                              ? AppPalette.textMuted
+                                              : showsPassLevel
+                                              ? AppPalette.mint
+                                              : const Color(0xFFB42318),
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            FilledButton.tonalIcon(
+                              onPressed: () =>
+                                  _adjustTheoryScoreValue(index, 5),
+                              icon: const Icon(Icons.add_rounded),
+                              label: const Text('5'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            activeTrackColor: AppPalette.primaryBlue,
+                            inactiveTrackColor: Colors.white.withValues(
+                              alpha: 0.82,
+                            ),
+                            thumbColor: AppPalette.aqua,
+                            overlayColor: AppPalette.primaryBlue.withValues(
+                              alpha: 0.12,
+                            ),
+                            valueIndicatorColor: AppPalette.primaryBlue,
+                          ),
+                          child: Slider(
+                            min: 0,
+                            max: 100,
+                            divisions: 100,
+                            value: displayScore.toDouble(),
+                            label: '$displayScore',
+                            onChanged: (value) =>
+                                _setTheoryScoreValue(index, value.round()),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 6),
