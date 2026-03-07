@@ -737,10 +737,228 @@ class _EvidencePanel extends StatelessWidget {
               evidence: evidence,
               missionDraftJson: missionDraftJson,
             )
+          else if (format == 'THEORY')
+            _TheoryEvidence(evidence: evidence)
           else
             _QuestionEvidence(evidence: evidence),
         ],
       ),
+    );
+  }
+}
+
+class _TheoryEvidence extends StatelessWidget {
+  const _TheoryEvidence({required this.evidence});
+
+  final Map<String, dynamic> evidence;
+
+  @override
+  Widget build(BuildContext context) {
+    final questions = evidence['questions'] as List<dynamic>? ?? const [];
+    final triesToComplete = _asIntValue(
+      evidence['triesToComplete'] ?? evidence['completionAttemptNumber'],
+    );
+    final questionsAnsweredCount = _asIntValue(
+      evidence['questionsAnsweredCount'],
+    );
+    final completedResponsesCount = _asIntValue(
+      evidence['completedResponsesCount'],
+    );
+
+    if (questions.isEmpty) {
+      return const Text('No theory evidence available.');
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.item),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFFFBF1), Color(0xFFE9F4FF)],
+            ),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            border: Border.all(color: AppPalette.sky.withValues(alpha: 0.5)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Summary', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 6),
+              Text(
+                'Tries to complete: ${triesToComplete <= 0 ? 1 : triesToComplete}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Text(
+                'Questions answered: $questionsAnsweredCount/${questions.length}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Text(
+                'Responses meeting minimum words: $completedResponsesCount/${questions.length}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.compact),
+        ...questions.asMap().entries.map((entry) {
+          final index = entry.key;
+          final question = (entry.value as Map<dynamic, dynamic>)
+              .cast<String, dynamic>();
+          final meetsMinimumWords = question['meetsMinimumWords'] == true;
+          final minimumWordCount = _asIntValue(question['minimumWordCount']);
+          final studentWordCount = _asIntValue(question['studentWordCount']);
+          final studentAnswer = (question['studentAnswer'] ?? '').toString();
+          final learnFirst = (question['learnFirst'] ?? '').toString();
+          final expectedAnswer = (question['expectedAnswer'] ?? '').toString();
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.item),
+              decoration: BoxDecoration(
+                color: meetsMinimumWords
+                    ? const Color(0xFFF1FBF4)
+                    : const Color(0xFFFFF7EF),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(
+                  color: meetsMinimumWords
+                      ? AppPalette.mint.withValues(alpha: 0.75)
+                      : AppPalette.orange.withValues(alpha: 0.55),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Theory ${index + 1}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: meetsMinimumWords
+                              ? AppPalette.mint.withValues(alpha: 0.3)
+                              : AppPalette.sun.withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          meetsMinimumWords
+                              ? 'Minimum met'
+                              : 'Needs more detail',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppPalette.navy,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '$studentWordCount / $minimumWordCount words',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    (question['questionText'] ?? '').toString(),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppPalette.navy,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (learnFirst.trim().isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Learn First',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppPalette.textMuted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            learnFirst,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppPalette.navy),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (expectedAnswer.trim().isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'Expected answer',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      expectedAnswer,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.mint.withValues(alpha: 0.95),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Text(
+                    'Student answer',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      studentAnswer.trim().isEmpty
+                          ? 'No written answer recorded.'
+                          : studentAnswer,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
     );
   }
 }

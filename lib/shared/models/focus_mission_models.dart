@@ -402,41 +402,62 @@ class StudentSummary {
 class MissionQuestion {
   const MissionQuestion({
     required this.id,
+    required this.answerMode,
     required this.learningText,
     required this.prompt,
     required this.options,
     required this.correctIndex,
     required this.explanation,
+    required this.expectedAnswer,
+    required this.minWordCount,
   });
 
   final String id;
+  final String answerMode;
   final String learningText;
   final String prompt;
   final List<String> options;
   final int correctIndex;
   final String explanation;
+  final String expectedAnswer;
+  final int minWordCount;
+
+  bool get isShortAnswerTheory => answerMode == 'short_answer';
 
   MissionQuestion copyWith({
     String? id,
+    String? answerMode,
     String? learningText,
     String? prompt,
     List<String>? options,
     int? correctIndex,
     String? explanation,
+    String? expectedAnswer,
+    int? minWordCount,
   }) {
     return MissionQuestion(
       id: id ?? this.id,
+      answerMode: answerMode ?? this.answerMode,
       learningText: learningText ?? this.learningText,
       prompt: prompt ?? this.prompt,
       options: options ?? this.options,
       correctIndex: correctIndex ?? this.correctIndex,
       explanation: explanation ?? this.explanation,
+      expectedAnswer: expectedAnswer ?? this.expectedAnswer,
+      minWordCount: minWordCount ?? this.minWordCount,
     );
   }
 
   factory MissionQuestion.fromJson(Map<String, dynamic> json) {
+    final answerMode = (json['answerMode'] ?? '').toString().trim();
     return MissionQuestion(
       id: (json['id'] ?? json['_id'] ?? '').toString(),
+      answerMode: answerMode.isNotEmpty
+          ? answerMode
+          : ((json['draftFormat'] ?? '').toString().trim().toUpperCase() ==
+                    'THEORY'
+                ? 'short_answer'
+                : 'multiple_choice'),
       learningText:
           (json['learningText'] ??
                   json['lessonText'] ??
@@ -447,6 +468,9 @@ class MissionQuestion {
       options: _asStringList(json['options']),
       correctIndex: _asInt(json['correctIndex']),
       explanation: (json['explanation'] ?? '').toString(),
+      expectedAnswer: (json['expectedAnswer'] ?? json['explanation'] ?? '')
+          .toString(),
+      minWordCount: _asInt(json['minWordCount']),
     );
   }
 }

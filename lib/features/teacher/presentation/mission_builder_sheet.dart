@@ -13,6 +13,7 @@
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -86,6 +87,8 @@ class _MissionBuilderSheet extends StatefulWidget {
 class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   static const int _assessmentQuestionCount = 10;
   static const int _assessmentXpReward = 50;
+  static const int _theoryQuestionCountMin = 2;
+  static const int _theoryQuestionCountMax = 5;
   static const List<String> _taskCodeOptions = [
     'P1',
     'P2',
@@ -135,11 +138,12 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   bool get _isAssessmentMode => _questionCount == _assessmentQuestionCount;
   bool get _isAssessmentPublishLocked =>
       _isAssessmentMode && _selectedTaskCodes.isEmpty;
+  bool get _isTheoryDraft => _draftFormat == 'THEORY';
+  bool get _usesFixedXpReward =>
+      _isAssessmentMode || _isTheoryDraft || _draftFormat == 'ESSAY_BUILDER';
   String get _effectiveDifficulty => _isAssessmentMode ? 'hard' : _difficulty;
   int get _effectiveXpReward =>
-      _isAssessmentMode || _draftFormat == 'ESSAY_BUILDER'
-      ? _assessmentXpReward
-      : _xpReward;
+      _usesFixedXpReward ? _assessmentXpReward : _xpReward;
 
   @override
   void initState() {
@@ -230,7 +234,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 const SizedBox(height: AppSpacing.item),
                 Text(
                   !_hasDraft
-                      ? 'Paste the unit text and Groq will draft calm, SEN-friendly questions for ${widget.student.name}. You review the draft before the mission goes live.'
+                      ? _isTheoryDraft
+                            ? 'Upload a doc or scan and Groq will draft a fast-focus theory check for ${widget.student.name}. You set 2 to 5 questions, then review the draft before it goes live.'
+                            : 'Paste the unit text and Groq will draft calm, SEN-friendly questions for ${widget.student.name}. You review the draft before the mission goes live.'
                       : _isPublishedMission
                       ? 'This mission is already live. Update the wording, answers, or teacher note here, then save the changes.'
                       : 'The student cannot begin this mission until you publish it. Review the draft, tune the questions, and then publish when it is ready.',
@@ -473,14 +479,21 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               label: 'Questions',
               selected: _draftFormat == 'QUESTIONS',
               onTap: canEditDraftFormat
-                  ? () => setState(() => _draftFormat = 'QUESTIONS')
+                  ? () => _setDraftFormat('QUESTIONS')
+                  : null,
+            ),
+            _CountChip(
+              label: 'Theory',
+              selected: _draftFormat == 'THEORY',
+              onTap: canEditDraftFormat
+                  ? () => _setDraftFormat('THEORY')
                   : null,
             ),
             _CountChip(
               label: 'Essay (A/B/C/D)',
               selected: _draftFormat == 'ESSAY_BUILDER',
               onTap: canEditDraftFormat
-                  ? () => setState(() => _draftFormat = 'ESSAY_BUILDER')
+                  ? () => _setDraftFormat('ESSAY_BUILDER')
                   : null,
             ),
           ],
@@ -491,7 +504,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               ? 'Assessment mode uses questions only.'
               : _hasDraft
               ? 'Draft format locks after generation.'
-              : 'Questions create a standard mission. Essay (A/B/C/D) builds a guided essay with no typing.',
+              : 'Questions create a standard mission. Theory creates a fast-focus doc or scan check with 2 to 5 questions and fixed 50 XP. Essay (A/B/C/D) builds a guided essay with no typing.',
           style: Theme.of(
             context,
           ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -582,6 +595,79 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
             ),
           ],
+        ] else if (_draftFormat == 'THEORY') ...[
+          SoftPanel(
+            colors: const [Color(0xFFF8FBFF), Color(0xFFE8F4FF)],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Fast focus · $_questionCount question${_questionCount == 1 ? '' : 's'}',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Set how many quick theory-check questions Groq should draft from the uploaded or pasted unit text.',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+                ),
+                const SizedBox(height: 12),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: AppPalette.primaryBlue,
+                    inactiveTrackColor: Colors.white.withValues(alpha: 0.78),
+                    thumbColor: AppPalette.aqua,
+                    overlayColor: AppPalette.primaryBlue.withValues(
+                      alpha: 0.12,
+                    ),
+                    valueIndicatorColor: AppPalette.primaryBlue,
+                  ),
+                  child: Slider(
+                    min: _theoryQuestionCountMin.toDouble(),
+                    max: _theoryQuestionCountMax.toDouble(),
+                    divisions:
+                        _theoryQuestionCountMax - _theoryQuestionCountMin,
+                    value: _questionCount.toDouble(),
+                    label: '$_questionCount questions',
+                    onChanged: canEditQuestionCount
+                        ? (value) => setState(() {
+                            // WHY: Theory mode is intentionally capped at a
+                            // short 2 to 5 question range for fast focus.
+                            _questionCount = value.round();
+                          })
+                        : null,
+                  ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '2 questions',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                    Text(
+                      '5 questions',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            !canEditQuestionCount
+                ? 'Question count is locked after generation. Use Add Question or Remove to adjust the saved theory draft within 2 to 5 questions.'
+                : 'Theory keeps a fixed 50 XP reward and uses 2 to 5 fast-focus questions from the scanned unit text.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
         ] else ...[
           Text(
             'Essay builder sentence and blank counts are dynamic and come from the generated draft targets.',
@@ -708,7 +794,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               _CountChip(
                 label: '$value XP',
                 selected: _effectiveXpReward == value,
-                onTap: isAssessmentMode || _draftFormat == 'ESSAY_BUILDER'
+                onTap: _usesFixedXpReward
                     ? null
                     : () => setState(() => _xpReward = value),
               ),
@@ -716,8 +802,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         ),
         const SizedBox(height: 8),
         Text(
-          isAssessmentMode || _draftFormat == 'ESSAY_BUILDER'
-              ? 'Assessment and essay builder drafts use a fixed reward of 50 XP.'
+          _usesFixedXpReward
+              ? 'Assessment, Theory, and essay builder drafts use a fixed reward of 50 XP.'
               : 'Set the mission reward now so the planned XP and the awarded XP stay aligned when the teacher saves the lesson.',
           style: Theme.of(
             context,
@@ -727,7 +813,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         Text('Source file', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
-          'Upload a PDF, Word file, text file, or scanned image. The backend extracts the text, then Groq suggests the unit plan, mission title, questions, and XP.',
+          _isTheoryDraft
+              ? 'Upload a PDF, Word file, text file, or scanned image. The backend scans it into unit text, then Groq drafts a fast-focus theory mission with 2 to 5 questions.'
+              : 'Upload a PDF, Word file, text file, or scanned image. The backend extracts the text, then Groq suggests the unit plan, mission title, questions, and XP.',
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
@@ -899,12 +987,14 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           _buildEssayBuilderPreview(context),
         ] else ...[
           Text(
-            'Draft questions',
+            _draftFormat == 'THEORY' ? 'Theory questions' : 'Draft questions',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
           Text(
-            'Choose the right answer for each question and tighten the wording where needed.',
+            _draftFormat == 'THEORY'
+                ? 'Edit Learn First, the written-response prompt, the expected answer, and the minimum words required per question.'
+                : 'Choose the right answer for each question and tighten the wording where needed.',
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
@@ -914,15 +1004,48 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             _questionEditors.length,
             (index) => Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.item),
-              child: _QuestionEditorCard(
-                index: index,
-                editor: _questionEditors[index],
-                onCorrectIndexChanged: (value) {
-                  setState(() => _questionEditors[index].correctIndex = value);
-                },
-              ),
+              child: _draftFormat == 'THEORY'
+                  ? _TheoryQuestionEditorCard(
+                      index: index,
+                      editor: _questionEditors[index],
+                      canRemove:
+                          _questionEditors.length > _theoryQuestionCountMin,
+                      onRemove: () => _removeTheoryQuestion(index),
+                    )
+                  : _QuestionEditorCard(
+                      index: index,
+                      editor: _questionEditors[index],
+                      onCorrectIndexChanged: (value) {
+                        setState(
+                          () => _questionEditors[index].correctIndex = value,
+                        );
+                      },
+                    ),
             ),
           ),
+          if (_draftFormat == 'THEORY') ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Theory drafts must stay between $_theoryQuestionCountMin and $_theoryQuestionCountMax questions.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                TextButton.icon(
+                  onPressed: _questionEditors.length >= _theoryQuestionCountMax
+                      ? null
+                      : _addTheoryQuestion,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Add Question'),
+                ),
+              ],
+            ),
+          ],
         ],
       ],
     );
@@ -1180,6 +1303,17 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         return;
       }
 
+      if (_draftFormat == 'THEORY' && mission.draftFormat != 'THEORY') {
+        setState(() {
+          // WHY: Surface backend mismatch so teachers know Theory drafts need
+          // the updated backend contract before they can persist this mode.
+          _errorMessage =
+              'Theory draft not returned. Update/redeploy the backend and try again.';
+          _isGenerating = false;
+        });
+        return;
+      }
+
       if (_draftFormat == 'ESSAY_BUILDER' && mission.draftJson == null) {
         setState(() {
           // WHY: Essay drafts rely on draftJson for A/B/C/D sentence building.
@@ -1281,6 +1415,17 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           // WHY: Surface backend mismatch so teachers know essay drafts require the updated API.
           _errorMessage =
               'Essay draft not returned. Update/redeploy the backend and try again.';
+          _isGenerating = false;
+        });
+        return;
+      }
+
+      if (_draftFormat == 'THEORY' && preview.draftFormat != 'THEORY') {
+        setState(() {
+          // WHY: Surface backend mismatch so teachers know Theory drafts need
+          // the updated backend contract before preview regeneration can work.
+          _errorMessage =
+              'Theory draft not returned. Update/redeploy the backend and try again.';
           _isGenerating = false;
         });
         return;
@@ -1486,6 +1631,17 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       return 'The draft needs at least one question before it can be saved.';
     }
 
+    if (_draftFormat == 'THEORY' &&
+        (_questionEditors.length < _theoryQuestionCountMin ||
+            _questionEditors.length > _theoryQuestionCountMax)) {
+      return 'Theory drafts must include between 2 and 5 questions.';
+    }
+
+    if (_draftFormat == 'QUESTIONS' &&
+        !const [5, 8, 10].contains(_questionEditors.length)) {
+      return 'Question drafts must include 5, 8, or 10 questions.';
+    }
+
     for (var index = 0; index < _questionEditors.length; index += 1) {
       final question = _questionEditors[index];
 
@@ -1497,6 +1653,20 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         return 'Question ${index + 1} needs a short teaching note before the question.';
       }
 
+      if (_draftFormat == 'THEORY') {
+        if (question.expectedAnswerController.text.trim().isEmpty) {
+          return 'Theory question ${index + 1} needs an expected answer.';
+        }
+
+        final minWordCount = int.tryParse(
+          question.minWordCountController.text.trim(),
+        );
+        if (minWordCount == null || minWordCount < 1 || minWordCount > 500) {
+          return 'Theory question ${index + 1} needs a minimum word count between 1 and 500.';
+        }
+        continue;
+      }
+
       if (question.optionControllers.any(
         (controller) => controller.text.trim().isEmpty,
       )) {
@@ -1505,6 +1675,37 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     }
 
     return null;
+  }
+
+  void _addTheoryQuestion() {
+    if (_questionEditors.length >= _theoryQuestionCountMax) {
+      return;
+    }
+
+    setState(() {
+      // WHY: Theory stays intentionally short, so add-question is capped to the
+      // fixed 2 to 5 range even after the draft has been generated.
+      _questionEditors = [
+        ..._questionEditors,
+        _EditableQuestionController.emptyTheory(),
+      ];
+      _questionCount = _questionEditors.length;
+    });
+  }
+
+  void _removeTheoryQuestion(int index) {
+    if (_questionEditors.length <= _theoryQuestionCountMin) {
+      return;
+    }
+
+    final nextEditors = [..._questionEditors];
+    final removed = nextEditors.removeAt(index);
+    removed.dispose();
+
+    setState(() {
+      _questionEditors = nextEditors;
+      _questionCount = _questionEditors.length;
+    });
   }
 
   Future<void> _openEssayLearnFirstEditor({
@@ -2079,7 +2280,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         if (!_hasDraft) {
           _titleController.text = extracted.unitPlan.suggestedMissionTitle;
           _teacherNoteController.text = extracted.unitPlan.suggestedTeacherNote;
-          _questionCount = extracted.unitPlan.suggestedQuestionCount;
+          _questionCount = _normalizedQuestionCountForDraftFormat(
+            extracted.unitPlan.suggestedQuestionCount,
+          );
           _applyAssessmentModeDefaultsIfNeeded();
         }
       });
@@ -2167,7 +2370,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               ? mission.essayBuilderDraft!.mode.trim().toUpperCase()
               : 'NORMAL');
     _xpReward = mission.xpReward <= 0
-        ? (_draftFormat == 'ESSAY_BUILDER' ? _assessmentXpReward : 20)
+        ? ((_draftFormat == 'ESSAY_BUILDER' || _draftFormat == 'THEORY')
+              ? _assessmentXpReward
+              : 20)
         : mission.xpReward;
     _selectedTaskCodes = mission.taskCodes
         .map((code) => code.trim().toUpperCase())
@@ -2176,17 +2381,66 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         .toList(growable: false);
     _questionCount = mission.draftFormat == 'ESSAY_BUILDER'
         ? (mission.questionCount > 0 ? mission.questionCount : 10)
-        : (mission.questions.isEmpty
-              ? _questionCount
-              : mission.questions.length);
+        : _normalizedQuestionCountForDraftFormat(
+            mission.questions.isEmpty
+                ? (mission.questionCount > 0
+                      ? mission.questionCount
+                      : _questionCount)
+                : mission.questions.length,
+            draftFormat: _draftFormat,
+          );
     _applyAssessmentModeDefaultsIfNeeded();
     _questionEditors = mission.questions
         .map(_EditableQuestionController.fromMissionQuestion)
         .toList(growable: false);
   }
 
+  int _normalizedQuestionCountForDraftFormat(
+    int questionCount, {
+    String? draftFormat,
+  }) {
+    final format = (draftFormat ?? _draftFormat).trim().toUpperCase();
+
+    if (format == 'THEORY') {
+      if (questionCount <= 0) {
+        return _theoryQuestionCountMin;
+      }
+      final clamped = questionCount.clamp(
+        _theoryQuestionCountMin,
+        _theoryQuestionCountMax,
+      );
+      return clamped.toInt();
+    }
+
+    if (format == 'QUESTIONS') {
+      return const [5, 8, 10].contains(questionCount) ? questionCount : 5;
+    }
+
+    return questionCount > 0 ? questionCount : 5;
+  }
+
+  void _setDraftFormat(String draftFormat) {
+    final normalized = draftFormat.trim().toUpperCase();
+
+    setState(() {
+      _draftFormat = normalized;
+      _questionCount = _normalizedQuestionCountForDraftFormat(
+        _questionCount,
+        draftFormat: normalized,
+      );
+
+      if (normalized == 'THEORY') {
+        // WHY: Fast-focus theory always uses the fixed 50 XP contract even if
+        // the teacher switches from a custom-XP question draft.
+        _xpReward = _assessmentXpReward;
+      }
+
+      _applyAssessmentModeDefaultsIfNeeded();
+    });
+  }
+
   void _applyAssessmentModeDefaultsIfNeeded() {
-    if (_draftFormat == 'ESSAY_BUILDER') {
+    if (_draftFormat == 'ESSAY_BUILDER' || _draftFormat == 'THEORY') {
       return;
     }
 
@@ -3006,33 +3260,71 @@ class _UnitPlanDraftCard extends StatelessWidget {
 }
 
 class _EditableQuestionController {
+  _EditableQuestionController.emptyTheory()
+    : answerMode = 'short_answer',
+      learningTextController = TextEditingController(),
+      promptController = TextEditingController(),
+      explanationController = TextEditingController(),
+      expectedAnswerController = TextEditingController(),
+      minWordCountController = TextEditingController(text: '12'),
+      optionControllers = List.generate(
+        4,
+        (_) => TextEditingController(),
+        growable: false,
+      ),
+      correctIndex = 0;
+
   _EditableQuestionController.fromMissionQuestion(MissionQuestion question)
-    : learningTextController = TextEditingController(
+    : answerMode = question.answerMode.trim().isEmpty
+          ? (question.isShortAnswerTheory ? 'short_answer' : 'multiple_choice')
+          : question.answerMode.trim(),
+      learningTextController = TextEditingController(
         text: question.learningText,
       ),
       promptController = TextEditingController(text: question.prompt),
       explanationController = TextEditingController(text: question.explanation),
-      optionControllers = question.options
-          .map((option) => TextEditingController(text: option))
-          .toList(growable: false),
+      expectedAnswerController = TextEditingController(
+        text: question.expectedAnswer,
+      ),
+      minWordCountController = TextEditingController(
+        text: '${question.minWordCount > 0 ? question.minWordCount : 12}',
+      ),
+      optionControllers = List.generate(
+        4,
+        (index) => TextEditingController(
+          text: index < question.options.length ? question.options[index] : '',
+        ),
+        growable: false,
+      ),
       correctIndex = question.correctIndex.clamp(0, 3);
 
+  final String answerMode;
   final TextEditingController learningTextController;
   final TextEditingController promptController;
   final TextEditingController explanationController;
+  final TextEditingController expectedAnswerController;
+  final TextEditingController minWordCountController;
   final List<TextEditingController> optionControllers;
   int correctIndex;
 
+  bool get isTheoryShortAnswer => answerMode == 'short_answer';
+
   MissionQuestion toMissionQuestion() {
+    final minWordCount = int.tryParse(minWordCountController.text.trim()) ?? 0;
     return MissionQuestion(
       id: '',
+      answerMode: answerMode,
       learningText: learningTextController.text.trim(),
       prompt: promptController.text.trim(),
-      options: optionControllers
-          .map((controller) => controller.text.trim())
-          .toList(growable: false),
-      correctIndex: correctIndex,
+      options: isTheoryShortAnswer
+          ? const []
+          : optionControllers
+                .map((controller) => controller.text.trim())
+                .toList(growable: false),
+      correctIndex: isTheoryShortAnswer ? -1 : correctIndex,
       explanation: explanationController.text.trim(),
+      expectedAnswer: expectedAnswerController.text.trim(),
+      minWordCount: isTheoryShortAnswer ? minWordCount : 0,
     );
   }
 
@@ -3040,6 +3332,8 @@ class _EditableQuestionController {
     learningTextController.dispose();
     promptController.dispose();
     explanationController.dispose();
+    expectedAnswerController.dispose();
+    minWordCountController.dispose();
     for (final controller in optionControllers) {
       controller.dispose();
     }
@@ -3158,6 +3452,126 @@ class _QuestionEditorCard extends StatelessWidget {
             decoration: const InputDecoration(
               hintText: 'Explain why the correct answer is right.',
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TheoryQuestionEditorCard extends StatelessWidget {
+  const _TheoryQuestionEditorCard({
+    required this.index,
+    required this.editor,
+    required this.canRemove,
+    required this.onRemove,
+  });
+
+  final int index;
+  final _EditableQuestionController editor;
+  final bool canRemove;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftPanel(
+      colors: const [Color(0xFFFFFEFB), Color(0xFFFFF2D8)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppPalette.sun, AppPalette.orange],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Center(
+                  child: Text(
+                    '${index + 1}',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleSmall?.copyWith(color: Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Theory question ${index + 1}',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              if (canRemove)
+                TextButton.icon(
+                  onPressed: onRemove,
+                  icon: const Icon(Icons.remove_circle_outline_rounded),
+                  label: const Text('Remove'),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.item),
+          TextField(
+            controller: editor.learningTextController,
+            minLines: 4,
+            maxLines: 6,
+            decoration: const InputDecoration(
+              hintText:
+                  'LEARN FIRST: teach the exact idea, clue, and success criteria the student should use before writing.',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.item),
+          TextField(
+            controller: editor.promptController,
+            minLines: 2,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              hintText: 'Write the short-answer theory question prompt.',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.item),
+          TextField(
+            controller: editor.expectedAnswerController,
+            minLines: 3,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              hintText:
+                  'Write the teacher expected answer or key answer points for review and reporting.',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.item),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: editor.minWordCountController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    hintText: 'Minimum words',
+                    labelText: 'Minimum words',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: editor.explanationController,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    hintText:
+                        'Optional teacher note explaining what a strong response should include.',
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

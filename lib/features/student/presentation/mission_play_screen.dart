@@ -62,10 +62,14 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   int _currentIndex = 0;
   final Map<int, int> _answers = <int, int>{};
   final Map<int, int> _selectedOptions = <int, int>{};
+  final Map<int, TextEditingController> _theoryAnswerControllers =
+      <int, TextEditingController>{};
+  final Map<int, String> _theorySubmittedAnswers = <int, String>{};
   EssayBuilderDraft? _essayDraft;
   final Map<String, String> _essaySelections = <String, String>{};
   final List<String> _essaySentences = <String>[];
   bool _showQuestionStage = true;
+  bool _showTheorySource = false;
   bool _isSubmitting = false;
   CompleteMissionResult? _completedResult;
   String? _errorMessage;
@@ -81,6 +85,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
   MissionPayload get _mission => widget.startedMission.mission;
   bool get _isEssayBuilderMission => _essayDraft != null;
+  bool get _isTheoryMission => _mission.draftFormat == 'THEORY';
 
   int get _essayTotalCount {
     final draft = _essayDraft;
@@ -135,6 +140,27 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       return 0;
     }
     return _essaySubmissionText
+        .split(RegExp(r'\s+'))
+        .where((word) => word.trim().isNotEmpty)
+        .length;
+  }
+
+  String get _theorySourceText {
+    final rawText = _mission.sourceRawText.trim();
+    if (rawText.isNotEmpty) {
+      return rawText;
+    }
+    return _mission.sourceUnitText.trim();
+  }
+
+  int get _theoryAnsweredCount => _theorySubmittedAnswers.length;
+
+  int _countWords(String value) {
+    if (value.trim().isEmpty) {
+      return 0;
+    }
+    return value
+        .trim()
         .split(RegExp(r'\s+'))
         .where((word) => word.trim().isNotEmpty)
         .length;
@@ -216,6 +242,9 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     _confettiController.dispose();
     _celebrationPlayer?.dispose();
     _essaySubmissionController.dispose();
+    for (final controller in _theoryAnswerControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -227,6 +256,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
             ? _buildSummary(context)
             : _isEssayBuilderMission
             ? _buildEssayBuilder(context)
+            : _isTheoryMission
+            ? _buildTheoryMission(context)
             : _buildQuiz(context),
       ),
     );
@@ -514,6 +545,442 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     );
   }
 
+  TextEditingController _theoryAnswerControllerFor(int index) {
+    return _theoryAnswerControllers.putIfAbsent(
+      index,
+      () => TextEditingController(text: _theorySubmittedAnswers[index] ?? ''),
+    );
+  }
+
+  Widget _buildTheoryMission(BuildContext context) {
+    if (_mission.questions.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.screen),
+          child: SoftPanel(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'No theory questions are ready yet',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpacing.item),
+                Text(
+                  'Ask your teacher to generate or add theory questions first.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final question = _mission.questions[_currentIndex];
+    final answerLocked = _theorySubmittedAnswers.containsKey(_currentIndex);
+    final learnStageOnly = _isLearnStage(question);
+    final progress = _progressFor(question);
+    final controller = _theoryAnswerControllerFor(_currentIndex);
+    final currentAnswer = answerLocked
+        ? (_theorySubmittedAnswers[_currentIndex] ?? '')
+        : controller.text.trim();
+    final minimumWords = question.minWordCount > 0 ? question.minWordCount : 12;
+    final wordCount = _countWords(currentAnswer);
+    final hasSourceText = _theorySourceText.isNotEmpty;
+    final showSourceBody = _showTheorySource && hasSourceText;
+
+    return Stack(
+      children: [
+        SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.screen),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _RoundButton(
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      _mission.title,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  const _TagPill(label: 'Theory'),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.section),
+              SoftPanel(
+                colors: const [Color(0xFFF6FCFF), Color(0xFFE4F3FF)],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _StatPill(
+                          label: learnStageOnly
+                              ? 'Learn ${_currentIndex + 1} of ${_mission.questions.length}'
+                              : 'Theory ${_currentIndex + 1} of ${_mission.questions.length}',
+                        ),
+                        _StatPill(label: _mission.subject?.name ?? 'Mission'),
+                        _StatPill(label: '$_theoryAnsweredCount submitted'),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.item),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: Stack(
+                        children: [
+                          Container(
+                            height: 12,
+                            width: double.infinity,
+                            color: Colors.white.withValues(alpha: 0.72),
+                          ),
+                          AnimatedFractionallySizedBox(
+                            duration: const Duration(milliseconds: 420),
+                            curve: Curves.easeOutCubic,
+                            widthFactor: progress,
+                            child: Container(
+                              height: 12,
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: AppPalette.progressGradient,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_mission.teacherNote.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.item),
+                      Text(
+                        _mission.teacherNote,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.item),
+              SoftPanel(
+                colors: const [Color(0xFFF7FCFF), Color(0xFFE9F4FF)],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            hasSourceText
+                                ? 'Uploaded lesson text'
+                                : 'Lesson source',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: hasSourceText
+                              ? () {
+                                  setState(() {
+                                    _showTheorySource = !_showTheorySource;
+                                  });
+                                }
+                              : null,
+                          icon: Icon(
+                            showSourceBody
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded,
+                          ),
+                          label: Text(showSourceBody ? 'Hide' : 'Open'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _mission.sourceFileName.trim().isNotEmpty
+                          ? _mission.sourceFileName
+                          : 'The teacher uploaded lesson text for this theory mission.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                    if (showSourceBody) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(AppSpacing.item),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Text(
+                          _theorySourceText,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.section),
+              SoftPanel(
+                colors: const [Color(0xFFFFFEFB), Color(0xFFFFF2D8)],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (learnStageOnly) ...[
+                      _LearningPanel(
+                        text: question.learningText,
+                        questionIndex: _currentIndex + 1,
+                      ),
+                      const SizedBox(height: AppSpacing.section),
+                      SoftPanel(
+                        colors: const [Color(0xFFF8FCFF), Color(0xFFEAF6FF)],
+                        child: Text(
+                          'Read the Learn First guidance, then continue to the writing question.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                      ),
+                    ] else ...[
+                      if (question.learningText.trim().isNotEmpty) ...[
+                        _LearningPanel(
+                          text: question.learningText,
+                          questionIndex: _currentIndex + 1,
+                        ),
+                        const SizedBox(height: AppSpacing.section),
+                      ],
+                      Text(
+                        question.prompt,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Write at least $minimumWords words for this answer.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.item),
+                      Shortcuts(
+                        shortcuts: const <ShortcutActivator, Intent>{
+                          SingleActivator(
+                            LogicalKeyboardKey.keyV,
+                            control: true,
+                          ): DoNothingAndStopPropagationIntent(),
+                          SingleActivator(LogicalKeyboardKey.keyV, meta: true):
+                              DoNothingAndStopPropagationIntent(),
+                          SingleActivator(
+                            LogicalKeyboardKey.insert,
+                            shift: true,
+                          ): DoNothingAndStopPropagationIntent(),
+                        },
+                        child: TextField(
+                          controller: controller,
+                          minLines: 5,
+                          maxLines: 8,
+                          enabled: !answerLocked,
+                          enableInteractiveSelection: false,
+                          onChanged: (_) {
+                            setState(() {
+                              _errorMessage = null;
+                            });
+                          },
+                          decoration: InputDecoration(
+                            hintText:
+                                'Write your answer here using the lesson text and Learn First notes.',
+                            filled: true,
+                            fillColor: const Color(0xFFFFFFFF),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: const BorderSide(
+                                color: Color(0xFFD7E2F3),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: const BorderSide(
+                                color: AppPalette.primaryBlue,
+                                width: 1.4,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Words: $wordCount / $minimumWords',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: wordCount >= minimumWords
+                              ? AppPalette.aqua
+                              : AppPalette.orange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.item),
+                      GradientButton(
+                        label: answerLocked ? 'Answer Saved' : 'Submit Answer',
+                        colors: answerLocked
+                            ? const [Color(0xFFD7DDEA), Color(0xFFC7D2E7)]
+                            : AppPalette.teacherGradient,
+                        onPressed: answerLocked || _isSubmitting
+                            ? () {}
+                            : _submitTheoryAnswer,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  colors: const [Color(0xFFFFF4F4), Color(0xFFFFE0E0)],
+                  child: Text(
+                    _errorMessage!,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ],
+              AnimatedSlide(
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutBack,
+                offset: _showXpPulse ? Offset.zero : const Offset(0, 0.2),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 240),
+                  opacity: _showXpPulse ? 1 : 0,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.item),
+                    child: _XpPulsePill(
+                      label: _xpPulsePositive
+                          ? 'Answer saved. Keep building.'
+                          : 'Add a bit more detail and retry.',
+                      positive: _xpPulsePositive,
+                    ),
+                  ),
+                ),
+              ),
+              if (learnStageOnly || answerLocked) ...[
+                const SizedBox(height: AppSpacing.section),
+                GradientButton(
+                  label: learnStageOnly
+                      ? 'Continue to Question'
+                      : _currentIndex == _mission.questions.length - 1
+                      ? (_isSubmitting ? 'Saving Mission...' : 'Finish Mission')
+                      : 'Next Question',
+                  colors:
+                      answerLocked &&
+                          _currentIndex == _mission.questions.length - 1
+                      ? const [AppPalette.primaryBlue, AppPalette.sun]
+                      : AppPalette.progressGradient,
+                  onPressed: learnStageOnly
+                      ? () {
+                          setState(() {
+                            _showQuestionStage = true;
+                            _errorMessage = null;
+                          });
+                        }
+                      : _currentIndex == _mission.questions.length - 1
+                      ? (_isSubmitting ? () {} : _completeMission)
+                      : () {
+                          setState(() {
+                            _moveToQuestion(_currentIndex + 1);
+                            _errorMessage = null;
+                          });
+                        },
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (_confettiParticles.isNotEmpty)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _ConfettiBurstPainter(
+                  particles: _confettiParticles,
+                  sparks: _fireworkSparks,
+                  progress: Curves.easeOutQuart.transform(
+                    _confettiController.value,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _submitTheoryAnswer() {
+    final question = _mission.questions[_currentIndex];
+    final controller = _theoryAnswerControllerFor(_currentIndex);
+    final answerText = controller.text.trim();
+    final minimumWords = question.minWordCount > 0 ? question.minWordCount : 12;
+    final wordCount = _countWords(answerText);
+
+    if (answerText.isEmpty) {
+      setState(() {
+        _errorMessage =
+            'Write your answer before you submit this theory question.';
+        _xpPulsePositive = false;
+        _showXpPulse = false;
+      });
+      return;
+    }
+
+    if (wordCount < minimumWords) {
+      setState(() {
+        // WHY: Theory responses must meet the teacher-set word minimum before
+        // the student can lock that question and move to the next one.
+        _errorMessage =
+            'Add more detail. This answer needs at least $minimumWords words.';
+        _showXpPulse = true;
+        _xpPulsePositive = false;
+        _xpPulseValue = 0;
+      });
+      _xpPulseTimer?.cancel();
+      _xpPulseTimer = Timer(const Duration(milliseconds: 1300), () {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _showXpPulse = false;
+        });
+      });
+      return;
+    }
+
+    _xpPulseTimer?.cancel();
+    _triggerConfettiBurst(success: true);
+    setState(() {
+      _theorySubmittedAnswers[_currentIndex] = answerText;
+      _errorMessage = null;
+      _showXpPulse = true;
+      _xpPulsePositive = true;
+      _xpPulseValue = _previewXpForAnswer(true);
+    });
+
+    _xpPulseTimer = Timer(const Duration(milliseconds: 1300), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _showXpPulse = false;
+      });
+    });
+  }
+
   Widget _buildEssayBuilder(BuildContext context) {
     final draft = _essayDraft;
     if (draft == null) {
@@ -787,10 +1254,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                             LogicalKeyboardKey.keyV,
                             control: true,
                           ): DoNothingAndStopPropagationIntent(),
-                          SingleActivator(
-                            LogicalKeyboardKey.keyV,
-                            meta: true,
-                          ): DoNothingAndStopPropagationIntent(),
+                          SingleActivator(LogicalKeyboardKey.keyV, meta: true):
+                              DoNothingAndStopPropagationIntent(),
                           SingleActivator(
                             LogicalKeyboardKey.insert,
                             shift: true,
@@ -889,12 +1354,18 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     }
     final total = _isEssayBuilderMission
         ? _essayTotalCount
+        : _isTheoryMission
+        ? _mission.questions.length
         : _mission.questions.length;
     final correct = _isEssayBuilderMission
         ? _essaySentences.length
+        : _isTheoryMission
+        ? _theoryAnsweredCount
         : _correctAnswers();
     final focusScore = _isEssayBuilderMission
         ? _essayFocusScore()
+        : _isTheoryMission
+        ? _theoryFocusScore()
         : _focusScore();
     final fallbackEarnedXp = total >= 10
         ? ((50 * focusScore) / 100).round()
@@ -928,7 +1399,11 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                   runSpacing: 12,
                   children: [
                     _SummaryChip(
-                      label: _isEssayBuilderMission ? 'Completed' : 'Correct',
+                      label: _isEssayBuilderMission
+                          ? 'Completed'
+                          : _isTheoryMission
+                          ? 'Answered'
+                          : 'Correct',
                       value: '$correct / $total',
                       colors: AppPalette.studentGradient,
                     ),
@@ -1437,9 +1912,19 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     return ((_essaySentences.length / total) * 100).round();
   }
 
+  int _theoryFocusScore() {
+    if (_mission.questions.isEmpty) {
+      return 0;
+    }
+
+    return ((_theoryAnsweredCount / _mission.questions.length) * 100).round();
+  }
+
   String _behaviourStatus() {
     final focusScore = _isEssayBuilderMission
         ? _essayFocusScore()
+        : _isTheoryMission
+        ? _theoryFocusScore()
         : _focusScore();
 
     if (focusScore >= 80) {
@@ -1711,6 +2196,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
     try {
       final isEssayBuilder = _isEssayBuilderMission;
+      final isTheoryMission = _isTheoryMission;
       final essayDraft = _essayDraft;
       if (isEssayBuilder && essayDraft != null) {
         if (_essaySentences.length < _essayTotalCount) {
@@ -1767,13 +2253,29 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         }
       }
 
+      if (isTheoryMission &&
+          _theorySubmittedAnswers.length < _mission.questions.length) {
+        setState(() {
+          _isSubmitting = false;
+          _errorMessage =
+              'Submit an answer for each theory question before finishing the mission.';
+        });
+        return;
+      }
+
       final completedCount = isEssayBuilder
           ? _essayTotalCount
+          : isTheoryMission
+          ? _mission.questions.length
           : _mission.questions.length;
       final correctCount = isEssayBuilder
           ? _essaySentences.length
+          : isTheoryMission
+          ? _theorySubmittedAnswers.length
           : _correctAnswers();
-      final requiredCorrect = _minimumCorrectForSubmit(completedCount);
+      final requiredCorrect = isTheoryMission
+          ? 0
+          : _minimumCorrectForSubmit(completedCount);
       if (requiredCorrect > 0 && correctCount < requiredCorrect) {
         setState(() {
           _isSubmitting = false;
@@ -1788,7 +2290,11 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       // WHY: XP and focus are awarded only after the full mission is completed,
       // which keeps progress tied to finished work instead of partial attempts.
       debugPrint(
-        'Publishing ${isEssayBuilder ? 'essay builder' : 'multiple choice'} mission: ${_mission.id}',
+        'Publishing ${isEssayBuilder
+            ? 'essay builder'
+            : isTheoryMission
+            ? 'theory'
+            : 'multiple choice'} mission: ${_mission.id}',
       );
       final submitTime = DateTime.now().toUtc().toIso8601String();
       final updatedStudent = await _api.completeStudentMission(
@@ -1797,12 +2303,18 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         subjectId: widget.startedMission.subjectId,
         sessionType: widget.startedMission.sessionType,
         missionId: _mission.id,
-        focusScore: isEssayBuilder ? _essayFocusScore() : _focusScore(),
+        focusScore: isEssayBuilder
+            ? _essayFocusScore()
+            : isTheoryMission
+            ? _theoryFocusScore()
+            : _focusScore(),
         correctAnswers: correctCount,
         completedQuestions: completedCount,
         behaviourStatus: _behaviourStatus(),
         notes: isEssayBuilder
             ? _essayParagraph
+            : isTheoryMission
+            ? '${_mission.title}: ${_theorySubmittedAnswers.length} of ${_mission.questions.length} theory responses submitted.'
             : '${_mission.title}: ${_correctAnswers()} of ${_mission.questions.length} correct.',
         startTime: widget.startedMission.startedAt.trim().isEmpty
             ? null
@@ -1816,7 +2328,11 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       }
 
       debugPrint(
-        'Publish complete for ${isEssayBuilder ? 'essay builder' : 'multiple choice'} mission: ${_mission.id}',
+        'Publish complete for ${isEssayBuilder
+            ? 'essay builder'
+            : isTheoryMission
+            ? 'theory'
+            : 'multiple choice'} mission: ${_mission.id}',
       );
       setState(() => _completedResult = updatedStudent);
       if (updatedStudent.subjectCompletionBonusXp > 0) {
@@ -1885,7 +2401,23 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       return {'essayBuilder': _buildEssayBuilderEvidence()};
     }
 
+    if (_isTheoryMission) {
+      return {'theoryResponses': _buildTheoryResponsesEvidence()};
+    }
+
     return {'questionResponses': _buildQuestionResponsesEvidence()};
+  }
+
+  List<Map<String, dynamic>> _buildTheoryResponsesEvidence() {
+    return _theorySubmittedAnswers.entries
+        .map(
+          (entry) => {
+            'questionIndex': entry.key,
+            'answerText': entry.value,
+            'wordCount': _countWords(entry.value),
+          },
+        )
+        .toList(growable: false);
   }
 
   List<Map<String, dynamic>> _buildQuestionResponsesEvidence() {

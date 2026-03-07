@@ -1023,11 +1023,14 @@ class FocusMissionApi {
         'questions': questions
             .map(
               (question) => {
+                'answerMode': question.answerMode,
                 'prompt': question.prompt,
                 'learningText': question.learningText,
                 'options': question.options,
                 'correctIndex': question.correctIndex,
                 'explanation': question.explanation,
+                'expectedAnswer': question.expectedAnswer,
+                'minWordCount': question.minWordCount,
               },
             )
             .toList(growable: false),
