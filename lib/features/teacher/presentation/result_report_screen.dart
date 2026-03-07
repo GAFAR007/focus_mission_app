@@ -385,6 +385,25 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     return total / count;
   }
 
+  int _draftTheoryScoredCount(ResultPackageData resultPackage) {
+    final questions = _theoryQuestions(resultPackage);
+    if (questions.isEmpty) {
+      return 0;
+    }
+
+    var count = 0;
+    for (var index = 0; index < questions.length; index += 1) {
+      final controller = _theoryScoreControllers[index];
+      final parsed = controller == null
+          ? null
+          : _parseTheoryScore(controller.text);
+      if (parsed != null) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   int _draftTheoryProjectedXp(ResultPackageData resultPackage) {
     final average = _draftTheoryAverage(resultPackage);
     final xpMax = _asIntValue(resultPackage.evidence['xpMax']);
@@ -488,13 +507,15 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     final storedAverage = _asDoubleValue(
       evidence['averageTeacherScorePercent'],
     );
+    final storedXpAwarded = _asIntValue(evidence['xpAwarded']);
     final liveAverage = _draftTheoryAverage(resultPackage);
-    final averageToShow = _allTheoryScoresValid(resultPackage)
-        ? liveAverage
-        : storedAverage;
-    final projectedXp = _allTheoryScoresValid(resultPackage)
+    final scoredCount = _draftTheoryScoredCount(resultPackage);
+    final totalQuestions = questions.length;
+    final hasLiveScores = scoredCount > 0;
+    final averageToShow = hasLiveScores ? liveAverage : storedAverage;
+    final projectedXp = hasLiveScores
         ? _draftTheoryProjectedXp(resultPackage)
-        : _asIntValue(evidence['xpAwarded']);
+        : storedXpAwarded;
     final actionLabel = reviewStatus == 'scored'
         ? 'Update Theory Score'
         : 'Finalize Theory Score';
@@ -551,8 +572,17 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                 label:
                     'Review: ${reviewStatus == 'scored' ? 'Scored' : 'Pending review'}',
               ),
-              _Pill(label: 'Average: ${_formatOneDecimal(averageToShow)}%'),
-              _Pill(label: 'Projected XP: $projectedXp/$safeXpMax'),
+              _Pill(
+                label: hasLiveScores
+                    ? 'Live average: ${_formatOneDecimal(averageToShow)}%'
+                    : 'Average: ${_formatOneDecimal(averageToShow)}%',
+              ),
+              _Pill(label: 'Scored now: $scoredCount/$totalQuestions'),
+              _Pill(
+                label: hasLiveScores
+                    ? 'Live XP: $projectedXp/$safeXpMax'
+                    : 'Projected XP: $projectedXp/$safeXpMax',
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.compact),
