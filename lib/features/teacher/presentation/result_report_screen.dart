@@ -509,10 +509,38 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
           Text('Theory Review', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           Text(
-            'Score each theory answer out of 100. Theory missions keep a fixed $safeXpMax XP budget.',
+            'Score each theory answer using /100, not /10. Theory missions keep a fixed $safeXpMax XP budget, and certification passes when the overall average is 70% or higher.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.item),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              border: Border.all(
+                color: AppPalette.primaryBlue.withValues(alpha: 0.24),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Scoring guide',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Enter scores like 60, 75, or 100. Do not enter 6, 7, or 10. A score of 70 or above shows pass-level quality for that answer, but the final certification decision uses the average across all theory questions.',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.compact),
           Wrap(
@@ -543,6 +571,8 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                 .trim();
             final scoreController = _theoryScoreControllers[index]!;
             final feedbackController = _theoryFeedbackControllers[index]!;
+            final currentScore = _parseTheoryScore(scoreController.text);
+            final showsPassLevel = currentScore != null && currentScore >= 70;
 
             return Container(
               width: double.infinity,
@@ -587,6 +617,33 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                               ),
                         ),
                       ),
+                      if (currentScore != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: showsPassLevel
+                                ? AppPalette.mint.withValues(alpha: 0.18)
+                                : const Color(0xFFFFF0F0),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            showsPassLevel
+                                ? '70+ pass-level answer'
+                                : 'Below 70',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: showsPassLevel
+                                      ? AppPalette.mint
+                                      : const Color(0xFFB42318),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -663,8 +720,15 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                     keyboardType: TextInputType.number,
                     onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(
-                      labelText: 'Teacher score (0-100)',
-                      hintText: 'Enter a score out of 100',
+                      labelText: 'Teacher score (/100)',
+                      hintText: 'Examples: 60, 75, 100',
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Guide: 70+ shows pass-level quality for this answer. Final certification still depends on the average across all theory questions.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
                     ),
                   ),
                   const SizedBox(height: 10),
