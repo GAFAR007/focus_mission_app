@@ -547,6 +547,13 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     final projectedXp = hasLiveScores
         ? _draftTheoryProjectedXp(resultPackage)
         : storedXpAwarded;
+    final meetsAveragePassLevel = averageToShow >= 70;
+    final averagePillBackground = meetsAveragePassLevel
+        ? AppPalette.mint.withValues(alpha: 0.16)
+        : AppPalette.sun.withValues(alpha: 0.26);
+    final averagePillTextColor = meetsAveragePassLevel
+        ? AppPalette.mint
+        : const Color(0xFFB54708);
     final actionLabel = reviewStatus == 'scored'
         ? 'Update Theory Score'
         : 'Finalize Theory Score';
@@ -607,12 +614,16 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                 label: hasLiveScores
                     ? 'Live average: ${_formatOneDecimal(averageToShow)}%'
                     : 'Average: ${_formatOneDecimal(averageToShow)}%',
+                backgroundColor: averagePillBackground,
+                textColor: averagePillTextColor,
               ),
               _Pill(label: 'Scored now: $scoredCount/$totalQuestions'),
               _Pill(
                 label: hasLiveScores
                     ? 'Live XP: $projectedXp/$safeXpMax'
                     : 'Projected XP: $projectedXp/$safeXpMax',
+                backgroundColor: averagePillBackground,
+                textColor: averagePillTextColor,
               ),
             ],
           ),
@@ -2641,23 +2652,29 @@ class _MetaRow extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({required this.label});
+  const _Pill({
+    required this.label,
+    this.backgroundColor = Colors.white,
+    this.textColor = AppPalette.navy,
+  });
 
   final String label;
+  final Color backgroundColor;
+  final Color textColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
         style: Theme.of(
           context,
-        ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+        ).textTheme.bodySmall?.copyWith(color: textColor),
       ),
     );
   }
