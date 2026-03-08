@@ -476,6 +476,119 @@ class SubjectCertificationSummary {
   }
 }
 
+class StudentSubjectReportSummary {
+  const StudentSubjectReportSummary({
+    required this.subjectId,
+    required this.subjectName,
+    required this.subjectIcon,
+    required this.subjectColor,
+    required this.assessmentCompletionPercentage,
+    required this.assessmentAverageScore,
+    required this.certificationEnabled,
+    required this.certificationCompletionPercentage,
+    required this.passedTaskFocusCount,
+    required this.requiredTaskFocusCount,
+    required this.remainingTaskCodes,
+    required this.certificateUnlocked,
+  });
+
+  final String subjectId;
+  final String subjectName;
+  final String subjectIcon;
+  final String subjectColor;
+  final int assessmentCompletionPercentage;
+  final int assessmentAverageScore;
+  final bool certificationEnabled;
+  final int certificationCompletionPercentage;
+  final int passedTaskFocusCount;
+  final int requiredTaskFocusCount;
+  final List<String> remainingTaskCodes;
+  final bool certificateUnlocked;
+}
+
+class StudentSubjectMissionHistoryItem {
+  const StudentSubjectMissionHistoryItem({
+    required this.missionId,
+    required this.resultPackageId,
+    required this.title,
+    required this.missionType,
+    required this.taskCodes,
+    required this.assignedDate,
+    required this.submittedAt,
+    required this.scorePercent,
+    required this.xpAwarded,
+    required this.certificationEligible,
+    required this.certificationCounted,
+    required this.certificationPassStatus,
+    required this.statusLabel,
+  });
+
+  final String missionId;
+  final String resultPackageId;
+  final String title;
+  final String missionType;
+  final List<String> taskCodes;
+  final String assignedDate;
+  final String? submittedAt;
+  final int scorePercent;
+  final int xpAwarded;
+  final bool certificationEligible;
+  final bool certificationCounted;
+  final String certificationPassStatus;
+  final String statusLabel;
+
+  factory StudentSubjectMissionHistoryItem.fromJson(Map<String, dynamic> json) {
+    return StudentSubjectMissionHistoryItem(
+      missionId: (json['missionId'] ?? '').toString(),
+      resultPackageId: (json['resultPackageId'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      missionType: (json['missionType'] ?? '').toString(),
+      taskCodes: _asStringList(json['taskCodes']),
+      assignedDate: (json['assignedDate'] ?? '').toString(),
+      submittedAt: json['submittedAt']?.toString(),
+      scorePercent: _asInt(json['scorePercent']),
+      xpAwarded: _asInt(json['xpAwarded']),
+      certificationEligible: json['certificationEligible'] == true,
+      certificationCounted: json['certificationCounted'] == true,
+      certificationPassStatus:
+          (json['certificationPassStatus'] ?? 'not_eligible').toString(),
+      statusLabel: (json['statusLabel'] ?? '').toString(),
+    );
+  }
+}
+
+class StudentSubjectReportData {
+  const StudentSubjectReportData({
+    required this.subject,
+    required this.assessmentProgress,
+    required this.certification,
+    required this.missionHistory,
+  });
+
+  final SubjectSummary subject;
+  final SubjectProgressSummary? assessmentProgress;
+  final SubjectCertificationSummary certification;
+  final List<StudentSubjectMissionHistoryItem> missionHistory;
+
+  factory StudentSubjectReportData.fromJson(Map<String, dynamic> json) {
+    return StudentSubjectReportData(
+      subject: SubjectSummary.fromJson(_asMap(json['subject'])),
+      assessmentProgress: _asNullableMap(json['assessmentProgress']) == null
+          ? null
+          : SubjectProgressSummary.fromJson(_asMap(json['assessmentProgress'])),
+      certification: SubjectCertificationSummary.fromJson(
+        _asMap(json['certification']),
+      ),
+      missionHistory: (json['missionHistory'] as List<dynamic>? ?? const [])
+          .map(
+            (item) =>
+                StudentSubjectMissionHistoryItem.fromJson(_asMap(item)),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
 class SubjectCertificationSettings {
   const SubjectCertificationSettings({
     required this.subjectId,

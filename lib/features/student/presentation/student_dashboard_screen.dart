@@ -27,6 +27,7 @@ import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
 import 'criterion_journey_screen.dart';
 import 'mission_play_screen.dart';
+import 'student_subject_report_screen.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
   const StudentDashboardScreen({super.key, required this.session});
@@ -67,12 +68,17 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         token: _session.token,
         studentId: _session.user.id,
       ),
+      _api.fetchStudentTimetable(
+        token: _session.token,
+        studentId: _session.user.id,
+      ),
     ]);
 
     return _StudentScreenData(
       session: _session,
       dashboard: results[0] as StudentDashboardData,
       criteria: (results[1] as StudentCriteriaData).criteria,
+      timetable: results[2] as List<TodaySchedule>,
     );
   }
 
@@ -125,6 +131,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 
           final data = snapshot.data!;
           final today = data.dashboard.today;
+          final mySubjects = _buildSubjectSummaries(data);
           _maybeShowSubjectCompletionBonus(data.dashboard.dailyXp);
 
           return SingleChildScrollView(
@@ -224,41 +231,23 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                 ),
                 const SizedBox(height: AppSpacing.section),
                 Text(
-                  'Subject progress',
+                  'My Subjects',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: AppSpacing.item),
-                if (data.dashboard.subjectProgress.isEmpty)
+                if (mySubjects.isEmpty)
                   const SoftPanel(
                     child: Text(
-                      'No assessment progress yet. Complete published assessments to unlock subject completion bars.',
+                      'No subjects are linked to your timetable yet. Your teacher will add them soon.',
                     ),
                   )
                 else
-                  ...data.dashboard.subjectProgress.map(
-                    (progress) => Padding(
+                  ...mySubjects.map(
+                    (subject) => Padding(
                       padding: const EdgeInsets.only(bottom: AppSpacing.item),
-                      child: _SubjectProgressCard(progress: progress),
-                    ),
-                  ),
-                const SizedBox(height: AppSpacing.section),
-                Text(
-                  'Task-focus certification',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.item),
-                if (data.dashboard.subjectCertification.isEmpty)
-                  const SoftPanel(
-                    child: Text(
-                      'No subject certification templates are active yet. Your teacher or management team will add them when the course is ready.',
-                    ),
-                  )
-                else
-                  ...data.dashboard.subjectCertification.map(
-                    (certification) => Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.item),
-                      child: _SubjectCertificationCard(
-                        certification: certification,
+                      child: _MySubjectCard(
+                        summary: subject,
+                        onTap: () => _openSubjectReport(subject),
                       ),
                     ),
                   ),
@@ -775,6 +764,154 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     _refreshData();
   }
 
+  Future<void> _openSubjectReport(StudentSubjectReportSummary summary) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => StudentSubjectReportScreen(
+          session: _session,
+          subjectId: summary.subjectId,
+          api: _api,
+        ),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    _refreshData();
+  }
+
+  List<StudentSubjectReportSummary> _buildSubjectSummaries(
+    _StudentScreenData data,
+  ) {
+    final progressById = <String, SubjectProgressSummary>{
+      for (final progress in data.dashboard.subjectProgress)
+        progress.subjectId: progress,
+    };
+    final certificationById = <String, SubjectCertificationSummary>{
+      for (final certification in data.dashboard.subjectCertification)
+        certification.subjectId: certification,
+    };
+    final subjectSeeds = <String, _DashboardSubjectSeed>{};
+    final timetableOrder = <String, int>{};
+    var nextTimetableOrder = 0;
+
+    void mergeSubject({
+      required String subjectId,
+      required String subjectName,
+      String? subjectIcon,
+      String? subjectColor,
+      bool fromTimetable = false,
+    }) {
+      final id = subjectId.trim();
+      final name = subjectName.trim();
+      if (id.isEmpty || name.isEmpty) {
+        return;
+      }
+
+      final existing = subjectSeeds[id];
+      if (existing == null) {
+        subjectSeeds[id] = _DashboardSubjectSeed(
+          subjectId: id,
+          subjectName: name,
+          subjectIcon: subjectIcon?.trim() ?? '',
+          subjectColor: subjectColor?.trim() ?? '',
+        );
+      } else {
+        if (existing.subjectIcon.isEmpty && (subjectIcon ?? '').trim().isNotEmpty) {
+          existing.subjectIcon = subjectIcon!.trim();
+        }
+        if (existing.subjectColor.isEmpty && (subjectColor ?? '').trim().isNotEmpty) {
+          existing.subjectColor = subjectColor!.trim();
+        }
+      }
+
+      if (fromTimetable) {
+        timetableOrder.putIfAbsent(id, () => nextTimetableOrder++);
+      }
+    }
+
+    // WHY: Students should first see subjects they are actually taught this
+    // week, then keep any evidence-only subjects so existing progress is never
+    // hidden just because the timetable payload changes later.
+    for (final day in data.timetable) {
+      mergeSubject(
+        subjectId: day.morningMission.id,
+        subjectName: day.morningMission.name,
+        subjectIcon: day.morningMission.icon,
+        subjectColor: day.morningMission.color,
+        fromTimetable: true,
+      );
+      mergeSubject(
+        subjectId: day.afternoonMission.id,
+        subjectName: day.afternoonMission.name,
+        subjectIcon: day.afternoonMission.icon,
+        subjectColor: day.afternoonMission.color,
+        fromTimetable: true,
+      );
+    }
+
+    for (final progress in data.dashboard.subjectProgress) {
+      mergeSubject(
+        subjectId: progress.subjectId,
+        subjectName: progress.subjectName,
+        subjectIcon: progress.subjectIcon,
+        subjectColor: progress.subjectColor,
+      );
+    }
+
+    for (final certification in data.dashboard.subjectCertification) {
+      mergeSubject(
+        subjectId: certification.subjectId,
+        subjectName: certification.subjectName,
+        subjectIcon: certification.subjectIcon,
+        subjectColor: certification.subjectColor,
+      );
+    }
+
+    final summaries = subjectSeeds.values.toList(growable: false)
+      ..sort((left, right) {
+        final leftOrder = timetableOrder[left.subjectId];
+        final rightOrder = timetableOrder[right.subjectId];
+        if (leftOrder != null && rightOrder != null) {
+          return leftOrder.compareTo(rightOrder);
+        }
+        if (leftOrder != null) {
+          return -1;
+        }
+        if (rightOrder != null) {
+          return 1;
+        }
+        return left.subjectName.toLowerCase().compareTo(
+              right.subjectName.toLowerCase(),
+            );
+      });
+
+    return summaries
+        .map((seed) {
+          final progress = progressById[seed.subjectId];
+          final certification = certificationById[seed.subjectId];
+          return StudentSubjectReportSummary(
+            subjectId: seed.subjectId,
+            subjectName: seed.subjectName,
+            subjectIcon: seed.subjectIcon,
+            subjectColor: seed.subjectColor,
+            assessmentCompletionPercentage: progress?.completionPercentage ?? 0,
+            assessmentAverageScore: progress?.averageScore ?? 0,
+            certificationEnabled: certification?.certificationEnabled ?? false,
+            certificationCompletionPercentage:
+                certification?.completionPercentage ?? 0,
+            passedTaskFocusCount: certification?.passedTaskCodes.length ?? 0,
+            requiredTaskFocusCount:
+                certification?.requiredTaskCodes.length ?? 0,
+            remainingTaskCodes: certification?.remainingTaskCodes ?? const [],
+            certificateUnlocked: certification?.certificateUnlocked ?? false,
+          );
+        })
+        .toList(growable: false);
+  }
+
   int _averageFocus(List<SessionSummary> sessions) {
     if (sessions.isEmpty) {
       return 0;
@@ -873,11 +1010,13 @@ class _StudentScreenData {
     required this.session,
     required this.dashboard,
     required this.criteria,
+    required this.timetable,
   });
 
   final AuthSession session;
   final StudentDashboardData dashboard;
   final List<CriterionOverview> criteria;
+  final List<TodaySchedule> timetable;
 }
 
 class _LoadingState extends StatelessWidget {
@@ -1144,55 +1283,6 @@ class _DailyXpPanel extends StatelessWidget {
   }
 }
 
-class _SubjectProgressCard extends StatelessWidget {
-  const _SubjectProgressCard({required this.progress});
-
-  final SubjectProgressSummary progress;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  progress.subjectName,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              if (progress.badgeUnlocked)
-                const _MiniPill(label: 'Badge unlocked'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${progress.completedAssessments}/${progress.totalAssessments} assessments · ${progress.averageScore}% avg score',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            minHeight: 10,
-            value: (progress.completionPercentage / 100).clamp(0, 1),
-            borderRadius: BorderRadius.circular(999),
-            backgroundColor: Colors.white.withValues(alpha: 0.66),
-            valueColor: const AlwaysStoppedAnimation<Color>(AppPalette.mint),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${progress.completionPercentage}% completed',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _MiniPill extends StatelessWidget {
   const _MiniPill({required this.label});
 
@@ -1216,165 +1306,164 @@ class _MiniPill extends StatelessWidget {
   }
 }
 
-class _SubjectCertificationCard extends StatelessWidget {
-  const _SubjectCertificationCard({required this.certification});
+class _MySubjectCard extends StatelessWidget {
+  const _MySubjectCard({
+    required this.summary,
+    required this.onTap,
+  });
 
-  final SubjectCertificationSummary certification;
-
-  CertificationEvidenceRow? _evidenceForTaskCode(String taskCode) {
-    for (final row in certification.evidenceRows) {
-      if (row.taskCode == taskCode) {
-        return row;
-      }
-    }
-    return null;
-  }
+  final StudentSubjectReportSummary summary;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return SoftPanel(
-      colors: certification.certificateUnlocked
-          ? const [Color(0xFFF5FFF6), Color(0xFFE8FFF0)]
-          : const [Color(0xFFFFFCF6), Color(0xFFFFF3E4)],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      certification.subjectName,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      certification.certificationLabel,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _MiniPill(
-                label: certification.certificateUnlocked
-                    ? 'Certificate unlocked'
-                    : '${certification.passedTaskCodes.length}/${certification.requiredTaskCodes.length} passed',
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            certification.certificateUnlocked
-                ? 'All required task focuses are complete.'
-                : certification.remainingTaskCodes.isEmpty
-                ? 'Task focuses are ready to score.'
-                : 'Still needed: ${certification.remainingTaskCodes.join(', ')}',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-          ),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(
-            minHeight: 10,
-            value: (certification.completionPercentage / 100).clamp(0, 1),
-            borderRadius: BorderRadius.circular(999),
-            backgroundColor: Colors.white.withValues(alpha: 0.66),
-            valueColor: AlwaysStoppedAnimation<Color>(
-              certification.certificateUnlocked
-                  ? AppPalette.mint
-                  : AppPalette.sun,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${certification.completionPercentage}% complete · Average on passed focuses ${certification.averagePassedScorePercent.toStringAsFixed(1)}%',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: certification.requiredTaskCodes
-                .map((taskCode) {
-                  final evidence = _evidenceForTaskCode(taskCode);
-                  return _TaskCodePill(
-                    taskCode: taskCode,
-                    status: evidence?.status ?? 'not_started',
-                    scorePercent: evidence?.bestScorePercent ?? 0,
-                  );
-                })
-                .toList(growable: false),
-          ),
+    final subjectColor = _mySubjectColor(summary.subjectColor);
+    final remainingLabel = summary.remainingTaskCodes.isEmpty
+        ? summary.certificateUnlocked
+            ? 'Certificate unlocked'
+            : summary.certificationEnabled
+                ? 'Teacher review may still be pending'
+                : 'Certification is not active for this subject yet'
+        : 'Still needed: ${summary.remainingTaskCodes.join(', ')}';
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+      child: SoftPanel(
+        colors: [
+          subjectColor.withValues(alpha: 0.16),
+          Colors.white.withValues(alpha: 0.84),
         ],
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: subjectColor,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Icon(
+                _mySubjectIcon(summary.subjectName, summary.subjectIcon),
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.item),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          summary.subjectName,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      if (summary.certificateUnlocked)
+                        const _MiniPill(label: 'Certificate unlocked'),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Assessment ${summary.assessmentCompletionPercentage}% · ${summary.assessmentAverageScore}% average',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    summary.certificationEnabled
+                        ? '${summary.passedTaskFocusCount}/${summary.requiredTaskFocusCount} task focuses passed'
+                        : 'No active certification template',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.navy,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    remainingLabel,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                  ),
+                  const SizedBox(height: AppSpacing.item),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonalIcon(
+                      onPressed: onTap,
+                      icon: const Icon(Icons.visibility_rounded),
+                      label: const Text('View subject report'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _TaskCodePill extends StatelessWidget {
-  const _TaskCodePill({
-    required this.taskCode,
-    required this.status,
-    required this.scorePercent,
+Color _mySubjectColor(String value) {
+  final normalized = value.trim().replaceFirst('#', '');
+  if (normalized.length != 6) {
+    return AppPalette.primaryBlue;
+  }
+  final parsed = int.tryParse(normalized, radix: 16);
+  if (parsed == null) {
+    return AppPalette.primaryBlue;
+  }
+  return Color(0xFF000000 | parsed);
+}
+
+IconData _mySubjectIcon(String subjectName, String rawIcon) {
+  final source = '${subjectName.toLowerCase()} ${rawIcon.toLowerCase()}';
+  if (source.contains('sport')) {
+    return Icons.sports_soccer_rounded;
+  }
+  if (source.contains('science')) {
+    return Icons.science_rounded;
+  }
+  if (source.contains('business')) {
+    return Icons.work_rounded;
+  }
+  if (source.contains('english')) {
+    return Icons.menu_book_rounded;
+  }
+  if (source.contains('math')) {
+    return Icons.calculate_rounded;
+  }
+  if (source.contains('health')) {
+    return Icons.favorite_rounded;
+  }
+  if (source.contains('ict') || source.contains('comput')) {
+    return Icons.computer_rounded;
+  }
+  if (source.contains('art')) {
+    return Icons.palette_rounded;
+  }
+  if (source.contains('re')) {
+    return Icons.auto_stories_rounded;
+  }
+  return Icons.school_rounded;
+}
+
+class _DashboardSubjectSeed {
+  _DashboardSubjectSeed({
+    required this.subjectId,
+    required this.subjectName,
+    required this.subjectIcon,
+    required this.subjectColor,
   });
 
-  final String taskCode;
-  final String status;
-  final double scorePercent;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color backgroundColor;
-    final Color borderColor;
-    final Color textColor;
-    switch (status) {
-      case 'passed':
-        backgroundColor = const Color(0xFFE8FFF0);
-        borderColor = const Color(0xFF7AD9A6);
-        textColor = const Color(0xFF157347);
-        break;
-      case 'pending_review':
-        backgroundColor = const Color(0xFFFFF7E5);
-        borderColor = const Color(0xFFF2C56B);
-        textColor = const Color(0xFFAF6A00);
-        break;
-      case 'not_passed':
-        backgroundColor = const Color(0xFFFFF0F0);
-        borderColor = const Color(0xFFFFB3B3);
-        textColor = const Color(0xFFB42318);
-        break;
-      default:
-        backgroundColor = Colors.white.withValues(alpha: 0.74);
-        borderColor = const Color(0xFFD5E6FF);
-        textColor = AppPalette.navy;
-        break;
-    }
-
-    final label = status == 'passed'
-        ? '$taskCode · ${scorePercent.toStringAsFixed(0)}%'
-        : status == 'pending_review'
-        ? '$taskCode · Pending'
-        : taskCode;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: textColor,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
+  final String subjectId;
+  final String subjectName;
+  String subjectIcon;
+  String subjectColor;
 }
