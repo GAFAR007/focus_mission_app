@@ -1,13 +1,14 @@
 /**
  * WHAT:
  * StudentDashboardScreen shows the student's daily missions, recent activity,
- * and qualification journey entry points.
+ * and subject-level progress entry points.
  * WHY:
- * Students need one ADHD-friendly home screen where both daily practice and
- * real criterion progression are visible without hunting through menus.
+ * Students need one ADHD-friendly home screen where daily practice and
+ * certification progress are visible without sending them into legacy
+ * criterion flows that are no longer the main progress story.
  * HOW:
- * Load dashboard data plus criterion summaries, then render mission cards and
- * tappable criterion panels that open the dedicated journey flow.
+ * Load dashboard data plus timetable context, then render mission cards and
+ * subject-level progress cards that open calm read-only reporting screens.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -25,7 +26,6 @@ import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/progress_hero_card.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
-import 'criterion_journey_screen.dart';
 import 'mission_play_screen.dart';
 import 'student_result_report_screen.dart';
 import 'student_subject_report_screen.dart';
@@ -65,10 +65,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         token: _session.token,
         studentId: _session.user.id,
       ),
-      _api.fetchStudentCriteria(
-        token: _session.token,
-        studentId: _session.user.id,
-      ),
       _api.fetchStudentTimetable(
         token: _session.token,
         studentId: _session.user.id,
@@ -78,8 +74,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     return _StudentScreenData(
       session: _session,
       dashboard: results[0] as StudentDashboardData,
-      criteria: (results[1] as StudentCriteriaData).criteria,
-      timetable: results[2] as List<TodaySchedule>,
+      timetable: results[1] as List<TodaySchedule>,
     );
   }
 
@@ -251,28 +246,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                         onTap: () => _openSubjectReport(subject),
                         onOpenLatestResult: () =>
                             _openLatestSubjectResult(subject),
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: AppSpacing.section),
-                Text(
-                  'Qualification journey',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.item),
-                if (data.criteria.isEmpty)
-                  const SoftPanel(
-                    child: Text(
-                      'No criteria are assigned yet. Your teacher will add them soon.',
-                    ),
-                  )
-                else
-                  ...data.criteria.map(
-                    (criterion) => Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.item),
-                      child: _CriterionEntryCard(
-                        criterion: criterion,
-                        onTap: () => _openCriterionJourney(criterion),
                       ),
                     ),
                   ),
@@ -749,24 +722,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     _refreshData();
   }
 
-  Future<void> _openCriterionJourney(CriterionOverview criterion) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => CriterionJourneyScreen(
-          session: _session,
-          studentId: _session.user.id,
-          criterionId: criterion.criterion.id,
-        ),
-      ),
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    _refreshData();
-  }
-
   Future<void> _openSubjectReport(StudentSubjectReportSummary summary) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -1068,13 +1023,11 @@ class _StudentScreenData {
   const _StudentScreenData({
     required this.session,
     required this.dashboard,
-    required this.criteria,
     required this.timetable,
   });
 
   final AuthSession session;
   final StudentDashboardData dashboard;
-  final List<CriterionOverview> criteria;
   final List<TodaySchedule> timetable;
 }
 
@@ -1183,102 +1136,6 @@ class _RoundIconButton extends StatelessWidget {
         child: Icon(icon, color: AppPalette.navy, size: 20),
       ),
     );
-  }
-}
-
-class _CriterionEntryCard extends StatelessWidget {
-  const _CriterionEntryCard({required this.criterion, required this.onTap});
-
-  final CriterionOverview criterion;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-      child: SoftPanel(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: AppPalette.teacherGradient,
-                ),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: const Icon(
-                Icons.auto_stories_rounded,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.item),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    criterion.criterion.title,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${criterion.subject?.name ?? 'Subject'} · ${criterion.unit?.title ?? 'Unit'}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppPalette.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _MiniPill(
-                        label: _criterionStateLabel(criterion.progress),
-                      ),
-                      _MiniPill(
-                        label:
-                            '${criterion.progress.wordCount}/${criterion.criterion.requiredWordCount} words',
-                      ),
-                      _MiniPill(
-                        label:
-                            '${criterion.flags.attemptsRemaining} attempts left',
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Icon(Icons.arrow_forward_ios_rounded, color: AppPalette.navy),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _criterionStateLabel(CriterionProgress progress) {
-    switch (progress.criterionState) {
-      case 'learning_required':
-        return 'Learning';
-      case 'learning_check_active':
-        return progress.learningLocked ? 'Teacher reset' : 'Knowledge check';
-      case 'essay_builder_unlocked':
-        return 'Essay Builder';
-      case 'ready_for_submission':
-        return 'Ready to submit';
-      case 'submitted':
-        return 'Teacher review';
-      case 'approved':
-        return 'Approved';
-      case 'revision_requested':
-        return 'Revision';
-      default:
-        return 'Criterion';
-    }
   }
 }
 
