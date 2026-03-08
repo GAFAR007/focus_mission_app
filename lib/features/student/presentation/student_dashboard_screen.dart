@@ -27,6 +27,7 @@ import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
 import 'criterion_journey_screen.dart';
 import 'mission_play_screen.dart';
+import 'student_result_report_screen.dart';
 import 'student_subject_report_screen.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
@@ -248,6 +249,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       child: _MySubjectCard(
                         summary: subject,
                         onTap: () => _openSubjectReport(subject),
+                        onOpenLatestResult: () =>
+                            _openLatestSubjectResult(subject),
                       ),
                     ),
                   ),
@@ -782,6 +785,60 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     _refreshData();
   }
 
+  Future<void> _openLatestSubjectResult(
+    StudentSubjectReportSummary summary,
+  ) async {
+    try {
+      final report = await _api.fetchStudentSubjectReport(
+        token: _session.token,
+        studentId: _session.user.id,
+        subjectId: summary.subjectId,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      // WHY: The dashboard shortcut should open the newest completed result
+      // quickly, but it must fail calmly when a subject has no saved evidence.
+      if (report.missionHistory.isEmpty ||
+          report.missionHistory.first.resultPackageId.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No completed results are saved for ${summary.subjectName} yet.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => StudentResultReportScreen(
+            session: _session,
+            resultPackageId: report.missionHistory.first.resultPackageId,
+            api: _api,
+          ),
+        ),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      _refreshData();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
   List<StudentSubjectReportSummary> _buildSubjectSummaries(
     _StudentScreenData data,
   ) {
@@ -819,10 +876,12 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
           subjectColor: subjectColor?.trim() ?? '',
         );
       } else {
-        if (existing.subjectIcon.isEmpty && (subjectIcon ?? '').trim().isNotEmpty) {
+        if (existing.subjectIcon.isEmpty &&
+            (subjectIcon ?? '').trim().isNotEmpty) {
           existing.subjectIcon = subjectIcon!.trim();
         }
-        if (existing.subjectColor.isEmpty && (subjectColor ?? '').trim().isNotEmpty) {
+        if (existing.subjectColor.isEmpty &&
+            (subjectColor ?? '').trim().isNotEmpty) {
           existing.subjectColor = subjectColor!.trim();
         }
       }
@@ -884,8 +943,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
           return 1;
         }
         return left.subjectName.toLowerCase().compareTo(
-              right.subjectName.toLowerCase(),
-            );
+          right.subjectName.toLowerCase(),
+        );
       });
 
     return summaries
@@ -1310,20 +1369,22 @@ class _MySubjectCard extends StatelessWidget {
   const _MySubjectCard({
     required this.summary,
     required this.onTap,
+    required this.onOpenLatestResult,
   });
 
   final StudentSubjectReportSummary summary;
   final VoidCallback onTap;
+  final VoidCallback onOpenLatestResult;
 
   @override
   Widget build(BuildContext context) {
     final subjectColor = _mySubjectColor(summary.subjectColor);
     final remainingLabel = summary.remainingTaskCodes.isEmpty
         ? summary.certificateUnlocked
-            ? 'Certificate unlocked'
-            : summary.certificationEnabled
-                ? 'Teacher review may still be pending'
-                : 'Certification is not active for this subject yet'
+              ? 'Certificate unlocked'
+              : summary.certificationEnabled
+              ? 'Teacher review may still be pending'
+              : 'Certification is not active for this subject yet'
         : 'Still needed: ${summary.remainingTaskCodes.join(', ')}';
 
     return InkWell(
@@ -1371,8 +1432,8 @@ class _MySubjectCard extends StatelessWidget {
                   Text(
                     'Assessment ${summary.assessmentCompletionPercentage}% · ${summary.assessmentAverageScore}% average',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppPalette.textMuted,
-                        ),
+                      color: AppPalette.textMuted,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -1380,25 +1441,33 @@ class _MySubjectCard extends StatelessWidget {
                         ? '${summary.passedTaskFocusCount}/${summary.requiredTaskFocusCount} task focuses passed'
                         : 'No active certification template',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppPalette.navy,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      color: AppPalette.navy,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     remainingLabel,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppPalette.textMuted,
-                        ),
+                      color: AppPalette.textMuted,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.item),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: FilledButton.tonalIcon(
-                      onPressed: onTap,
-                      icon: const Icon(Icons.visibility_rounded),
-                      label: const Text('View subject report'),
-                    ),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: onTap,
+                        icon: const Icon(Icons.visibility_rounded),
+                        label: const Text('View subject report'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: onOpenLatestResult,
+                        icon: const Icon(Icons.article_rounded),
+                        label: const Text('Open latest result'),
+                      ),
+                    ],
                   ),
                 ],
               ),
