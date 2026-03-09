@@ -535,9 +535,11 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       sessionType: sessionType,
     );
     final dailyMissions = assignedMissions
-        .where(
-          (mission) => mission.questionCount >= 5 && mission.questionCount < 10,
-        )
+        // WHY: Daily launchers must include the newer THEORY and ESSAY mission
+        // formats as well as legacy 5/8-question missions. Restricting this to
+        // 5-8 questions hides valid teacher-assigned daily work like 2-question
+        // theory missions from the student.
+        .where((mission) => !_isAssessmentMission(mission))
         .toList(growable: false);
 
     if (dailyMissions.isEmpty) {
@@ -563,7 +565,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
               ),
               const SizedBox(height: AppSpacing.compact),
               Text(
-                'Select any assigned daily mission (5 to 8 questions).',
+                'Select any assigned daily mission for this lesson.',
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
@@ -613,7 +615,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      '${mission.subject?.name ?? 'Subject'} · ${mission.questionCount} questions · ${mission.sessionType}',
+                                      '${mission.subject?.name ?? 'Subject'} · ${_dailyMissionLabel(mission)} · ${mission.sessionType}',
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodyMedium
@@ -638,6 +640,21 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         );
       },
     );
+  }
+
+  bool _isAssessmentMission(MissionPayload mission) {
+    return mission.questionCount >= 10;
+  }
+
+  String _dailyMissionLabel(MissionPayload mission) {
+    switch (mission.draftFormat.trim().toUpperCase()) {
+      case 'THEORY':
+        return '${mission.questionCount} theory ${mission.questionCount == 1 ? 'question' : 'questions'}';
+      case 'ESSAY_BUILDER':
+        return 'essay builder';
+      default:
+        return '${mission.questionCount} questions';
+    }
   }
 
   Future<void> _startDailyMission({
