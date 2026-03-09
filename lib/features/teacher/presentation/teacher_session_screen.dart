@@ -29,6 +29,19 @@ import 'mission_builder_sheet.dart';
 import 'result_report_screen.dart';
 import 'teacher_analytics_screen.dart';
 
+const List<String> _availableCertificationTaskCodes = <String>[
+  'P1',
+  'P2',
+  'P3',
+  'P4',
+  'P5',
+  'P6',
+  'M1',
+  'M2',
+  'D1',
+  'D2',
+];
+
 class TeacherSessionScreen extends StatefulWidget {
   const TeacherSessionScreen({super.key, required this.session});
 
@@ -117,6 +130,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           final targets = _targets ?? workspace.targets;
           final studentCertification =
               workspace.selectedDashboard.subjectCertification;
+          final teacherCertificationSubjects =
+              _teacherOwnedCertificationSubjects(
+                timetable: workspace.timetable,
+                certifications: studentCertification,
+              );
           final notificationInbox =
               _notificationInbox ?? workspace.notificationInbox;
           final teacherCriteria = criteria
@@ -186,8 +204,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _TeacherCertificationPanel(
+                  workspace: workspace,
+                  subjects: teacherCertificationSubjects,
                   certifications: studentCertification,
                   studentName: workspace.selectedStudent.name,
+                  onEditPlan: _openCertificationPlanEditor,
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _TeacherCriterionPanel(
@@ -1596,6 +1617,287 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
 
     return schedule?.day ?? 'No lesson scheduled';
   }
+
+  List<_TeacherCertificationSubjectOption> _teacherOwnedCertificationSubjects({
+    required List<TodaySchedule> timetable,
+    required List<SubjectCertificationSummary> certifications,
+  }) {
+    final ordered = <_TeacherCertificationSubjectOption>[];
+    final seenSubjectIds = <String>{};
+
+    void addSubject(SubjectSummary? subject) {
+      final subjectId = subject?.id ?? '';
+      if (subjectId.isEmpty || seenSubjectIds.contains(subjectId)) {
+        return;
+      }
+      seenSubjectIds.add(subjectId);
+      ordered.add(
+        _TeacherCertificationSubjectOption(
+          subjectId: subjectId,
+          subjectName: subject?.name ?? '',
+          subjectIcon: subject?.icon,
+          subjectColor: subject?.color,
+        ),
+      );
+    }
+
+    for (final entry in timetable) {
+      if (_teacherMatchesLessonSlot(
+        subject: entry.morningMission,
+        teacher: entry.morningTeacher,
+      )) {
+        addSubject(entry.morningMission);
+      }
+      if (_teacherMatchesLessonSlot(
+        subject: entry.afternoonMission,
+        teacher: entry.afternoonTeacher,
+      )) {
+        addSubject(entry.afternoonMission);
+      }
+    }
+
+    for (final certification in certifications) {
+      if (seenSubjectIds.contains(certification.subjectId)) {
+        continue;
+      }
+      // WHY: Existing certification plans must stay visible even if the current
+      // timetable payload no longer exposes the subject in this week's slots.
+      seenSubjectIds.add(certification.subjectId);
+      ordered.add(
+        _TeacherCertificationSubjectOption(
+          subjectId: certification.subjectId,
+          subjectName: certification.subjectName,
+          subjectIcon: certification.subjectIcon.isEmpty
+              ? null
+              : certification.subjectIcon,
+          subjectColor: certification.subjectColor.isEmpty
+              ? null
+              : certification.subjectColor,
+        ),
+      );
+    }
+
+    return ordered;
+  }
+
+  Future<void> _openCertificationPlanEditor({
+    required TeacherWorkspaceData workspace,
+    required _TeacherCertificationSubjectOption subject,
+    SubjectCertificationSummary? initialCertification,
+  }) async {
+    final labelController = TextEditingController(
+      text: initialCertification?.certificationLabel.isNotEmpty == true
+          ? initialCertification!.certificationLabel
+          : '${subject.subjectName} Certification',
+    );
+    final reasonController = TextEditingController();
+    final selectedTaskCodes = <String>{
+      ...?initialCertification?.requiredTaskCodes,
+    };
+    bool isSaving = false;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                initialCertification == null
+                    ? 'Set certification objectives'
+                    : 'Update certification objectives',
+              ),
+              content: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        subject.subjectName,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Choose every task focus this student must pass for this subject. Qualifying missions will target one objective at a time.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                      if (initialCertification != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          'Current plan: v${initialCertification.planVersion ?? 1} · ${initialCertification.planSource == 'teacher_plan' ? 'Teacher-owned plan' : 'Legacy subject template'}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                        if ((initialCertification.planChangeReason ?? '')
+                            .isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Last change reason: ${initialCertification.planChangeReason}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: AppPalette.textMuted),
+                            ),
+                          ),
+                      ],
+                      const SizedBox(height: AppSpacing.compact),
+                      TextField(
+                        controller: labelController,
+                        decoration: const InputDecoration(
+                          labelText: 'Certification label',
+                          hintText: 'e.g. English Course Certification',
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      TextField(
+                        controller: reasonController,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Change reason',
+                          hintText:
+                              'Why are you setting or updating this plan?',
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      Text(
+                        'Required task focuses',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _availableCertificationTaskCodes
+                            .map((taskCode) {
+                              final isSelected = selectedTaskCodes.contains(
+                                taskCode,
+                              );
+                              return FilterChip(
+                                selected: isSelected,
+                                label: Text(taskCode),
+                                onSelected: (selected) {
+                                  setDialogState(() {
+                                    if (selected) {
+                                      selectedTaskCodes.add(taskCode);
+                                    } else {
+                                      selectedTaskCodes.remove(taskCode);
+                                    }
+                                  });
+                                },
+                              );
+                            })
+                            .toList(growable: false),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'To count toward certification, a qualifying mission must target exactly one of these task focuses.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          final certificationLabel = labelController.text
+                              .trim();
+                          final changeReason = reasonController.text.trim();
+
+                          // WHY: Certification plans become the audit source for
+                          // future mission evidence, so blank objectives or no
+                          // change reason would make later progress impossible to
+                          // defend.
+                          if (selectedTaskCodes.isEmpty) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Select at least one required task focus.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+                          if (changeReason.length < 3) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Add a short change reason so the plan stays auditable.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          setDialogState(() => isSaving = true);
+                          try {
+                            await _api.updateTeacherStudentCertificationPlan(
+                              token: workspace.session.token,
+                              studentId: workspace.selectedStudent.id,
+                              subjectId: subject.subjectId,
+                              requiredTaskCodes: selectedTaskCodes.toList()
+                                ..sort(),
+                              certificationLabel: certificationLabel,
+                              changeReason: changeReason,
+                            );
+                            if (!mounted) {
+                              return;
+                            }
+                            setState(() {
+                              _future = _loadWorkspace();
+                            });
+                            if (context.mounted) {
+                              Navigator.of(dialogContext).pop(true);
+                            }
+                          } catch (error) {
+                            if (dialogContext.mounted) {
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                SnackBar(content: Text(error.toString())),
+                              );
+                              setDialogState(() => isSaving = false);
+                            }
+                          }
+                        },
+                  child: Text(
+                    initialCertification == null
+                        ? 'Save objectives'
+                        : 'Create new version',
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || saved != true) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          initialCertification == null
+              ? '${subject.subjectName} certification objectives saved.'
+              : '${subject.subjectName} certification plan updated.',
+        ),
+      ),
+    );
+  }
 }
 
 class _LoadingState extends StatelessWidget {
@@ -2973,17 +3275,49 @@ class _MissionDraftProgress {
   final double ratio;
 }
 
-class _TeacherCertificationPanel extends StatelessWidget {
-  const _TeacherCertificationPanel({
-    required this.certifications,
-    required this.studentName,
+typedef _EditTeacherCertificationPlan =
+    Future<void> Function({
+      required TeacherWorkspaceData workspace,
+      required _TeacherCertificationSubjectOption subject,
+      SubjectCertificationSummary? initialCertification,
+    });
+
+class _TeacherCertificationSubjectOption {
+  const _TeacherCertificationSubjectOption({
+    required this.subjectId,
+    required this.subjectName,
+    this.subjectIcon,
+    this.subjectColor,
   });
 
+  final String subjectId;
+  final String subjectName;
+  final String? subjectIcon;
+  final String? subjectColor;
+}
+
+class _TeacherCertificationPanel extends StatelessWidget {
+  const _TeacherCertificationPanel({
+    required this.workspace,
+    required this.subjects,
+    required this.certifications,
+    required this.studentName,
+    required this.onEditPlan,
+  });
+
+  final TeacherWorkspaceData workspace;
+  final List<_TeacherCertificationSubjectOption> subjects;
   final List<SubjectCertificationSummary> certifications;
   final String studentName;
+  final _EditTeacherCertificationPlan onEditPlan;
 
   @override
   Widget build(BuildContext context) {
+    final certificationsBySubject = <String, SubjectCertificationSummary>{
+      for (final certification in certifications)
+        certification.subjectId: certification,
+    };
+
     return SoftPanel(
       colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
       child: Column(
@@ -2995,13 +3329,13 @@ class _TeacherCertificationPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Plan the next qualifying mission from the remaining task focuses. This runs beside assessment progress, not instead of it.',
+            'Set the certification objectives for each subject you teach, then target one task focus per qualifying mission so progress stays auditable.',
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
           ),
           const SizedBox(height: AppSpacing.compact),
-          if (certifications.isEmpty)
+          if (subjects.isEmpty)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.item),
@@ -3010,17 +3344,26 @@ class _TeacherCertificationPanel extends StatelessWidget {
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: Text(
-                'No subject certification templates are active for $studentName yet.',
+                'No timetable subjects are assigned to this teacher for $studentName yet.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             )
           else
-            ...certifications.map(
-              (certification) => Padding(
+            ...subjects.map((subject) {
+              final certification = certificationsBySubject[subject.subjectId];
+              return Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.compact),
-                child: _TeacherCertificationCard(certification: certification),
-              ),
-            ),
+                child: _TeacherCertificationCard(
+                  subject: subject,
+                  certification: certification,
+                  onEditPlan: () => onEditPlan(
+                    workspace: workspace,
+                    subject: subject,
+                    initialCertification: certification,
+                  ),
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -3028,12 +3371,20 @@ class _TeacherCertificationPanel extends StatelessWidget {
 }
 
 class _TeacherCertificationCard extends StatelessWidget {
-  const _TeacherCertificationCard({required this.certification});
+  const _TeacherCertificationCard({
+    required this.subject,
+    required this.certification,
+    required this.onEditPlan,
+  });
 
-  final SubjectCertificationSummary certification;
+  final _TeacherCertificationSubjectOption subject;
+  final SubjectCertificationSummary? certification;
+  final VoidCallback onEditPlan;
 
   CertificationEvidenceRow? _evidenceForTaskCode(String taskCode) {
-    for (final row in certification.evidenceRows) {
+    final rows =
+        certification?.evidenceRows ?? const <CertificationEvidenceRow>[];
+    for (final row in rows) {
       if (row.taskCode == taskCode) {
         return row;
       }
@@ -3043,10 +3394,18 @@ class _TeacherCertificationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isUnlocked = certification.certificateUnlocked;
-    final remainingText = certification.remainingTaskCodes.isEmpty
-        ? 'All required task focuses are complete.'
-        : 'Still needed: ${certification.remainingTaskCodes.join(', ')}';
+    final hasPlan = certification != null;
+    final isUnlocked = certification?.certificateUnlocked == true;
+    final requiredTaskCodes =
+        certification?.requiredTaskCodes ?? const <String>[];
+    final passedTaskCodes = certification?.passedTaskCodes ?? const <String>[];
+    final remainingTaskCodes =
+        certification?.remainingTaskCodes ?? const <String>[];
+    final summaryText = hasPlan
+        ? remainingTaskCodes.isEmpty
+              ? 'All required task focuses are complete.'
+              : 'Still needed: ${remainingTaskCodes.join(', ')}'
+        : 'No certification objectives set yet. Pick the task focuses this student must pass for ${subject.subjectName}.';
 
     return Container(
       width: double.infinity,
@@ -3066,12 +3425,14 @@ class _TeacherCertificationCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      certification.subjectName,
+                      subject.subjectName,
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      certification.certificationLabel,
+                      hasPlan
+                          ? certification!.certificationLabel
+                          : 'Set the live certification plan for this student and subject.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppPalette.textMuted,
                       ),
@@ -3085,16 +3446,24 @@ class _TeacherCertificationCard extends StatelessWidget {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: (isUnlocked ? AppPalette.mint : AppPalette.sun)
-                      .withValues(alpha: 0.14),
+                  color: hasPlan
+                      ? (isUnlocked ? AppPalette.mint : AppPalette.sun)
+                            .withValues(alpha: 0.14)
+                      : AppPalette.sky.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  isUnlocked
+                  !hasPlan
+                      ? 'Needs setup'
+                      : isUnlocked
                       ? 'Certificate unlocked'
-                      : '${certification.passedTaskCodes.length}/${certification.requiredTaskCodes.length} passed',
+                      : '${passedTaskCodes.length}/${requiredTaskCodes.length} passed',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: isUnlocked ? AppPalette.mint : AppPalette.orange,
+                    color: !hasPlan
+                        ? AppPalette.sky
+                        : isUnlocked
+                        ? AppPalette.mint
+                        : AppPalette.orange,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -3103,30 +3472,62 @@ class _TeacherCertificationCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            remainingText,
+            summaryText,
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
           ),
-          const SizedBox(height: 6),
-          Text(
-            '${certification.completionPercentage}% complete · Average on passed focuses ${certification.averagePassedScorePercent.toStringAsFixed(1)}%',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: certification.requiredTaskCodes
-                .map((taskCode) {
-                  final evidence = _evidenceForTaskCode(taskCode);
-                  return _TeacherCertificationChip(
-                    taskCode: taskCode,
-                    status: evidence?.status ?? 'not_started',
-                    scorePercent: evidence?.bestScorePercent ?? 0,
-                  );
-                })
-                .toList(growable: false),
+          if (hasPlan) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${certification!.completionPercentage}% complete · Average on passed focuses ${certification!.averagePassedScorePercent.toStringAsFixed(1)}%',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if ((certification!.planVersion ?? 0) > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Plan v${certification!.planVersion} · ${certification!.planSource == 'teacher_plan' ? 'Teacher-owned plan' : 'Legacy template'}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+              ),
+            ],
+            if ((certification!.planChangeReason ?? '').isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Last change: ${certification!.planChangeReason}',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+                ),
+              ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: requiredTaskCodes
+                  .map((taskCode) {
+                    final evidence = _evidenceForTaskCode(taskCode);
+                    return _TeacherCertificationChip(
+                      taskCode: taskCode,
+                      status: evidence?.status ?? 'not_started',
+                      scorePercent: evidence?.bestScorePercent ?? 0,
+                    );
+                  })
+                  .toList(growable: false),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: onEditPlan,
+              icon: Icon(
+                hasPlan ? Icons.edit_note_rounded : Icons.playlist_add_rounded,
+              ),
+              label: Text(hasPlan ? 'Update objectives' : 'Set objectives'),
+            ),
           ),
         ],
       ),

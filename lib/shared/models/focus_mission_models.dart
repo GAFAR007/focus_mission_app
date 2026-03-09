@@ -437,6 +437,11 @@ class SubjectCertificationSummary {
     required this.certificateUnlocked,
     required this.awardRecorded,
     required this.evidenceRows,
+    required this.planSource,
+    required this.planId,
+    required this.planVersion,
+    required this.planUpdatedAt,
+    required this.planChangeReason,
   });
 
   final String subjectId;
@@ -453,6 +458,11 @@ class SubjectCertificationSummary {
   final bool certificateUnlocked;
   final bool awardRecorded;
   final List<CertificationEvidenceRow> evidenceRows;
+  final String planSource;
+  final String? planId;
+  final int? planVersion;
+  final DateTime? planUpdatedAt;
+  final String? planChangeReason;
 
   factory SubjectCertificationSummary.fromJson(Map<String, dynamic> json) {
     return SubjectCertificationSummary(
@@ -472,6 +482,11 @@ class SubjectCertificationSummary {
       evidenceRows: (json['evidenceRows'] as List<dynamic>? ?? const [])
           .map((item) => CertificationEvidenceRow.fromJson(_asMap(item)))
           .toList(growable: false),
+      planSource: (json['planSource'] ?? '').toString(),
+      planId: _asOptionalString(json['planId']),
+      planVersion: _asNullableInt(json['planVersion']),
+      planUpdatedAt: _asNullableDateTime(json['planUpdatedAt']),
+      planChangeReason: _asOptionalString(json['planChangeReason']),
     );
   }
 }
@@ -581,8 +596,7 @@ class StudentSubjectReportData {
       ),
       missionHistory: (json['missionHistory'] as List<dynamic>? ?? const [])
           .map(
-            (item) =>
-                StudentSubjectMissionHistoryItem.fromJson(_asMap(item)),
+            (item) => StudentSubjectMissionHistoryItem.fromJson(_asMap(item)),
           )
           .toList(growable: false),
     );
@@ -2412,4 +2426,24 @@ List<String> _asStringList(Object? value) {
   }
 
   return const [];
+}
+
+String? _asOptionalString(Object? value) {
+  final text = value?.toString().trim() ?? '';
+  return text.isEmpty ? null : text;
+}
+
+int? _asNullableInt(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  return int.tryParse(value.toString());
+}
+
+DateTime? _asNullableDateTime(Object? value) {
+  final raw = value?.toString().trim() ?? '';
+  if (raw.isEmpty) {
+    return null;
+  }
+  return DateTime.tryParse(raw);
 }

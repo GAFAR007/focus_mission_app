@@ -397,6 +397,30 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<SubjectCertificationSummary> updateTeacherStudentCertificationPlan({
+    required String token,
+    required String studentId,
+    required String subjectId,
+    required List<String> requiredTaskCodes,
+    required String certificationLabel,
+    required String changeReason,
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/teacher/students/$studentId/subjects/$subjectId/certification-plan',
+      token: token,
+      body: <String, dynamic>{
+        'requiredTaskCodes': requiredTaskCodes,
+        'certificationLabel': certificationLabel,
+        'changeReason': changeReason,
+      },
+    );
+
+    return SubjectCertificationSummary.fromJson(
+      (json['certification'] as Map<dynamic, dynamic>).cast<String, dynamic>(),
+    );
+  }
+
   Future<List<SubjectCertificationSummary>>
   fetchManagementStudentCertification({
     required String token,
