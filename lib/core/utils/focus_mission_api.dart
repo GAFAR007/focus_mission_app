@@ -460,6 +460,25 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<List<TeacherSummary>> fetchManagementTeachers({
+    required String token,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/management/teachers',
+      token: token,
+    );
+    final teachers = json['teachers'] as List<dynamic>? ?? const [];
+
+    return teachers
+        .map(
+          (item) => TeacherSummary.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<SubjectCertificationSettings> updateManagementSubjectCertification({
     required String token,
     required String subjectId,
@@ -480,6 +499,38 @@ class FocusMissionApi {
 
     return SubjectCertificationSettings.fromJson(
       (json['certification'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<TodaySchedule> saveManagementStudentTimetableEntry({
+    required String token,
+    required String studentId,
+    required String day,
+    required String room,
+    required String morningSubjectId,
+    required String afternoonSubjectId,
+    String morningTeacherId = '',
+    String afternoonTeacherId = '',
+  }) async {
+    final json = await _requestJson(
+      'PUT',
+      '/management/students/$studentId/timetable',
+      token: token,
+      body: {
+        'day': day,
+        'room': room,
+        'morningSubjectId': morningSubjectId,
+        'afternoonSubjectId': afternoonSubjectId,
+        if (morningTeacherId.trim().isNotEmpty)
+          'morningTeacherId': morningTeacherId.trim(),
+        if (afternoonTeacherId.trim().isNotEmpty)
+          'afternoonTeacherId': afternoonTeacherId.trim(),
+      },
+    );
+
+    return TodaySchedule.fromJson(
+      (json['timetable'] as Map<dynamic, dynamic>? ?? const {})
           .cast<String, dynamic>(),
     );
   }

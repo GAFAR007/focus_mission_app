@@ -160,12 +160,14 @@ class TeacherSummary {
     required this.name,
     this.email,
     this.avatar,
+    this.subjectSpecialty,
   });
 
   final String id;
   final String name;
   final String? email;
   final String? avatar;
+  final String? subjectSpecialty;
 
   factory TeacherSummary.fromJson(Map<String, dynamic> json) {
     return TeacherSummary(
@@ -173,6 +175,7 @@ class TeacherSummary {
       name: (json['name'] ?? '').toString(),
       email: json['email']?.toString(),
       avatar: json['avatar']?.toString(),
+      subjectSpecialty: json['subjectSpecialty']?.toString(),
     );
   }
 }
