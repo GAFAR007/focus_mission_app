@@ -41,6 +41,16 @@ const List<String> _availableCertificationTaskCodes = <String>[
   'D1',
   'D2',
 ];
+const List<String> _teacherTimetableRoomOptions = <String>[
+  'Room 1',
+  'Room 2',
+  'Room 3',
+  'Room 4',
+  'Room 5',
+  'Room 6',
+  'Room 7',
+  'Room 8',
+];
 
 class TeacherSessionScreen extends StatefulWidget {
   const TeacherSessionScreen({super.key, required this.session});
@@ -54,8 +64,6 @@ class TeacherSessionScreen extends StatefulWidget {
 class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   final FocusMissionApi _api = FocusMissionApi();
   final TextEditingController _notesController = TextEditingController();
-  final TextEditingController _teacherTimetableRoomController =
-      TextEditingController();
 
   late AuthSession _session;
   late Future<TeacherWorkspaceData> _future;
@@ -79,6 +87,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   bool _showTeacherTimetableEditor = false;
   String _selectedTeacherTimetableSessionType = 'morning';
   String _selectedTeacherTimetableSubjectId = '';
+  String _selectedTeacherTimetableRoom = _teacherTimetableRoomOptions.first;
 
   @override
   void initState() {
@@ -104,7 +113,6 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   @override
   void dispose() {
     _notesController.dispose();
-    _teacherTimetableRoomController.dispose();
     super.dispose();
   }
 
@@ -267,7 +275,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                             workspace,
                             _selectedLessonDate,
                           ).isNotEmpty,
-                          roomController: _teacherTimetableRoomController,
+                          selectedRoom: _selectedTeacherTimetableRoom,
+                          roomOptions: _teacherTimetableRoomOptions,
                           selectedSessionType:
                               _selectedTeacherTimetableSessionType,
                           selectedSubjectId: _selectedTeacherTimetableSubjectId,
@@ -296,9 +305,17 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                               _selectedTeacherTimetableSubjectId =
                                   workspace.teacherSubjects.first.id;
                             }
+                            _selectedTeacherTimetableRoom =
+                                _teacherTimetableRoomForSession(
+                                  schedule: schedule,
+                                  sessionType: value,
+                                );
                           }),
                           onSubjectChanged: (value) => setState(
                             () => _selectedTeacherTimetableSubjectId = value,
+                          ),
+                          onRoomChanged: (value) => setState(
+                            () => _selectedTeacherTimetableRoom = value,
                           ),
                           onSave: () => _saveTeacherTimetableEntry(workspace),
                         )
@@ -1702,8 +1719,10 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       _selectedTeacherTimetableSubjectId = workspace.teacherSubjects.isNotEmpty
           ? workspace.teacherSubjects.first.id
           : '';
-      _teacherTimetableRoomController.text =
-          _scheduleForDate(workspace.timetable, date)?.room ?? '';
+      _selectedTeacherTimetableRoom = _teacherTimetableRoomForSession(
+        schedule: _scheduleForDate(workspace.timetable, date),
+        sessionType: _selectedTeacherTimetableSessionType,
+      );
       return;
     }
 
@@ -1730,7 +1749,71 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     }
     // WHY: The inline teacher editor must always mirror the currently selected
     // timetable date so saving updates the visible day instead of a stale slot.
-    _teacherTimetableRoomController.text = schedule?.room ?? '';
+    _selectedTeacherTimetableRoom = _teacherTimetableRoomForSession(
+      schedule: schedule,
+      sessionType: _selectedTeacherTimetableSessionType,
+    );
+  }
+
+  _TeacherTimetableRoomPair _parseTeacherTimetableRooms(String value) {
+    final parts = value
+        .split('/')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+
+    final morningRoom = _resolveTeacherRoomOption(
+      parts.isNotEmpty ? parts.first : '',
+      fallback: _selectedTeacherTimetableRoom,
+    );
+    final afternoonRoom = _resolveTeacherRoomOption(
+      parts.length > 1 ? parts[1] : '',
+      fallback: morningRoom,
+    );
+
+    return _TeacherTimetableRoomPair(
+      morningRoom: morningRoom,
+      afternoonRoom: afternoonRoom,
+    );
+  }
+
+  String _resolveTeacherRoomOption(
+    String currentRoom, {
+    required String fallback,
+  }) {
+    if (_teacherTimetableRoomOptions.contains(currentRoom)) {
+      return currentRoom;
+    }
+    if (_teacherTimetableRoomOptions.contains(fallback)) {
+      return fallback;
+    }
+    return _teacherTimetableRoomOptions.first;
+  }
+
+  String _teacherTimetableRoomForSession({
+    required TodaySchedule? schedule,
+    required String sessionType,
+  }) {
+    final rooms = _parseTeacherTimetableRooms(schedule?.room ?? '');
+    return sessionType == 'afternoon' ? rooms.afternoonRoom : rooms.morningRoom;
+  }
+
+  String _composeTeacherTimetableRoom({
+    required TodaySchedule schedule,
+    required String sessionType,
+    required String selectedRoom,
+  }) {
+    final rooms = _parseTeacherTimetableRooms(schedule.room);
+    final morningRoom = sessionType == 'morning'
+        ? selectedRoom
+        : rooms.morningRoom;
+    final afternoonRoom = sessionType == 'afternoon'
+        ? selectedRoom
+        : rooms.afternoonRoom;
+
+    // WHY: Teacher edits only one slot at a time, so saving must preserve the
+    // opposite slot's room while updating the chosen lesson room.
+    return '$morningRoom / $afternoonRoom';
   }
 
   Future<void> _saveTeacherTimetableEntry(
@@ -1790,10 +1873,10 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       return;
     }
 
-    if (_teacherTimetableRoomController.text.trim().isEmpty) {
+    if (_selectedTeacherTimetableRoom.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Enter a class or room.')));
+      ).showSnackBar(const SnackBar(content: Text('Choose a room first.')));
       return;
     }
 
@@ -1805,7 +1888,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         day: _weekdayLabelForDate(_selectedLessonDate),
         sessionType: _selectedTeacherTimetableSessionType,
         subjectId: _selectedTeacherTimetableSubjectId,
-        room: _teacherTimetableRoomController.text,
+        room: _composeTeacherTimetableRoom(
+          schedule: schedule,
+          sessionType: _selectedTeacherTimetableSessionType,
+          selectedRoom: _selectedTeacherTimetableRoom,
+        ),
       );
 
       if (!mounted) {
@@ -4441,7 +4528,8 @@ class _TeacherTimetableInlineEditor extends StatelessWidget {
     required this.hasSchedule,
     required this.hasTeacherSubjects,
     required this.hasEditableSlot,
-    required this.roomController,
+    required this.selectedRoom,
+    required this.roomOptions,
     required this.selectedSessionType,
     required this.selectedSubjectId,
     required this.isSaving,
@@ -4449,6 +4537,7 @@ class _TeacherTimetableInlineEditor extends StatelessWidget {
     required this.subjectOptions,
     required this.onSessionChanged,
     required this.onSubjectChanged,
+    required this.onRoomChanged,
     required this.onSave,
   });
 
@@ -4457,7 +4546,8 @@ class _TeacherTimetableInlineEditor extends StatelessWidget {
   final bool hasSchedule;
   final bool hasTeacherSubjects;
   final bool hasEditableSlot;
-  final TextEditingController roomController;
+  final String selectedRoom;
+  final List<String> roomOptions;
   final String selectedSessionType;
   final String selectedSubjectId;
   final bool isSaving;
@@ -4465,6 +4555,7 @@ class _TeacherTimetableInlineEditor extends StatelessWidget {
   final List<SubjectSummary> subjectOptions;
   final ValueChanged<String> onSessionChanged;
   final ValueChanged<String> onSubjectChanged;
+  final ValueChanged<String> onRoomChanged;
   final VoidCallback onSave;
 
   @override
@@ -4554,12 +4645,26 @@ class _TeacherTimetableInlineEditor extends StatelessWidget {
               },
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: roomController,
-              decoration: const InputDecoration(
-                labelText: 'Class / room',
-                hintText: 'Room 2 / Room 4',
+            DropdownButtonFormField<String>(
+              key: ValueKey(
+                'teacher-inline-${selectedDate.toIso8601String()}-room',
               ),
+              initialValue: selectedRoom,
+              decoration: const InputDecoration(labelText: 'Lesson room'),
+              items: roomOptions
+                  .map(
+                    (room) => DropdownMenuItem<String>(
+                      value: room,
+                      child: Text(room),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                onRoomChanged(value);
+              },
             ),
             const SizedBox(height: 10),
             Text(
@@ -4586,6 +4691,16 @@ class _TeacherTimetableInlineEditor extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TeacherTimetableRoomPair {
+  const _TeacherTimetableRoomPair({
+    required this.morningRoom,
+    required this.afternoonRoom,
+  });
+
+  final String morningRoom;
+  final String afternoonRoom;
 }
 
 class _TeacherTimetableInfoCard extends StatelessWidget {

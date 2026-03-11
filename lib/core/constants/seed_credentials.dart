@@ -1,12 +1,13 @@
 /**
  * WHAT:
- * seed_credentials stores the seeded demo accounts used for local development
- * and quick classroom-style testing.
+ * seed_credentials stores fallback seed password hints and fallback demo
+ * accounts for environments where the live login-directory API is unavailable.
  * WHY:
- * The app needs predictable sign-in data so role flows can be verified without
- * manually creating new users during development.
+ * The login screen now prefers MongoDB-backed quick-fill users, but a local
+ * fallback keeps sign-in usable while backend environments catch up.
  * HOW:
- * Define typed demo account records and grouped helpers by role.
+ * Define typed demo account records plus grouped helpers for fallback accounts
+ * and seeded password hints.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -26,6 +27,32 @@ class DemoAccount {
   final UserRole role;
   final String? subject;
   final bool isPlaceholder;
+
+  factory DemoAccount.fromJson(Map<String, dynamic> json) {
+    final subject = (json['subject'] ?? '').toString().trim();
+    return DemoAccount(
+      name: (json['name'] ?? '').toString(),
+      email: (json['email'] ?? '').toString(),
+      role: _parseUserRole(json['role']),
+      subject: subject.isEmpty ? null : subject,
+      isPlaceholder: json['isPlaceholder'] == true,
+    );
+  }
+}
+
+UserRole _parseUserRole(Object? value) {
+  switch ((value ?? '').toString().trim().toLowerCase()) {
+    case 'student':
+      return UserRole.student;
+    case 'teacher':
+      return UserRole.teacher;
+    case 'mentor':
+      return UserRole.mentor;
+    case 'management':
+      return UserRole.management;
+    default:
+      return UserRole.student;
+  }
 }
 
 abstract final class SeedCredentials {

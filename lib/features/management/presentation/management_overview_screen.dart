@@ -36,6 +36,16 @@ const List<String> _managementWeekdayOptions = <String>[
   'Thursday',
   'Friday',
 ];
+const List<String> _timetableRoomOptions = <String>[
+  'Room 1',
+  'Room 2',
+  'Room 3',
+  'Room 4',
+  'Room 5',
+  'Room 6',
+  'Room 7',
+  'Room 8',
+];
 const List<String> _certificationTaskCodeOptions = [
   'P1',
   'P2',
@@ -69,7 +79,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       TextEditingController();
   final TextEditingController _certificationLabelController =
       TextEditingController();
-  final TextEditingController _roomController = TextEditingController();
 
   late AuthSession _session;
   late Future<_ManagementScreenData> _future;
@@ -83,6 +92,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   String _selectedAfternoonSubjectId = '';
   String _selectedMorningTeacherId = '';
   String _selectedAfternoonTeacherId = '';
+  String _selectedMorningRoom = _timetableRoomOptions.first;
+  String _selectedAfternoonRoom = _timetableRoomOptions.first;
   String _createRole = 'student';
   NotificationInboxData? _notificationInbox;
   bool _isCreatingUser = false;
@@ -109,7 +120,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     _passwordController.dispose();
     _subjectSpecialtyController.dispose();
     _certificationLabelController.dispose();
-    _roomController.dispose();
     super.dispose();
   }
 
@@ -340,7 +350,13 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       currentTeacherId: entry?.afternoonTeacher?.id ?? '',
       fallbackTeacherId: _selectedAfternoonTeacherId,
     );
-    _roomController.text = entry?.room ?? '';
+    final roomSelection = _parseTimetableRooms(
+      entry?.room ?? '',
+      morningFallback: _selectedMorningRoom,
+      afternoonFallback: _selectedAfternoonRoom,
+    );
+    _selectedMorningRoom = roomSelection.morningRoom;
+    _selectedAfternoonRoom = roomSelection.afternoonRoom;
   }
 
   DateTime _dateOnly(DateTime date) =>
@@ -399,6 +415,51 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return '';
   }
 
+  _TimetableRoomSelection _parseTimetableRooms(
+    String value, {
+    required String morningFallback,
+    required String afternoonFallback,
+  }) {
+    final parts = value
+        .split('/')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+
+    final resolvedMorning = _resolveRoomOption(
+      parts.isNotEmpty ? parts.first : '',
+      fallback: morningFallback,
+    );
+    final resolvedAfternoon = _resolveRoomOption(
+      parts.length > 1 ? parts[1] : '',
+      fallback: afternoonFallback,
+    );
+
+    return _TimetableRoomSelection(
+      morningRoom: resolvedMorning,
+      afternoonRoom: resolvedAfternoon,
+    );
+  }
+
+  String _resolveRoomOption(String currentRoom, {required String fallback}) {
+    if (_timetableRoomOptions.contains(currentRoom)) {
+      return currentRoom;
+    }
+    if (_timetableRoomOptions.contains(fallback)) {
+      return fallback;
+    }
+    return _timetableRoomOptions.first;
+  }
+
+  String _composeTimetableRooms({
+    required String morningRoom,
+    required String afternoonRoom,
+  }) {
+    // WHY: The backend timetable contract stores one room string for the day,
+    // so the UI composes the two selected slot rooms into the existing format.
+    return '$morningRoom / $afternoonRoom';
+  }
+
   bool _isWeekendDate(DateTime date) =>
       date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
 
@@ -425,9 +486,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     }
 
     if (room.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Enter a class or room.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose a morning and afternoon room.')),
+      );
       return false;
     }
 
@@ -453,7 +514,13 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         _selectedAfternoonSubjectId = afternoonSubjectId;
         _selectedMorningTeacherId = morningTeacherId;
         _selectedAfternoonTeacherId = afternoonTeacherId;
-        _roomController.text = room.trim();
+        final roomSelection = _parseTimetableRooms(
+          room.trim(),
+          morningFallback: _selectedMorningRoom,
+          afternoonFallback: _selectedAfternoonRoom,
+        );
+        _selectedMorningRoom = roomSelection.morningRoom;
+        _selectedAfternoonRoom = roomSelection.afternoonRoom;
         // WHY: Reloading the full workspace keeps the planner calendar, the
         // student dashboard summary, and the form state in sync after a save.
         _future = _loadWorkspace();
@@ -484,7 +551,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       await _persistTimetableEntry(
         data: data,
         day: _selectedTimetableDay,
-        room: _roomController.text,
+        room: _composeTimetableRooms(
+          morningRoom: _selectedMorningRoom,
+          afternoonRoom: _selectedAfternoonRoom,
+        ),
         morningSubjectId: _selectedMorningSubjectId,
         afternoonSubjectId: _selectedAfternoonSubjectId,
         morningTeacherId: _selectedMorningTeacherId,
@@ -1050,7 +1120,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                           selectedMorningTeacherId: _selectedMorningTeacherId,
                           selectedAfternoonTeacherId:
                               _selectedAfternoonTeacherId,
-                          roomController: _roomController,
+                          selectedMorningRoom: _selectedMorningRoom,
+                          selectedAfternoonRoom: _selectedAfternoonRoom,
+                          roomOptions: _timetableRoomOptions,
                           isSaving: _isSavingTimetable,
                           onMorningSubjectChanged: (value) {
                             if (value == null) {
@@ -1070,6 +1142,18 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                           onAfternoonTeacherChanged: (value) => setState(
                             () => _selectedAfternoonTeacherId = value ?? '',
                           ),
+                          onMorningRoomChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setState(() => _selectedMorningRoom = value);
+                          },
+                          onAfternoonRoomChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setState(() => _selectedAfternoonRoom = value);
+                          },
                           onSave: () => _saveTimetableEntry(data),
                         )
                       : null,
@@ -1955,12 +2039,16 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
     required this.selectedAfternoonSubjectId,
     required this.selectedMorningTeacherId,
     required this.selectedAfternoonTeacherId,
-    required this.roomController,
+    required this.selectedMorningRoom,
+    required this.selectedAfternoonRoom,
+    required this.roomOptions,
     required this.isSaving,
     required this.onMorningSubjectChanged,
     required this.onAfternoonSubjectChanged,
     required this.onMorningTeacherChanged,
     required this.onAfternoonTeacherChanged,
+    required this.onMorningRoomChanged,
+    required this.onAfternoonRoomChanged,
     required this.onSave,
   });
 
@@ -1974,12 +2062,16 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
   final String selectedAfternoonSubjectId;
   final String selectedMorningTeacherId;
   final String selectedAfternoonTeacherId;
-  final TextEditingController roomController;
+  final String selectedMorningRoom;
+  final String selectedAfternoonRoom;
+  final List<String> roomOptions;
   final bool isSaving;
   final ValueChanged<String?> onMorningSubjectChanged;
   final ValueChanged<String?> onAfternoonSubjectChanged;
   final ValueChanged<String?> onMorningTeacherChanged;
   final ValueChanged<String?> onAfternoonTeacherChanged;
+  final ValueChanged<String?> onMorningRoomChanged;
+  final ValueChanged<String?> onAfternoonRoomChanged;
   final VoidCallback onSave;
 
   String _formatEditorDate(DateTime date) {
@@ -2178,12 +2270,34 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
               onChanged: onAfternoonTeacherChanged,
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: roomController,
-              decoration: const InputDecoration(
-                labelText: 'Class / room',
-                hintText: 'Room 2 / Room 4',
-              ),
+            DropdownButtonFormField<String>(
+              key: ValueKey('management-inline-$selectedDayKey-morning-room'),
+              initialValue: selectedMorningRoom,
+              decoration: const InputDecoration(labelText: 'Morning room'),
+              items: roomOptions
+                  .map(
+                    (room) => DropdownMenuItem<String>(
+                      value: room,
+                      child: Text(room),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: onMorningRoomChanged,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              key: ValueKey('management-inline-$selectedDayKey-afternoon-room'),
+              initialValue: selectedAfternoonRoom,
+              decoration: const InputDecoration(labelText: 'Afternoon room'),
+              items: roomOptions
+                  .map(
+                    (room) => DropdownMenuItem<String>(
+                      value: room,
+                      child: Text(room),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: onAfternoonRoomChanged,
             ),
             const SizedBox(height: 10),
             Text(
@@ -2210,6 +2324,16 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TimetableRoomSelection {
+  const _TimetableRoomSelection({
+    required this.morningRoom,
+    required this.afternoonRoom,
+  });
+
+  final String morningRoom;
+  final String afternoonRoom;
 }
 
 class _ManagementResultCard extends StatelessWidget {

@@ -16,7 +16,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../constants/seed_credentials.dart';
 import '../constants/api_config.dart';
+import '../../shared/models/user_role.dart';
 import '../../features/teacher/models/analytics_models.dart';
 import '../../shared/models/focus_mission_models.dart';
 
@@ -36,6 +38,22 @@ class FocusMissionApi {
     );
 
     return AuthSession.fromJson(json);
+  }
+
+  Future<List<DemoAccount>> fetchDemoAccounts({required UserRole role}) async {
+    final json = await _requestJson(
+      'GET',
+      '/auth/demo-accounts?role=${_authRoleValue(role)}',
+    );
+    final accounts = json['accounts'] as List<dynamic>? ?? const [];
+
+    return accounts
+        .map(
+          (item) => DemoAccount.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
   }
 
   Future<AppUser> updateProfileAvatar({
@@ -1515,6 +1533,14 @@ class FocusMissionApi {
           headers: headers,
           body: jsonEncode(body ?? const {}),
         );
+      case 'PUT':
+        // WHY: Timetable save flows use PUT endpoints, so the shared API client
+        // must support full JSON PUT requests on Flutter web and native.
+        response = await _client.put(
+          uri,
+          headers: headers,
+          body: jsonEncode(body ?? const {}),
+        );
       case 'DELETE':
         response = await _client.delete(uri, headers: headers);
       default:
@@ -1579,6 +1605,19 @@ class FocusMissionApi {
       return '';
     }
     return '?${Uri(queryParameters: params).query}';
+  }
+
+  String _authRoleValue(UserRole role) {
+    switch (role) {
+      case UserRole.student:
+        return 'student';
+      case UserRole.teacher:
+        return 'teacher';
+      case UserRole.mentor:
+        return 'mentor';
+      case UserRole.management:
+        return 'management';
+    }
   }
 }
 
