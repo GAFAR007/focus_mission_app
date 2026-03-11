@@ -54,6 +54,8 @@ class TeacherSessionScreen extends StatefulWidget {
 class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   final FocusMissionApi _api = FocusMissionApi();
   final TextEditingController _notesController = TextEditingController();
+  final TextEditingController _teacherTimetableRoomController =
+      TextEditingController();
 
   late AuthSession _session;
   late Future<TeacherWorkspaceData> _future;
@@ -73,6 +75,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   bool _isDeletingDraftMissions = false;
   final Set<String> _selectedDraftMissionIds = <String>{};
   final Set<String> _sendingResultMissionIds = <String>{};
+  bool _isSavingTeacherTimetable = false;
+  String _selectedTeacherTimetableSessionType = 'morning';
+  String _selectedTeacherTimetableSubjectId = '';
 
   @override
   void initState() {
@@ -91,12 +96,14 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     _selectedStudentId = workspace.selectedStudent.id;
     _notificationInbox ??= workspace.notificationInbox;
     _targets ??= workspace.targets;
+    _syncTeacherTimetableEditor(workspace, _selectedLessonDate);
     return workspace;
   }
 
   @override
   void dispose() {
     _notesController.dispose();
+    _teacherTimetableRoomController.dispose();
     super.dispose();
   }
 
@@ -229,16 +236,64 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       _openNotification(workspace, notification),
                 ),
                 const SizedBox(height: AppSpacing.item),
+                _TeacherTimetableInlineEditor(
+                  selectedDate: _selectedLessonDate,
+                  isWeekend: _isWeekendDate(_selectedLessonDate),
+                  hasSchedule:
+                      _scheduleForDate(
+                        workspace.timetable,
+                        _selectedLessonDate,
+                      ) !=
+                      null,
+                  hasTeacherSubjects: workspace.teacherSubjects.isNotEmpty,
+                  hasEditableSlot: _teacherAllowedTimetableSlots(
+                    workspace,
+                    _selectedLessonDate,
+                  ).isNotEmpty,
+                  roomController: _teacherTimetableRoomController,
+                  selectedSessionType: _selectedTeacherTimetableSessionType,
+                  selectedSubjectId: _selectedTeacherTimetableSubjectId,
+                  isSaving: _isSavingTeacherTimetable,
+                  slotOptions: _teacherAllowedTimetableSlots(
+                    workspace,
+                    _selectedLessonDate,
+                  ),
+                  subjectOptions: workspace.teacherSubjects,
+                  onSessionChanged: (value) => setState(() {
+                    _selectedTeacherTimetableSessionType = value;
+                    final schedule = _scheduleForDate(
+                      workspace.timetable,
+                      _selectedLessonDate,
+                    );
+                    final currentSubject =
+                        value == 'afternoon'
+                            ? schedule?.afternoonMission
+                            : schedule?.morningMission;
+                    if (currentSubject != null &&
+                        workspace.teacherSubjects.any(
+                          (subject) => subject.id == currentSubject.id,
+                        )) {
+                      _selectedTeacherTimetableSubjectId = currentSubject.id;
+                    } else if (workspace.teacherSubjects.isNotEmpty) {
+                      _selectedTeacherTimetableSubjectId =
+                          workspace.teacherSubjects.first.id;
+                    }
+                  }),
+                  onSubjectChanged: (value) => setState(
+                    () => _selectedTeacherTimetableSubjectId = value,
+                  ),
+                  onSave: () => _saveTeacherTimetableEntry(workspace),
+                ),
                 WeeklyTimetableCalendar(
                   title: 'Teacher Timetable',
                   subtitle:
                       '${workspace.selectedStudent.name}\'s Monday to Sunday planner with a full month view.',
                   entries: workspace.timetable,
                   date: _selectedLessonDate,
-                  onDateChanged: (date) =>
-                      setState(() => _selectedLessonDate = date),
-                  onDateTap: (date) =>
-                      _openTeacherTimetableEditor(workspace, date),
+                  onDateChanged: (date) => setState(() {
+                    _selectedLessonDate = date;
+                    _syncTeacherTimetableEditor(workspace, date);
+                  }),
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _DraftMissionsPanel(
@@ -1597,29 +1652,77 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     return weekdayNames[date.weekday - 1];
   }
 
-  String _formatTimetableEditorDate(DateTime date) {
-    const monthNames = <String>[
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${_weekdayLabelForDate(date)} ${date.day} ${monthNames[date.month - 1]} ${date.year}';
-  }
-
-  Future<void> _openTeacherTimetableEditor(
+  List<_TeacherTimetableSlotOption> _teacherAllowedTimetableSlots(
     TeacherWorkspaceData workspace,
     DateTime date,
-  ) async {
-    if (_isWeekendDate(date)) {
+  ) {
+    final schedule = _scheduleForDate(workspace.timetable, date);
+    if (schedule == null) {
+      return const <_TeacherTimetableSlotOption>[];
+    }
+
+    return <_TeacherTimetableSlotOption>[
+      if ((schedule.morningTeacher?.id ?? '').isEmpty ||
+          schedule.morningTeacher?.id == _session.user.id)
+        _TeacherTimetableSlotOption(
+          sessionType: 'morning',
+          label: 'Morning',
+          currentSubjectName: schedule.morningMission.name,
+        ),
+      if ((schedule.afternoonTeacher?.id ?? '').isEmpty ||
+          schedule.afternoonTeacher?.id == _session.user.id)
+        _TeacherTimetableSlotOption(
+          sessionType: 'afternoon',
+          label: 'Afternoon',
+          currentSubjectName: schedule.afternoonMission.name,
+        ),
+    ];
+  }
+
+  void _syncTeacherTimetableEditor(TeacherWorkspaceData workspace, DateTime date) {
+    final allowedSlots = _teacherAllowedTimetableSlots(workspace, date);
+    if (allowedSlots.isEmpty) {
+      _selectedTeacherTimetableSessionType = 'morning';
+      _selectedTeacherTimetableSubjectId = workspace.teacherSubjects.isNotEmpty
+          ? workspace.teacherSubjects.first.id
+          : '';
+      _teacherTimetableRoomController.text =
+          _scheduleForDate(workspace.timetable, date)?.room ?? '';
+      return;
+    }
+
+    final schedule = _scheduleForDate(workspace.timetable, date);
+    final preferredSession = _resolvedLessonForTeacher(schedule).toLowerCase();
+    _selectedTeacherTimetableSessionType = allowedSlots.any(
+          (option) => option.sessionType == preferredSession,
+        )
+        ? preferredSession
+        : allowedSlots.first.sessionType;
+
+    final selectedSlotSubject = _selectedTeacherTimetableSessionType == 'afternoon'
+        ? schedule?.afternoonMission
+        : schedule?.morningMission;
+    if (selectedSlotSubject != null &&
+        workspace.teacherSubjects.any(
+          (subject) => subject.id == selectedSlotSubject.id,
+        )) {
+      _selectedTeacherTimetableSubjectId = selectedSlotSubject.id;
+    } else {
+      _selectedTeacherTimetableSubjectId = workspace.teacherSubjects.isNotEmpty
+          ? workspace.teacherSubjects.first.id
+          : '';
+    }
+    // WHY: The inline teacher editor must always mirror the currently selected
+    // timetable date so saving updates the visible day instead of a stale slot.
+    _teacherTimetableRoomController.text = schedule?.room ?? '';
+  }
+
+  Future<void> _saveTeacherTimetableEntry(TeacherWorkspaceData workspace) async {
+    if (_isSavingTeacherTimetable) {
+      return;
+    }
+
+    if (_isWeekendDate(_selectedLessonDate)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Weekend dates stay as rest days with no subject.'),
@@ -1628,7 +1731,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       return;
     }
 
-    final schedule = _scheduleForDate(workspace.timetable, date);
+    final schedule = _scheduleForDate(workspace.timetable, _selectedLessonDate);
     if (schedule == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1651,24 +1754,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       return;
     }
 
-    final allowedSlots = <_TeacherTimetableSlotOption>[
-      if ((schedule.morningTeacher?.id ?? '').isEmpty ||
-          schedule.morningTeacher?.id == _session.user.id)
-        _TeacherTimetableSlotOption(
-          sessionType: 'morning',
-          label: 'Morning',
-          currentSubjectName: schedule.morningMission.name,
-        ),
-      if ((schedule.afternoonTeacher?.id ?? '').isEmpty ||
-          schedule.afternoonTeacher?.id == _session.user.id)
-        _TeacherTimetableSlotOption(
-          sessionType: 'afternoon',
-          label: 'Afternoon',
-          currentSubjectName: schedule.afternoonMission.name,
-        ),
-    ];
-
-    if (allowedSlots.isEmpty) {
+    if (_teacherAllowedTimetableSlots(workspace, _selectedLessonDate).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -1679,224 +1765,62 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       return;
     }
 
-    final preferredSession = _resolvedLessonForTeacher(schedule).toLowerCase();
-    String selectedSessionType = allowedSlots.any(
-          (option) => option.sessionType == preferredSession,
-        )
-        ? preferredSession
-        : allowedSlots.first.sessionType;
-    String selectedSubjectId = workspace.teacherSubjects.first.id;
-    String room = schedule.room;
-    bool isSaving = false;
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-    SubjectSummary subjectForSession(String sessionType) {
-      return sessionType == 'afternoon'
-          ? schedule.afternoonMission
-          : schedule.morningMission;
+    if (_selectedTeacherTimetableSubjectId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose your subject first.')),
+      );
+      return;
     }
 
-    final currentSlotSubject = subjectForSession(selectedSessionType);
-    if (workspace.teacherSubjects.any(
-      (subject) => subject.id == currentSlotSubject.id,
-    )) {
-      selectedSubjectId = currentSlotSubject.id;
+    if (_teacherTimetableRoomController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a class or room.')),
+      );
+      return;
     }
 
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: !isSaving,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            // WHY: Teacher timetable edits need the same reliable web popup
-            // treatment as management. Desktop dialog presentation avoids the
-            // bottom-sheet open failures seen on browser month-view taps.
-            return Dialog(
-              backgroundColor: Colors.transparent,
-              insetPadding: const EdgeInsets.all(AppSpacing.item),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 620),
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    AppSpacing.item,
-                    AppSpacing.item,
-                    AppSpacing.item,
-                    MediaQuery.of(context).viewInsets.bottom + AppSpacing.item,
-                  ),
-                  child: SoftPanel(
-                    colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Edit lesson for ${_formatTimetableEditorDate(date)}',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Choose your lesson slot, set your subject, and confirm the shared room for this weekday.',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: AppPalette.textMuted),
-                          ),
-                          const SizedBox(height: AppSpacing.compact),
-                          DropdownButtonFormField<String>(
-                            initialValue: selectedSessionType,
-                            decoration: const InputDecoration(
-                              labelText: 'Lesson slot',
-                            ),
-                            items: allowedSlots
-                                .map(
-                                  (option) => DropdownMenuItem<String>(
-                                    value: option.sessionType,
-                                    child: Text(
-                                      '${option.label} · ${option.currentSubjectName}',
-                                    ),
-                                  ),
-                                )
-                                .toList(growable: false),
-                            onChanged: (value) {
-                              if (value == null) {
-                                return;
-                              }
-                              final currentSubject = subjectForSession(value);
-                              setModalState(() {
-                                selectedSessionType = value;
-                                if (workspace.teacherSubjects.any(
-                                  (subject) => subject.id == currentSubject.id,
-                                )) {
-                                  selectedSubjectId = currentSubject.id;
-                                } else {
-                                  selectedSubjectId =
-                                      workspace.teacherSubjects.first.id;
-                                }
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            initialValue: selectedSubjectId,
-                            decoration: const InputDecoration(
-                              labelText: 'Your subject',
-                            ),
-                            items: workspace.teacherSubjects
-                                .map(
-                                  (subject) => DropdownMenuItem<String>(
-                                    value: subject.id,
-                                    child: Text(subject.name),
-                                  ),
-                                )
-                                .toList(growable: false),
-                            onChanged: (value) {
-                              if (value == null) {
-                                return;
-                              }
-                              setModalState(() => selectedSubjectId = value);
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            initialValue: room,
-                            decoration: const InputDecoration(
-                              labelText: 'Class / room',
-                              hintText: 'Room 2 / Room 4',
-                            ),
-                            onChanged: (value) => room = value,
-                          ),
-                          const SizedBox(height: AppSpacing.compact),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: isSaving
-                                      ? null
-                                      : () => Navigator.of(dialogContext).pop(),
-                                  child: const Text('Cancel'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: FilledButton.icon(
-                                  onPressed: isSaving
-                                      ? null
-                                      : () async {
-                                          setModalState(() => isSaving = true);
-                                          try {
-                                            await _api.saveTeacherTimetableSlot(
-                                              token: _session.token,
-                                              studentId:
-                                                  workspace.selectedStudent.id,
-                                              day: _weekdayLabelForDate(date),
-                                              sessionType: selectedSessionType,
-                                              subjectId: selectedSubjectId,
-                                              room: room,
-                                            );
+    setState(() => _isSavingTeacherTimetable = true);
+    try {
+      await _api.saveTeacherTimetableSlot(
+        token: _session.token,
+        studentId: workspace.selectedStudent.id,
+        day: _weekdayLabelForDate(_selectedLessonDate),
+        sessionType: _selectedTeacherTimetableSessionType,
+        subjectId: _selectedTeacherTimetableSubjectId,
+        room: _teacherTimetableRoomController.text,
+      );
 
-                                            if (!mounted) {
-                                              return;
-                                            }
+      if (!mounted) {
+        return;
+      }
 
-                                            setState(() {
-                                              _selectedLessonDate =
-                                                  _dateOnly(date);
-                                              _selectedLesson =
-                                                  selectedSessionType ==
-                                                          'afternoon'
-                                                      ? 'Afternoon'
-                                                      : 'Morning';
-                                              // WHY: Reloading the teacher workspace
-                                              // keeps the timetable calendar and slot
-                                              // ownership view consistent after a
-                                              // popup save.
-                                              _future = _loadWorkspace();
-                                            });
+      setState(() {
+        _selectedLesson =
+            _selectedTeacherTimetableSessionType == 'afternoon'
+                ? 'Afternoon'
+                : 'Morning';
+        _future = _loadWorkspace();
+      });
 
-                                            scaffoldMessenger.showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  'Saved ${selectedSessionType == 'afternoon' ? 'afternoon' : 'morning'} lesson for ${_weekdayLabelForDate(date)}.',
-                                                ),
-                                              ),
-                                            );
-
-                                            if (dialogContext.mounted) {
-                                              Navigator.of(dialogContext).pop();
-                                            }
-                                          } catch (error) {
-                                            if (!mounted) {
-                                              return;
-                                            }
-                                            scaffoldMessenger.showSnackBar(
-                                              SnackBar(
-                                                content: Text(error.toString()),
-                                              ),
-                                            );
-                                            setModalState(
-                                              () => isSaving = false,
-                                            );
-                                          }
-                                        },
-                                  icon: const Icon(Icons.save_rounded),
-                                  label: Text(
-                                    isSaving ? 'Saving...' : 'Save lesson',
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Saved ${_selectedTeacherTimetableSessionType == 'afternoon' ? 'afternoon' : 'morning'} lesson for ${_weekdayLabelForDate(_selectedLessonDate)}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingTeacherTimetable = false);
+      }
+    }
   }
 
   bool _hasMissionForSlot({
@@ -4480,4 +4404,204 @@ class _TeacherTimetableSlotOption {
   final String sessionType;
   final String label;
   final String currentSubjectName;
+}
+
+class _TeacherTimetableInlineEditor extends StatelessWidget {
+  const _TeacherTimetableInlineEditor({
+    required this.selectedDate,
+    required this.isWeekend,
+    required this.hasSchedule,
+    required this.hasTeacherSubjects,
+    required this.hasEditableSlot,
+    required this.roomController,
+    required this.selectedSessionType,
+    required this.selectedSubjectId,
+    required this.isSaving,
+    required this.slotOptions,
+    required this.subjectOptions,
+    required this.onSessionChanged,
+    required this.onSubjectChanged,
+    required this.onSave,
+  });
+
+  final DateTime selectedDate;
+  final bool isWeekend;
+  final bool hasSchedule;
+  final bool hasTeacherSubjects;
+  final bool hasEditableSlot;
+  final TextEditingController roomController;
+  final String selectedSessionType;
+  final String selectedSubjectId;
+  final bool isSaving;
+  final List<_TeacherTimetableSlotOption> slotOptions;
+  final List<SubjectSummary> subjectOptions;
+  final ValueChanged<String> onSessionChanged;
+  final ValueChanged<String> onSubjectChanged;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftPanel(
+      colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Edit ${_formatTeacherTimetableDate(selectedDate)}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Pick a weekday below. The selected date stays editable here so you can set your lesson slot, subject, and room without using a popup.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          if (isWeekend)
+            _TeacherTimetableInfoCard(
+              message: 'Weekend dates stay as rest days with no subject.',
+            )
+          else if (!hasSchedule)
+            _TeacherTimetableInfoCard(
+              message:
+                  'Management must create the weekday timetable before teachers edit lesson slots.',
+            )
+          else if (!hasTeacherSubjects)
+            _TeacherTimetableInfoCard(
+              message:
+                  'This teacher has no subject specialty configured for timetable editing yet.',
+            )
+          else if (!hasEditableSlot)
+            _TeacherTimetableInfoCard(
+              message:
+                  'This weekday is already assigned to other teachers. Ask management to change the timetable.',
+            )
+          else ...[
+            DropdownButtonFormField<String>(
+              key: ValueKey(
+                'teacher-inline-${selectedDate.toIso8601String()}-slot',
+              ),
+              initialValue: selectedSessionType,
+              decoration: const InputDecoration(labelText: 'Lesson slot'),
+              items: slotOptions
+                  .map(
+                    (option) => DropdownMenuItem<String>(
+                      value: option.sessionType,
+                      child: Text(
+                        '${option.label} · ${option.currentSubjectName}',
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                onSessionChanged(value);
+              },
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              key: ValueKey(
+                'teacher-inline-${selectedDate.toIso8601String()}-subject',
+              ),
+              initialValue: selectedSubjectId.isNotEmpty
+                  ? selectedSubjectId
+                  : null,
+              decoration: const InputDecoration(labelText: 'Your subject'),
+              items: subjectOptions
+                  .map(
+                    (subject) => DropdownMenuItem<String>(
+                      value: subject.id,
+                      child: Text(subject.name),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                onSubjectChanged(value);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: roomController,
+              decoration: const InputDecoration(
+                labelText: 'Class / room',
+                hintText: 'Room 2 / Room 4',
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Saving this entry updates the selected weekday in the timetable below.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ),
+            const SizedBox(height: AppSpacing.compact),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: isSaving ? null : onSave,
+                icon: const Icon(Icons.save_rounded),
+                label: Text(
+                  isSaving
+                      ? 'Saving timetable...'
+                      : 'Save ${slotOptions.firstWhere((option) => option.sessionType == selectedSessionType, orElse: () => slotOptions.first).label.toLowerCase()} lesson',
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TeacherTimetableInfoCard extends StatelessWidget {
+  const _TeacherTimetableInfoCard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      ),
+      child: Text(message, style: Theme.of(context).textTheme.bodyMedium),
+    );
+  }
+}
+
+String _formatTeacherTimetableDate(DateTime date) {
+  const monthNames = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  const weekdays = <String>[
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+  return '${weekdays[date.weekday - 1]} ${date.day} ${monthNames[date.month - 1]} ${date.year}';
 }

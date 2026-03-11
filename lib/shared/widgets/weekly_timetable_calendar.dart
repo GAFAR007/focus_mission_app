@@ -112,6 +112,7 @@ class WeeklyTimetableCalendar extends StatefulWidget {
     this.date,
     this.onDateChanged,
     this.onDateTap,
+    this.inlineEditor,
   });
 
   final List<TodaySchedule> entries;
@@ -120,6 +121,7 @@ class WeeklyTimetableCalendar extends StatefulWidget {
   final DateTime? date;
   final ValueChanged<DateTime>? onDateChanged;
   final ValueChanged<DateTime>? onDateTap;
+  final Widget? inlineEditor;
 
   @override
   State<WeeklyTimetableCalendar> createState() =>
@@ -190,6 +192,10 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
               ),
             ],
           ),
+          if (widget.inlineEditor != null) ...[
+            const SizedBox(height: AppSpacing.section),
+            widget.inlineEditor!,
+          ],
           const SizedBox(height: AppSpacing.section),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 220),
