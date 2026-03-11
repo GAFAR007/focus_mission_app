@@ -237,6 +237,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   date: _selectedLessonDate,
                   onDateChanged: (date) =>
                       setState(() => _selectedLessonDate = date),
+                  onDateTap: (date) =>
+                      _openTeacherTimetableEditor(workspace, date),
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _DraftMissionsPanel(
@@ -1577,6 +1579,304 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
 
   DateTime _dateOnly(DateTime value) {
     return DateTime(value.year, value.month, value.day);
+  }
+
+  bool _isWeekendDate(DateTime date) =>
+      date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+
+  String _weekdayLabelForDate(DateTime date) {
+    const weekdayNames = <String>[
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    return weekdayNames[date.weekday - 1];
+  }
+
+  String _formatTimetableEditorDate(DateTime date) {
+    const monthNames = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${_weekdayLabelForDate(date)} ${date.day} ${monthNames[date.month - 1]} ${date.year}';
+  }
+
+  Future<void> _openTeacherTimetableEditor(
+    TeacherWorkspaceData workspace,
+    DateTime date,
+  ) async {
+    if (_isWeekendDate(date)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Weekend dates stay as rest days with no subject.'),
+        ),
+      );
+      return;
+    }
+
+    final schedule = _scheduleForDate(workspace.timetable, date);
+    if (schedule == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Management must create the weekday timetable before teachers edit lesson slots.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (workspace.teacherSubjects.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This teacher has no subject specialty configured for timetable editing yet.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final allowedSlots = <_TeacherTimetableSlotOption>[
+      if ((schedule.morningTeacher?.id ?? '').isEmpty ||
+          schedule.morningTeacher?.id == _session.user.id)
+        _TeacherTimetableSlotOption(
+          sessionType: 'morning',
+          label: 'Morning',
+          currentSubjectName: schedule.morningMission.name,
+        ),
+      if ((schedule.afternoonTeacher?.id ?? '').isEmpty ||
+          schedule.afternoonTeacher?.id == _session.user.id)
+        _TeacherTimetableSlotOption(
+          sessionType: 'afternoon',
+          label: 'Afternoon',
+          currentSubjectName: schedule.afternoonMission.name,
+        ),
+    ];
+
+    if (allowedSlots.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This weekday is already assigned to other teachers. Ask management to change the timetable.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final preferredSession = _resolvedLessonForTeacher(schedule).toLowerCase();
+    String selectedSessionType = allowedSlots.any(
+          (option) => option.sessionType == preferredSession,
+        )
+        ? preferredSession
+        : allowedSlots.first.sessionType;
+    String selectedSubjectId = workspace.teacherSubjects.first.id;
+    String room = schedule.room;
+    bool isSaving = false;
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    SubjectSummary subjectForSession(String sessionType) {
+      return sessionType == 'afternoon'
+          ? schedule.afternoonMission
+          : schedule.morningMission;
+    }
+
+    final currentSlotSubject = subjectForSession(selectedSessionType);
+    if (workspace.teacherSubjects.any(
+      (subject) => subject.id == currentSlotSubject.id,
+    )) {
+      selectedSubjectId = currentSlotSubject.id;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.item,
+                AppSpacing.item,
+                AppSpacing.item,
+                MediaQuery.of(context).viewInsets.bottom + AppSpacing.item,
+              ),
+              child: SoftPanel(
+                colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Edit lesson for ${_formatTimetableEditorDate(date)}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Choose your lesson slot, set your subject, and confirm the shared room for this weekday.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.compact),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedSessionType,
+                      decoration: const InputDecoration(
+                        labelText: 'Lesson slot',
+                      ),
+                      items: allowedSlots
+                          .map(
+                            (option) => DropdownMenuItem<String>(
+                              value: option.sessionType,
+                              child: Text(
+                                '${option.label} · ${option.currentSubjectName}',
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (value) {
+                        if (value == null) {
+                          return;
+                        }
+                        final currentSubject = subjectForSession(value);
+                        setModalState(() {
+                          selectedSessionType = value;
+                          if (workspace.teacherSubjects.any(
+                            (subject) => subject.id == currentSubject.id,
+                          )) {
+                            selectedSubjectId = currentSubject.id;
+                          } else {
+                            selectedSubjectId = workspace.teacherSubjects.first.id;
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedSubjectId,
+                      decoration: const InputDecoration(
+                        labelText: 'Your subject',
+                      ),
+                      items: workspace.teacherSubjects
+                          .map(
+                            (subject) => DropdownMenuItem<String>(
+                              value: subject.id,
+                              child: Text(subject.name),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setModalState(() => selectedSubjectId = value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      initialValue: room,
+                      decoration: const InputDecoration(
+                        labelText: 'Class / room',
+                        hintText: 'Room 2 / Room 4',
+                      ),
+                      onChanged: (value) => room = value,
+                    ),
+                    const SizedBox(height: AppSpacing.compact),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: isSaving
+                                ? null
+                                : () => Navigator.of(modalContext).pop(),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: isSaving
+                                ? null
+                                : () async {
+                                    setModalState(() => isSaving = true);
+                                    try {
+                                      await _api.saveTeacherTimetableSlot(
+                                        token: _session.token,
+                                        studentId: workspace.selectedStudent.id,
+                                        day: _weekdayLabelForDate(date),
+                                        sessionType: selectedSessionType,
+                                        subjectId: selectedSubjectId,
+                                        room: room,
+                                      );
+
+                                      if (!mounted) {
+                                        return;
+                                      }
+
+                                      setState(() {
+                                        _selectedLessonDate = _dateOnly(date);
+                                        _selectedLesson = selectedSessionType ==
+                                                'afternoon'
+                                            ? 'Afternoon'
+                                            : 'Morning';
+                                        // WHY: Reloading the teacher workspace
+                                        // keeps the timetable calendar and slot
+                                        // ownership view consistent after a
+                                        // popup save.
+                                        _future = _loadWorkspace();
+                                      });
+
+                                      scaffoldMessenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Saved ${selectedSessionType == 'afternoon' ? 'afternoon' : 'morning'} lesson for ${_weekdayLabelForDate(date)}.',
+                                          ),
+                                        ),
+                                      );
+
+                                      if (modalContext.mounted) {
+                                        Navigator.of(modalContext).pop();
+                                      }
+                                    } catch (error) {
+                                      if (!mounted) {
+                                        return;
+                                      }
+                                      scaffoldMessenger.showSnackBar(
+                                        SnackBar(content: Text(error.toString())),
+                                      );
+                                      setModalState(() => isSaving = false);
+                                    }
+                                  },
+                            icon: const Icon(Icons.save_rounded),
+                            label: Text(isSaving ? 'Saving...' : 'Save lesson'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   bool _hasMissionForSlot({
@@ -4148,4 +4448,16 @@ class _ChoicePill extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TeacherTimetableSlotOption {
+  const _TeacherTimetableSlotOption({
+    required this.sessionType,
+    required this.label,
+    required this.currentSubjectName,
+  });
+
+  final String sessionType;
+  final String label;
+  final String currentSubjectName;
 }

@@ -82,6 +82,21 @@ class FocusMissionApi {
         .toList();
   }
 
+  Future<List<SubjectSummary>> fetchTeacherSubjects({
+    required String token,
+  }) async {
+    final json = await _requestJson('GET', '/teacher/subjects', token: token);
+    final subjects = json['subjects'] as List<dynamic>? ?? const [];
+
+    return subjects
+        .map(
+          (item) => SubjectSummary.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<List<DailyTrendPoint>> getDailyTrend({
     required String token,
     required String studentId,
@@ -535,6 +550,32 @@ class FocusMissionApi {
     );
   }
 
+  Future<TodaySchedule> saveTeacherTimetableSlot({
+    required String token,
+    required String studentId,
+    required String day,
+    required String sessionType,
+    required String subjectId,
+    required String room,
+  }) async {
+    final json = await _requestJson(
+      'PUT',
+      '/teacher/students/$studentId/timetable-slot',
+      token: token,
+      body: {
+        'day': day,
+        'sessionType': sessionType,
+        'subjectId': subjectId,
+        'room': room.trim(),
+      },
+    );
+
+    return TodaySchedule.fromJson(
+      (json['timetable'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
   Future<AppUser> createManagementUser({
     required String token,
     required String role,
@@ -806,6 +847,7 @@ class FocusMissionApi {
     String? selectedStudentId,
   }) async {
     final students = await fetchStudents(token: session.token);
+    final teacherSubjects = await fetchTeacherSubjects(token: session.token);
 
     if (students.isEmpty) {
       throw const FocusMissionApiException(
@@ -849,6 +891,7 @@ class FocusMissionApi {
     return TeacherWorkspaceData(
       session: session,
       students: students,
+      teacherSubjects: teacherSubjects,
       selectedStudent: selectedStudent,
       selectedDashboard: selectedDashboard,
       timetable: timetable,

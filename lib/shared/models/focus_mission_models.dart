@@ -1828,6 +1828,7 @@ class TeacherWorkspaceData {
   const TeacherWorkspaceData({
     required this.session,
     required this.students,
+    required this.teacherSubjects,
     required this.selectedStudent,
     required this.selectedDashboard,
     required this.timetable,
@@ -1840,6 +1841,7 @@ class TeacherWorkspaceData {
 
   final AuthSession session;
   final List<StudentSummary> students;
+  final List<SubjectSummary> teacherSubjects;
   final StudentSummary selectedStudent;
   final StudentDashboardData selectedDashboard;
   final List<TodaySchedule> timetable;

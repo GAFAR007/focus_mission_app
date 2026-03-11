@@ -111,6 +111,7 @@ class WeeklyTimetableCalendar extends StatefulWidget {
     this.subtitle = 'Switch between a full week and the current month.',
     this.date,
     this.onDateChanged,
+    this.onDateTap,
   });
 
   final List<TodaySchedule> entries;
@@ -118,6 +119,7 @@ class WeeklyTimetableCalendar extends StatefulWidget {
   final String subtitle;
   final DateTime? date;
   final ValueChanged<DateTime>? onDateChanged;
+  final ValueChanged<DateTime>? onDateTap;
 
   @override
   State<WeeklyTimetableCalendar> createState() =>
@@ -234,6 +236,9 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
     final normalized = _normalizeDate(date);
     setState(() => _focusedDate = normalized);
     widget.onDateChanged?.call(normalized);
+    // WHY: Teacher and management planners both need a lightweight date-click
+    // hook for opening slot editors without changing the shared calendar shape.
+    widget.onDateTap?.call(normalized);
   }
 }
 
