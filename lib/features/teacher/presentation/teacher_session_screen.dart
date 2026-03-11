@@ -237,8 +237,17 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   date: _selectedLessonDate,
                   onDateChanged: (date) =>
                       setState(() => _selectedLessonDate = date),
-                  onDateTap: (date) =>
-                      _openTeacherTimetableEditor(workspace, date),
+                  onDateTap: (date) {
+                    // WHY: The tapped date also updates the focused planner
+                    // state. Waiting one frame before opening the editor keeps
+                    // the popup stable on web.
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) {
+                        return;
+                      }
+                      _openTeacherTimetableEditor(workspace, date);
+                    });
+                  },
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _DraftMissionsPanel(

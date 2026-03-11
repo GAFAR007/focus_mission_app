@@ -200,7 +200,8 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
                     ),
                     focusedDate: _focusedDate,
                     entriesByDay: entriesByDay,
-                    onSelectDate: _setFocusedDate,
+                    onSelectDate: (date) =>
+                        _setFocusedDate(date, triggerTap: true),
                   )
                 : _MonthPlanner(
                     key: ValueKey<String>(
@@ -208,7 +209,8 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
                     ),
                     focusedDate: _focusedDate,
                     entriesByDay: entriesByDay,
-                    onSelectDate: _setFocusedDate,
+                    onSelectDate: (date) =>
+                        _setFocusedDate(date, triggerTap: true),
                   ),
           ),
         ],
@@ -232,13 +234,15 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
     );
   }
 
-  void _setFocusedDate(DateTime date) {
+  void _setFocusedDate(DateTime date, {bool triggerTap = false}) {
     final normalized = _normalizeDate(date);
     setState(() => _focusedDate = normalized);
     widget.onDateChanged?.call(normalized);
-    // WHY: Teacher and management planners both need a lightweight date-click
-    // hook for opening slot editors without changing the shared calendar shape.
-    widget.onDateTap?.call(normalized);
+    if (triggerTap) {
+      // WHY: The date editor should open only when a planner tile is tapped,
+      // not when toolbar navigation changes the focused date.
+      widget.onDateTap?.call(normalized);
+    }
   }
 }
 
