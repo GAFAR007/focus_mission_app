@@ -387,6 +387,41 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     );
   }
 
+  TodaySchedule? _scheduleForDate(
+    List<TodaySchedule> timetable,
+    DateTime date,
+  ) {
+    final normalized = _dateOnly(date);
+    if (_isWeekendDate(normalized)) {
+      return null;
+    }
+
+    final day = _weekdayLabelForDate(normalized);
+    return timetable.cast<TodaySchedule?>().firstWhere(
+      (item) => item?.day == day,
+      orElse: () => null,
+    );
+  }
+
+  void _openTimetableEditorForDate({
+    required DateTime date,
+    required List<TodaySchedule> timetable,
+    required List<SubjectCertificationSettings> subjects,
+    required List<TeacherSummary> teachers,
+  }) {
+    setState(() {
+      _showTimetableEditor = true;
+      // WHY: Management expects clicking a timetable day to open that day's
+      // live editor immediately, especially when updating an existing entry.
+      _selectTimetableDate(
+        date: date,
+        timetable: timetable,
+        subjects: subjects,
+        teachers: teachers,
+      );
+    });
+  }
+
   String? _resolveSubjectId({
     required List<SubjectCertificationSettings> subjects,
     required String currentSubjectId,
@@ -624,6 +659,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
             data.certifications,
             selectedCertificationSubject,
           );
+          final selectedTimetableEntry = _scheduleForDate(
+            workspace.timetable,
+            _selectedTimetableDate,
+          );
+          final selectedTimetableHasEntry = selectedTimetableEntry != null;
           final selectedCertificationSettings =
               data.certificationSubjects.isEmpty
               ? null
@@ -1101,15 +1141,20 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   date: _selectedTimetableDate,
                   actionLabel: _showTimetableEditor
                       ? 'Hide timetable editor'
+                      : selectedTimetableHasEntry
+                      ? 'Update teacher, subject, and room'
                       : 'Add teacher, subject, and room',
                   actionIcon: _showTimetableEditor
                       ? Icons.keyboard_arrow_up_rounded
+                      : selectedTimetableHasEntry
+                      ? Icons.edit_calendar_rounded
                       : Icons.add_circle_outline_rounded,
                   onActionPressed: () => _toggleTimetableEditor(data),
                   inlineEditor: _showTimetableEditor
                       ? _ManagementTimetableInlineEditor(
                           selectedDate: _selectedTimetableDate,
                           isWeekend: _isWeekendDate(_selectedTimetableDate),
+                          hasExistingEntry: selectedTimetableHasEntry,
                           hasSubjects: data.certificationSubjects.isNotEmpty,
                           subjectOptions: data.certificationSubjects,
                           teacherOptions: data.teachers,
@@ -1164,6 +1209,12 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                       subjects: data.certificationSubjects,
                       teachers: data.teachers,
                     ),
+                  ),
+                  onDateTap: (date) => _openTimetableEditorForDate(
+                    date: date,
+                    timetable: workspace.timetable,
+                    subjects: data.certificationSubjects,
+                    teachers: data.teachers,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.item),
@@ -2031,6 +2082,7 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
   const _ManagementTimetableInlineEditor({
     required this.selectedDate,
     required this.isWeekend,
+    required this.hasExistingEntry,
     required this.hasSubjects,
     required this.subjectOptions,
     required this.teacherOptions,
@@ -2054,6 +2106,7 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
 
   final DateTime selectedDate;
   final bool isWeekend;
+  final bool hasExistingEntry;
   final bool hasSubjects;
   final List<SubjectCertificationSettings> subjectOptions;
   final List<TeacherSummary> teacherOptions;
@@ -2118,7 +2171,9 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Add teacher, subject, and room',
+            hasExistingEntry
+                ? 'Update teacher, subject, and room'
+                : 'Add teacher, subject, and room',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 6),
@@ -2146,7 +2201,9 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Click a weekday card below, then use these controls here in the timetable panel. No popup is needed.',
+            hasExistingEntry
+                ? 'Click any weekday card below to update that saved timetable entry here in the panel.'
+                : 'Click a weekday card below, then use these controls here in the timetable panel. No popup is needed.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -2315,7 +2372,7 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
                 label: Text(
                   isSaving
                       ? 'Saving timetable...'
-                      : 'Save ${_weekdayLabelForDate(selectedDate)} timetable',
+                      : '${hasExistingEntry ? 'Update' : 'Save'} ${_weekdayLabelForDate(selectedDate)} timetable',
                 ),
               ),
             ),
