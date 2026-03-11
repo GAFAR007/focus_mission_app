@@ -200,8 +200,7 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
                     ),
                     focusedDate: _focusedDate,
                     entriesByDay: entriesByDay,
-                    onSelectDate: (date) =>
-                        _setFocusedDate(date, triggerTap: true),
+                    onSelectDate: _handlePlannerDateTap,
                   )
                 : _MonthPlanner(
                     key: ValueKey<String>(
@@ -209,8 +208,7 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
                     ),
                     focusedDate: _focusedDate,
                     entriesByDay: entriesByDay,
-                    onSelectDate: (date) =>
-                        _setFocusedDate(date, triggerTap: true),
+                    onSelectDate: _handlePlannerDateTap,
                   ),
           ),
         ],
@@ -234,15 +232,28 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
     );
   }
 
-  void _setFocusedDate(DateTime date, {bool triggerTap = false}) {
+  void _setFocusedDate(DateTime date) {
     final normalized = _normalizeDate(date);
     setState(() => _focusedDate = normalized);
     widget.onDateChanged?.call(normalized);
-    if (triggerTap) {
-      // WHY: The date editor should open only when a planner tile is tapped,
-      // not when toolbar navigation changes the focused date.
-      widget.onDateTap?.call(normalized);
+  }
+
+  void _handlePlannerDateTap(DateTime date) {
+    final normalized = _normalizeDate(date);
+    _setFocusedDate(normalized);
+    if (widget.onDateTap == null) {
+      return;
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      // WHY: Planner tile taps should first settle the selected date state,
+      // then open the editor. This avoids web timing issues where the visual
+      // selection updates but the popup never appears.
+      widget.onDateTap?.call(normalized);
+    });
   }
 }
 

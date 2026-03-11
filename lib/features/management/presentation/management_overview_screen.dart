@@ -1434,17 +1434,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   subtitle:
                       'Confirm lesson coverage across week and month for the selected student.',
                   entries: workspace.timetable,
-                  onDateTap: (date) {
-                    // WHY: The calendar updates its focused date in the same tap
-                    // cycle. Deferring the modal open to the next frame keeps
-                    // the bottom sheet reliable on web taps.
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted) {
-                        return;
-                      }
-                      _openTimetableEditor(data, date);
-                    });
-                  },
+                  onDateTap: (date) => _openTimetableEditor(data, date),
                 ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
