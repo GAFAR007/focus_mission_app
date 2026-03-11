@@ -1,0 +1,9 @@
+# WHAT:
+# Keep Netlify serving the Flutter single-page app on deep links.
+# WHY:
+# Direct refreshes on role, teacher, or management routes must still return the
+# built web app instead of a Netlify 404.
+# HOW:
+# Rewrite every incoming path back to `index.html` with a 200 response.
+
+/*    /index.html   200

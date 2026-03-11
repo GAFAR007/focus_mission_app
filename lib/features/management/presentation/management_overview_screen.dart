@@ -88,6 +88,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _isCreatingUser = false;
   bool _isSavingCertification = false;
   bool _isSavingTimetable = false;
+  bool _showTimetableEditor = false;
   bool _certificationEnabled = false;
   AppUser? _lastCreatedUser;
   final Set<String> _selectedCertificationTaskCodes = <String>{};
@@ -342,7 +343,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     _roomController.text = entry?.room ?? '';
   }
 
-  DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+  DateTime _dateOnly(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
 
   void _selectTimetableDate({
     required DateTime date,
@@ -397,8 +399,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return '';
   }
 
-  bool _isWeekendDate(DateTime date) => date.weekday == DateTime.saturday ||
-      date.weekday == DateTime.sunday;
+  bool _isWeekendDate(DateTime date) =>
+      date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
 
   String _weekdayLabelForDate(DateTime date) {
     return _managementWeekdayOptions[date.weekday - 1];
@@ -423,9 +425,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     }
 
     if (room.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a class or room.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a class or room.')));
       return false;
     }
 
@@ -493,6 +495,23 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         setState(() => _isSavingTimetable = false);
       }
     }
+  }
+
+  void _toggleTimetableEditor(_ManagementScreenData data) {
+    setState(() {
+      _showTimetableEditor = !_showTimetableEditor;
+      if (_showTimetableEditor) {
+        // WHY: When management opens the editor it must be synced to the
+        // selected calendar day so teacher, subject, and room edits land on the
+        // visible timetable slot.
+        _selectTimetableDate(
+          date: _selectedTimetableDate,
+          timetable: data.workspace.timetable,
+          subjects: data.certificationSubjects,
+          teachers: data.teachers,
+        );
+      }
+    });
   }
 
   @override
@@ -1004,45 +1023,56 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   onTapNotification: _openNotification,
                 ),
                 const SizedBox(height: AppSpacing.item),
-                _ManagementTimetableInlineEditor(
-                  selectedDate: _selectedTimetableDate,
-                  isWeekend: _isWeekendDate(_selectedTimetableDate),
-                  hasSubjects: data.certificationSubjects.isNotEmpty,
-                  subjectOptions: data.certificationSubjects,
-                  teacherOptions: data.teachers,
-                  selectedDayKey: _selectedTimetableDay,
-                  selectedMorningSubjectId: _selectedMorningSubjectId,
-                  selectedAfternoonSubjectId: _selectedAfternoonSubjectId,
-                  selectedMorningTeacherId: _selectedMorningTeacherId,
-                  selectedAfternoonTeacherId: _selectedAfternoonTeacherId,
-                  roomController: _roomController,
-                  isSaving: _isSavingTimetable,
-                  onMorningSubjectChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-                    setState(() => _selectedMorningSubjectId = value);
-                  },
-                  onAfternoonSubjectChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-                    setState(() => _selectedAfternoonSubjectId = value);
-                  },
-                  onMorningTeacherChanged: (value) => setState(
-                    () => _selectedMorningTeacherId = value ?? '',
-                  ),
-                  onAfternoonTeacherChanged: (value) => setState(
-                    () => _selectedAfternoonTeacherId = value ?? '',
-                  ),
-                  onSave: () => _saveTimetableEntry(data),
-                ),
                 WeeklyTimetableCalendar(
                   title: 'Student Timetable',
                   subtitle:
                       'Confirm lesson coverage across week and month for the selected student.',
                   entries: workspace.timetable,
                   date: _selectedTimetableDate,
+                  actionLabel: _showTimetableEditor
+                      ? 'Hide timetable editor'
+                      : 'Add teacher, subject, and room',
+                  actionIcon: _showTimetableEditor
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.add_circle_outline_rounded,
+                  onActionPressed: () => _toggleTimetableEditor(data),
+                  inlineEditor: _showTimetableEditor
+                      ? _ManagementTimetableInlineEditor(
+                          selectedDate: _selectedTimetableDate,
+                          isWeekend: _isWeekendDate(_selectedTimetableDate),
+                          hasSubjects: data.certificationSubjects.isNotEmpty,
+                          subjectOptions: data.certificationSubjects,
+                          teacherOptions: data.teachers,
+                          selectedDayKey: _selectedTimetableDay,
+                          selectedMorningSubjectId: _selectedMorningSubjectId,
+                          selectedAfternoonSubjectId:
+                              _selectedAfternoonSubjectId,
+                          selectedMorningTeacherId: _selectedMorningTeacherId,
+                          selectedAfternoonTeacherId:
+                              _selectedAfternoonTeacherId,
+                          roomController: _roomController,
+                          isSaving: _isSavingTimetable,
+                          onMorningSubjectChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setState(() => _selectedMorningSubjectId = value);
+                          },
+                          onAfternoonSubjectChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setState(() => _selectedAfternoonSubjectId = value);
+                          },
+                          onMorningTeacherChanged: (value) => setState(
+                            () => _selectedMorningTeacherId = value ?? '',
+                          ),
+                          onAfternoonTeacherChanged: (value) => setState(
+                            () => _selectedAfternoonTeacherId = value ?? '',
+                          ),
+                          onSave: () => _saveTimetableEntry(data),
+                        )
+                      : null,
                   onDateChanged: (date) => setState(
                     () => _selectTimetableDate(
                       date: date,
@@ -2015,9 +2045,9 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
                 ),
                 child: Text(
                   'Editing ${_formatEditorDate(selectedDate)}',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: AppPalette.navy,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge?.copyWith(color: AppPalette.navy),
                 ),
               ),
             ],
@@ -2075,30 +2105,30 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              key: ValueKey('management-inline-$selectedDayKey-morning-teacher'),
+              key: ValueKey(
+                'management-inline-$selectedDayKey-morning-teacher',
+              ),
               initialValue: selectedMorningTeacherId,
               decoration: const InputDecoration(
                 labelText: 'Morning teacher',
-                helperText:
-                    'Optional, but helps mission ownership stay clear.',
+                helperText: 'Optional, but helps mission ownership stay clear.',
               ),
               items: <DropdownMenuItem<String>>[
-                    const DropdownMenuItem<String>(
-                      value: '',
-                      child: Text('No teacher yet'),
+                const DropdownMenuItem<String>(
+                  value: '',
+                  child: Text('No teacher yet'),
+                ),
+                ...teacherOptions.map(
+                  (teacher) => DropdownMenuItem<String>(
+                    value: teacher.id,
+                    child: Text(
+                      teacher.subjectSpecialty?.trim().isNotEmpty == true
+                          ? '${teacher.name} · ${teacher.subjectSpecialty}'
+                          : teacher.name,
                     ),
-                    ...teacherOptions.map(
-                      (teacher) => DropdownMenuItem<String>(
-                        value: teacher.id,
-                        child: Text(
-                          teacher.subjectSpecialty?.trim().isNotEmpty == true
-                              ? '${teacher.name} · ${teacher.subjectSpecialty}'
-                              : teacher.name,
-                        ),
-                      ),
-                    ),
-                  ]
-                  .toList(growable: false),
+                  ),
+                ),
+              ].toList(growable: false),
               onChanged: onMorningTeacherChanged,
             ),
             const SizedBox(height: 12),
@@ -2130,22 +2160,21 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
                     'Optional, but helps afternoon missions route to the correct teacher.',
               ),
               items: <DropdownMenuItem<String>>[
-                    const DropdownMenuItem<String>(
-                      value: '',
-                      child: Text('No teacher yet'),
+                const DropdownMenuItem<String>(
+                  value: '',
+                  child: Text('No teacher yet'),
+                ),
+                ...teacherOptions.map(
+                  (teacher) => DropdownMenuItem<String>(
+                    value: teacher.id,
+                    child: Text(
+                      teacher.subjectSpecialty?.trim().isNotEmpty == true
+                          ? '${teacher.name} · ${teacher.subjectSpecialty}'
+                          : teacher.name,
                     ),
-                    ...teacherOptions.map(
-                      (teacher) => DropdownMenuItem<String>(
-                        value: teacher.id,
-                        child: Text(
-                          teacher.subjectSpecialty?.trim().isNotEmpty == true
-                              ? '${teacher.name} · ${teacher.subjectSpecialty}'
-                              : teacher.name,
-                        ),
-                      ),
-                    ),
-                  ]
-                  .toList(growable: false),
+                  ),
+                ),
+              ].toList(growable: false),
               onChanged: onAfternoonTeacherChanged,
             ),
             const SizedBox(height: 12),

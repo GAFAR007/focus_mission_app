@@ -1,16 +1,23 @@
 # focus_mission_app
 
-A new Flutter project.
+Flutter frontend for Focus Mission.
 
-## Getting Started
+## Push To Deploy
 
-This project is a starting point for a Flutter application.
+Pushes to `main` now deploy the web app to Netlify through GitHub Actions in
+`.github/workflows/deploy-web.yml`.
 
-A few resources to get you started if this is your first Flutter project:
+Required GitHub repository secrets:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+- `NETLIFY_AUTH_TOKEN`
+- `NETLIFY_SITE_ID`
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Deployment flow:
+
+1. GitHub Actions runs on every push to `main`.
+2. The workflow installs Flutter, runs `flutter analyze` and `flutter test`.
+3. It builds the production web bundle with `flutter build web --release`.
+4. It deploys `build/web` to Netlify.
+
+The Flutter web app also ships `web/_redirects` so direct route refreshes keep
+loading `index.html` instead of returning a Netlify 404.

@@ -113,6 +113,9 @@ class WeeklyTimetableCalendar extends StatefulWidget {
     this.onDateChanged,
     this.onDateTap,
     this.inlineEditor,
+    this.actionLabel,
+    this.actionIcon = Icons.add_rounded,
+    this.onActionPressed,
   });
 
   final List<TodaySchedule> entries;
@@ -122,6 +125,9 @@ class WeeklyTimetableCalendar extends StatefulWidget {
   final ValueChanged<DateTime>? onDateChanged;
   final ValueChanged<DateTime>? onDateTap;
   final Widget? inlineEditor;
+  final String? actionLabel;
+  final IconData actionIcon;
+  final VoidCallback? onActionPressed;
 
   @override
   State<WeeklyTimetableCalendar> createState() =>
@@ -157,7 +163,13 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _PlannerHeader(title: widget.title, subtitle: widget.subtitle),
+          _PlannerHeader(
+            title: widget.title,
+            subtitle: widget.subtitle,
+            actionLabel: widget.actionLabel,
+            actionIcon: widget.actionIcon,
+            onActionPressed: widget.onActionPressed,
+          ),
           const SizedBox(height: AppSpacing.section),
           _PlannerModeSwitch(
             mode: _mode,
@@ -264,46 +276,92 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
 }
 
 class _PlannerHeader extends StatelessWidget {
-  const _PlannerHeader({required this.title, required this.subtitle});
+  const _PlannerHeader({
+    required this.title,
+    required this.subtitle,
+    this.actionLabel,
+    this.actionIcon = Icons.add_rounded,
+    this.onActionPressed,
+  });
 
   final String title;
   final String subtitle;
+  final String? actionLabel;
+  final IconData actionIcon;
+  final VoidCallback? onActionPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: AppPalette.teacherGradient,
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+    final hasAction =
+        onActionPressed != null && (actionLabel?.trim().isNotEmpty ?? false);
+    final actionButton = hasAction
+        ? FilledButton.icon(
+            onPressed: onActionPressed,
+            icon: Icon(actionIcon),
+            label: Text(actionLabel!.trim()),
+          )
+        : null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showStackedAction = constraints.maxWidth < 780;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: AppPalette.teacherGradient,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.edit_calendar_rounded,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.item),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!showStackedAction && actionButton != null) ...[
+                  const SizedBox(width: AppSpacing.item),
+                  actionButton,
+                ],
+              ],
             ),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: const Icon(Icons.edit_calendar_rounded, color: Colors.white),
-        ),
-        const SizedBox(width: AppSpacing.item),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-              ),
+            if (showStackedAction && actionButton != null) ...[
+              const SizedBox(height: AppSpacing.compact),
+              // WHY: On tighter widths the timetable CTA needs its own row so
+              // the title stays readable instead of squeezing into a dense line.
+              SizedBox(width: double.infinity, child: actionButton),
             ],
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }

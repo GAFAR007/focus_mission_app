@@ -1,0 +1,76 @@
+# WHAT:
+# Deploy the Flutter web app to Netlify whenever code lands on `main`.
+# WHY:
+# The production website should update from a normal git push instead of a
+# manual local deploy step.
+# HOW:
+# Checkout the frontend repo, install Flutter, verify the app, build `build/web`,
+# then publish that folder to Netlify using repository secrets.
+
+name: Deploy Web
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze app
+        run: flutter analyze
+
+      - name: Run widget tests
+        run: flutter test
+
+      - name: Build production web bundle
+        run: flutter build web --release
+
+      - name: Validate Netlify secrets
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ] || [ -z "$NETLIFY_SITE_ID" ]; then
+            echo "NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID must be set in GitHub Actions secrets."
+            exit 1
+          fi
+
+      - name: Install Netlify CLI
+        run: npm install --global netlify-cli
+
+      - name: Deploy to Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: >
+          netlify deploy
+          --dir=build/web
+          --prod
+          --message "GitHub Actions deploy ${GITHUB_SHA}"

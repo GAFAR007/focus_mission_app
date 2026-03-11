@@ -76,6 +76,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   final Set<String> _selectedDraftMissionIds = <String>{};
   final Set<String> _sendingResultMissionIds = <String>{};
   bool _isSavingTeacherTimetable = false;
+  bool _showTeacherTimetableEditor = false;
   String _selectedTeacherTimetableSessionType = 'morning';
   String _selectedTeacherTimetableSubjectId = '';
 
@@ -236,60 +237,72 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       _openNotification(workspace, notification),
                 ),
                 const SizedBox(height: AppSpacing.item),
-                _TeacherTimetableInlineEditor(
-                  selectedDate: _selectedLessonDate,
-                  isWeekend: _isWeekendDate(_selectedLessonDate),
-                  hasSchedule:
-                      _scheduleForDate(
-                        workspace.timetable,
-                        _selectedLessonDate,
-                      ) !=
-                      null,
-                  hasTeacherSubjects: workspace.teacherSubjects.isNotEmpty,
-                  hasEditableSlot: _teacherAllowedTimetableSlots(
-                    workspace,
-                    _selectedLessonDate,
-                  ).isNotEmpty,
-                  roomController: _teacherTimetableRoomController,
-                  selectedSessionType: _selectedTeacherTimetableSessionType,
-                  selectedSubjectId: _selectedTeacherTimetableSubjectId,
-                  isSaving: _isSavingTeacherTimetable,
-                  slotOptions: _teacherAllowedTimetableSlots(
-                    workspace,
-                    _selectedLessonDate,
-                  ),
-                  subjectOptions: workspace.teacherSubjects,
-                  onSessionChanged: (value) => setState(() {
-                    _selectedTeacherTimetableSessionType = value;
-                    final schedule = _scheduleForDate(
-                      workspace.timetable,
-                      _selectedLessonDate,
-                    );
-                    final currentSubject =
-                        value == 'afternoon'
-                            ? schedule?.afternoonMission
-                            : schedule?.morningMission;
-                    if (currentSubject != null &&
-                        workspace.teacherSubjects.any(
-                          (subject) => subject.id == currentSubject.id,
-                        )) {
-                      _selectedTeacherTimetableSubjectId = currentSubject.id;
-                    } else if (workspace.teacherSubjects.isNotEmpty) {
-                      _selectedTeacherTimetableSubjectId =
-                          workspace.teacherSubjects.first.id;
-                    }
-                  }),
-                  onSubjectChanged: (value) => setState(
-                    () => _selectedTeacherTimetableSubjectId = value,
-                  ),
-                  onSave: () => _saveTeacherTimetableEntry(workspace),
-                ),
                 WeeklyTimetableCalendar(
                   title: 'Teacher Timetable',
                   subtitle:
                       '${workspace.selectedStudent.name}\'s Monday to Sunday planner with a full month view.',
                   entries: workspace.timetable,
                   date: _selectedLessonDate,
+                  actionLabel: _showTeacherTimetableEditor
+                      ? 'Hide subject editor'
+                      : 'Add subject to timetable',
+                  actionIcon: _showTeacherTimetableEditor
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.add_circle_outline_rounded,
+                  onActionPressed: () =>
+                      _toggleTeacherTimetableEditor(workspace),
+                  inlineEditor: _showTeacherTimetableEditor
+                      ? _TeacherTimetableInlineEditor(
+                          selectedDate: _selectedLessonDate,
+                          isWeekend: _isWeekendDate(_selectedLessonDate),
+                          hasSchedule:
+                              _scheduleForDate(
+                                workspace.timetable,
+                                _selectedLessonDate,
+                              ) !=
+                              null,
+                          hasTeacherSubjects:
+                              workspace.teacherSubjects.isNotEmpty,
+                          hasEditableSlot: _teacherAllowedTimetableSlots(
+                            workspace,
+                            _selectedLessonDate,
+                          ).isNotEmpty,
+                          roomController: _teacherTimetableRoomController,
+                          selectedSessionType:
+                              _selectedTeacherTimetableSessionType,
+                          selectedSubjectId: _selectedTeacherTimetableSubjectId,
+                          isSaving: _isSavingTeacherTimetable,
+                          slotOptions: _teacherAllowedTimetableSlots(
+                            workspace,
+                            _selectedLessonDate,
+                          ),
+                          subjectOptions: workspace.teacherSubjects,
+                          onSessionChanged: (value) => setState(() {
+                            _selectedTeacherTimetableSessionType = value;
+                            final schedule = _scheduleForDate(
+                              workspace.timetable,
+                              _selectedLessonDate,
+                            );
+                            final currentSubject = value == 'afternoon'
+                                ? schedule?.afternoonMission
+                                : schedule?.morningMission;
+                            if (currentSubject != null &&
+                                workspace.teacherSubjects.any(
+                                  (subject) => subject.id == currentSubject.id,
+                                )) {
+                              _selectedTeacherTimetableSubjectId =
+                                  currentSubject.id;
+                            } else if (workspace.teacherSubjects.isNotEmpty) {
+                              _selectedTeacherTimetableSubjectId =
+                                  workspace.teacherSubjects.first.id;
+                            }
+                          }),
+                          onSubjectChanged: (value) => setState(
+                            () => _selectedTeacherTimetableSubjectId = value,
+                          ),
+                          onSave: () => _saveTeacherTimetableEntry(workspace),
+                        )
+                      : null,
                   onDateChanged: (date) => setState(() {
                     _selectedLessonDate = date;
                     _syncTeacherTimetableEditor(workspace, date);
@@ -1679,7 +1692,10 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     ];
   }
 
-  void _syncTeacherTimetableEditor(TeacherWorkspaceData workspace, DateTime date) {
+  void _syncTeacherTimetableEditor(
+    TeacherWorkspaceData workspace,
+    DateTime date,
+  ) {
     final allowedSlots = _teacherAllowedTimetableSlots(workspace, date);
     if (allowedSlots.isEmpty) {
       _selectedTeacherTimetableSessionType = 'morning';
@@ -1693,13 +1709,13 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
 
     final schedule = _scheduleForDate(workspace.timetable, date);
     final preferredSession = _resolvedLessonForTeacher(schedule).toLowerCase();
-    _selectedTeacherTimetableSessionType = allowedSlots.any(
-          (option) => option.sessionType == preferredSession,
-        )
+    _selectedTeacherTimetableSessionType =
+        allowedSlots.any((option) => option.sessionType == preferredSession)
         ? preferredSession
         : allowedSlots.first.sessionType;
 
-    final selectedSlotSubject = _selectedTeacherTimetableSessionType == 'afternoon'
+    final selectedSlotSubject =
+        _selectedTeacherTimetableSessionType == 'afternoon'
         ? schedule?.afternoonMission
         : schedule?.morningMission;
     if (selectedSlotSubject != null &&
@@ -1717,7 +1733,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     _teacherTimetableRoomController.text = schedule?.room ?? '';
   }
 
-  Future<void> _saveTeacherTimetableEntry(TeacherWorkspaceData workspace) async {
+  Future<void> _saveTeacherTimetableEntry(
+    TeacherWorkspaceData workspace,
+  ) async {
     if (_isSavingTeacherTimetable) {
       return;
     }
@@ -1773,9 +1791,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     }
 
     if (_teacherTimetableRoomController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a class or room.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a class or room.')));
       return;
     }
 
@@ -1795,10 +1813,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       }
 
       setState(() {
-        _selectedLesson =
-            _selectedTeacherTimetableSessionType == 'afternoon'
-                ? 'Afternoon'
-                : 'Morning';
+        _selectedLesson = _selectedTeacherTimetableSessionType == 'afternoon'
+            ? 'Afternoon'
+            : 'Morning';
         _future = _loadWorkspace();
       });
 
@@ -1821,6 +1838,17 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         setState(() => _isSavingTeacherTimetable = false);
       }
     }
+  }
+
+  void _toggleTeacherTimetableEditor(TeacherWorkspaceData workspace) {
+    setState(() {
+      _showTeacherTimetableEditor = !_showTeacherTimetableEditor;
+      if (_showTeacherTimetableEditor) {
+        // WHY: Opening the inline editor should always mirror the selected
+        // planner date so the teacher edits the visible timetable slot.
+        _syncTeacherTimetableEditor(workspace, _selectedLessonDate);
+      }
+    });
   }
 
   bool _hasMissionForSlot({
