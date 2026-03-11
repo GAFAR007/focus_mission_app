@@ -516,192 +516,208 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     String room = _roomController.text;
     bool isSaving = false;
 
-    await showModalBottomSheet<void>(
+    await showDialog<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (modalContext) {
+      barrierDismissible: !isSaving,
+      builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.fromLTRB(
-                AppSpacing.item,
-                AppSpacing.item,
-                AppSpacing.item,
-                MediaQuery.of(context).viewInsets.bottom + AppSpacing.item,
-              ),
-              child: SoftPanel(
-                colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Edit timetable for ${_formatEditorDate(date)}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Set both lesson slots, optional teachers, and the shared class or room for this weekday.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.compact),
-                    DropdownButtonFormField<String>(
-                      initialValue: morningSubjectId.isNotEmpty
-                          ? morningSubjectId
-                          : null,
-                      decoration: const InputDecoration(
-                        labelText: 'Morning subject',
-                      ),
-                      items: data.certificationSubjects
-                          .map(
-                            (subject) => DropdownMenuItem<String>(
-                              value: subject.subjectId,
-                              child: Text(subject.subjectName),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (value) {
-                        if (value == null) {
-                          return;
-                        }
-                        setModalState(() => morningSubjectId = value);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: morningTeacherId,
-                      decoration: const InputDecoration(
-                        labelText: 'Morning teacher',
-                      ),
-                      items: <DropdownMenuItem<String>>[
-                            const DropdownMenuItem<String>(
-                              value: '',
-                              child: Text('No teacher yet'),
-                            ),
-                            ...data.teachers.map(
-                              (teacher) => DropdownMenuItem<String>(
-                                value: teacher.id,
-                                child: Text(
-                                  teacher.subjectSpecialty?.trim().isNotEmpty ==
-                                          true
-                                      ? '${teacher.name} · ${teacher.subjectSpecialty}'
-                                      : teacher.name,
-                                ),
-                              ),
-                            ),
-                          ]
-                          .toList(growable: false),
-                      onChanged: (value) =>
-                          setModalState(() => morningTeacherId = value ?? ''),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: afternoonSubjectId.isNotEmpty
-                          ? afternoonSubjectId
-                          : null,
-                      decoration: const InputDecoration(
-                        labelText: 'Afternoon subject',
-                      ),
-                      items: data.certificationSubjects
-                          .map(
-                            (subject) => DropdownMenuItem<String>(
-                              value: subject.subjectId,
-                              child: Text(subject.subjectName),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (value) {
-                        if (value == null) {
-                          return;
-                        }
-                        setModalState(() => afternoonSubjectId = value);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: afternoonTeacherId,
-                      decoration: const InputDecoration(
-                        labelText: 'Afternoon teacher',
-                      ),
-                      items: <DropdownMenuItem<String>>[
-                            const DropdownMenuItem<String>(
-                              value: '',
-                              child: Text('No teacher yet'),
-                            ),
-                            ...data.teachers.map(
-                              (teacher) => DropdownMenuItem<String>(
-                                value: teacher.id,
-                                child: Text(
-                                  teacher.subjectSpecialty?.trim().isNotEmpty ==
-                                          true
-                                      ? '${teacher.name} · ${teacher.subjectSpecialty}'
-                                      : teacher.name,
-                                ),
-                              ),
-                            ),
-                          ]
-                          .toList(growable: false),
-                      onChanged: (value) => setModalState(
-                        () => afternoonTeacherId = value ?? '',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      initialValue: room,
-                      decoration: const InputDecoration(
-                        labelText: 'Class / room',
-                        hintText: 'Room 2 / Room 4',
-                      ),
-                      onChanged: (value) => room = value,
-                    ),
-                    const SizedBox(height: AppSpacing.compact),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: isSaving
-                                ? null
-                                : () => Navigator.of(modalContext).pop(),
-                            child: const Text('Cancel'),
+            // WHY: Web month-view taps were reliably updating selection but
+            // not always surfacing a bottom sheet. A centered dialog is a
+            // more robust mini-form for timetable editing on desktop browsers.
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(AppSpacing.item),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 620),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.item,
+                    AppSpacing.item,
+                    AppSpacing.item,
+                    MediaQuery.of(context).viewInsets.bottom + AppSpacing.item,
+                  ),
+                  child: SoftPanel(
+                    colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Edit timetable for ${_formatEditorDate(date)}',
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: isSaving
-                                ? null
-                                : () async {
-                                    setModalState(() => isSaving = true);
-                                    final saved = await _persistTimetableEntry(
-                                      data: data,
-                                      day: day,
-                                      room: room,
-                                      morningSubjectId: morningSubjectId,
-                                      afternoonSubjectId: afternoonSubjectId,
-                                      morningTeacherId: morningTeacherId,
-                                      afternoonTeacherId: afternoonTeacherId,
-                                    );
-                                    if (!mounted) {
-                                      return;
-                                    }
-                                    if (saved && modalContext.mounted) {
-                                      Navigator.of(modalContext).pop();
-                                    } else {
-                                      setModalState(() => isSaving = false);
-                                    }
-                                  },
-                            icon: const Icon(Icons.save_rounded),
-                            label: Text(
-                              isSaving ? 'Saving...' : 'Save weekday',
+                          const SizedBox(height: 6),
+                          Text(
+                            'Set both lesson slots, optional teachers, and the shared class or room for this weekday.',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppPalette.textMuted),
+                          ),
+                          const SizedBox(height: AppSpacing.compact),
+                          DropdownButtonFormField<String>(
+                            initialValue: morningSubjectId.isNotEmpty
+                                ? morningSubjectId
+                                : null,
+                            decoration: const InputDecoration(
+                              labelText: 'Morning subject',
+                            ),
+                            items: data.certificationSubjects
+                                .map(
+                                  (subject) => DropdownMenuItem<String>(
+                                    value: subject.subjectId,
+                                    child: Text(subject.subjectName),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            onChanged: (value) {
+                              if (value == null) {
+                                return;
+                              }
+                              setModalState(() => morningSubjectId = value);
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            initialValue: morningTeacherId,
+                            decoration: const InputDecoration(
+                              labelText: 'Morning teacher',
+                            ),
+                            items: <DropdownMenuItem<String>>[
+                                  const DropdownMenuItem<String>(
+                                    value: '',
+                                    child: Text('No teacher yet'),
+                                  ),
+                                  ...data.teachers.map(
+                                    (teacher) => DropdownMenuItem<String>(
+                                      value: teacher.id,
+                                      child: Text(
+                                        teacher.subjectSpecialty?.trim().isNotEmpty ==
+                                                true
+                                            ? '${teacher.name} · ${teacher.subjectSpecialty}'
+                                            : teacher.name,
+                                      ),
+                                    ),
+                                  ),
+                                ]
+                                .toList(growable: false),
+                            onChanged: (value) => setModalState(
+                              () => morningTeacherId = value ?? '',
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            initialValue: afternoonSubjectId.isNotEmpty
+                                ? afternoonSubjectId
+                                : null,
+                            decoration: const InputDecoration(
+                              labelText: 'Afternoon subject',
+                            ),
+                            items: data.certificationSubjects
+                                .map(
+                                  (subject) => DropdownMenuItem<String>(
+                                    value: subject.subjectId,
+                                    child: Text(subject.subjectName),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            onChanged: (value) {
+                              if (value == null) {
+                                return;
+                              }
+                              setModalState(() => afternoonSubjectId = value);
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            initialValue: afternoonTeacherId,
+                            decoration: const InputDecoration(
+                              labelText: 'Afternoon teacher',
+                            ),
+                            items: <DropdownMenuItem<String>>[
+                                  const DropdownMenuItem<String>(
+                                    value: '',
+                                    child: Text('No teacher yet'),
+                                  ),
+                                  ...data.teachers.map(
+                                    (teacher) => DropdownMenuItem<String>(
+                                      value: teacher.id,
+                                      child: Text(
+                                        teacher.subjectSpecialty?.trim().isNotEmpty ==
+                                                true
+                                            ? '${teacher.name} · ${teacher.subjectSpecialty}'
+                                            : teacher.name,
+                                      ),
+                                    ),
+                                  ),
+                                ]
+                                .toList(growable: false),
+                            onChanged: (value) => setModalState(
+                              () => afternoonTeacherId = value ?? '',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            initialValue: room,
+                            decoration: const InputDecoration(
+                              labelText: 'Class / room',
+                              hintText: 'Room 2 / Room 4',
+                            ),
+                            onChanged: (value) => room = value,
+                          ),
+                          const SizedBox(height: AppSpacing.compact),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: isSaving
+                                      ? null
+                                      : () => Navigator.of(dialogContext).pop(),
+                                  child: const Text('Cancel'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: isSaving
+                                      ? null
+                                      : () async {
+                                          setModalState(() => isSaving = true);
+                                          final saved =
+                                              await _persistTimetableEntry(
+                                            data: data,
+                                            day: day,
+                                            room: room,
+                                            morningSubjectId: morningSubjectId,
+                                            afternoonSubjectId:
+                                                afternoonSubjectId,
+                                            morningTeacherId: morningTeacherId,
+                                            afternoonTeacherId:
+                                                afternoonTeacherId,
+                                          );
+                                          if (!mounted) {
+                                            return;
+                                          }
+                                          if (saved && dialogContext.mounted) {
+                                            Navigator.of(dialogContext).pop();
+                                          } else {
+                                            setModalState(
+                                              () => isSaving = false,
+                                            );
+                                          }
+                                        },
+                                  icon: const Icon(Icons.save_rounded),
+                                  label: Text(
+                                    isSaving ? 'Saving...' : 'Save weekday',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             );
