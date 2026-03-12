@@ -5,7 +5,8 @@
  * Student mission entry points should stay visually obvious and keep only one
  * clear next step on screen.
  * HOW:
- * Compose a SoftPanel with mission copy, icon, and the shared gradient button.
+ * Compose a SoftPanel with mission copy, optional playful support text, and
+ * the shared gradient button.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -24,6 +25,9 @@ class MissionCard extends StatelessWidget {
     required this.icon,
     required this.colors,
     required this.onPressed,
+    this.eyebrow,
+    this.toneMessage,
+    this.featurePills = const <String>[],
   });
 
   final String title;
@@ -32,18 +36,37 @@ class MissionCard extends StatelessWidget {
   final IconData icon;
   final List<Color> colors;
   final VoidCallback onPressed;
+  final String? eyebrow;
+  final String? toneMessage;
+  final List<String> featurePills;
 
   @override
   Widget build(BuildContext context) {
     return SoftPanel(
       padding: const EdgeInsets.all(AppSpacing.section),
       colors: [
-        Colors.white.withValues(alpha: 0.88),
-        colors.last.withValues(alpha: 0.18),
+        Colors.white.withValues(alpha: 0.92),
+        colors.last.withValues(alpha: 0.22),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if ((eyebrow ?? '').trim().isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.82),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                eyebrow!,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.item),
+          ],
           Row(
             children: [
               Container(
@@ -70,11 +93,46 @@ class MissionCard extends StatelessWidget {
                       subtitle,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
+                    if ((toneMessage ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        toneMessage!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.black.withValues(alpha: 0.62),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
+          if (featurePills.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.item),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: featurePills
+                  .map(
+                    (pill) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.74),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        pill,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ],
           const SizedBox(height: AppSpacing.item),
           GradientButton(
             label: actionLabel,

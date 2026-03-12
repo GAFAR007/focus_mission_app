@@ -1,14 +1,16 @@
 /**
  * WHAT:
  * StudentDashboardScreen shows the student's daily missions, recent activity,
- * and subject-level progress entry points.
+ * subject-level progress, and the guided FlexibleLearning Helper entry point.
  * WHY:
  * Students need one ADHD-friendly home screen where daily practice and
  * certification progress are visible without sending them into legacy
- * criterion flows that are no longer the main progress story.
+ * criterion flows that are no longer the main progress story, while still
+ * feeling playful and supportive.
  * HOW:
- * Load dashboard data plus timetable context, then render mission cards and
- * subject-level progress cards that open calm read-only reporting screens.
+ * Load dashboard data plus timetable context, render more rewarding student
+ * cards, and layer guided helper and encouragement popups on top of the
+ * existing student-only API data.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -26,6 +28,7 @@ import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/progress_hero_card.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
+import 'flexible_learning_helper_sheet.dart';
 import 'mission_play_screen.dart';
 import 'student_result_report_screen.dart';
 import 'student_subject_report_screen.dart';
@@ -41,12 +44,25 @@ class StudentDashboardScreen extends StatefulWidget {
 
 enum _MissionStartChoice { daily, assessment }
 
+enum _DailyWelcomeAction { helper, missions, close }
+
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   final FocusMissionApi _api = FocusMissionApi();
   static const String _shownSubjectBonusStorageKey =
       'shown_subject_bonus_keys_v1';
+  static const String _shownDailyWelcomeStorageKey =
+      'shown_student_dashboard_welcome_keys_v1';
   final Set<String> _shownSubjectBonusKeys = <String>{};
-  bool _isBonusStorageReady = false;
+  final Set<String> _shownDailyWelcomeKeys = <String>{};
+  final List<Future<void> Function()> _popupQueue = <Future<void> Function()>[];
+  final Map<String, StudentSubjectReportData> _subjectReportCache =
+      <String, StudentSubjectReportData>{};
+  final Map<String, Future<StudentSubjectReportData>> _subjectReportRequests =
+      <String, Future<StudentSubjectReportData>>{};
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _todaySectionKey = GlobalKey();
+  bool _isPopupStorageReady = false;
+  bool _isPopupVisible = false;
 
   late AuthSession _session;
   late Future<_StudentScreenData> _future;
@@ -56,7 +72,13 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     super.initState();
     _session = widget.session;
     _future = _loadData();
-    _loadShownSubjectBonusKeys();
+    _loadShownPopupKeys();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<_StudentScreenData> _loadData() async {
@@ -80,20 +102,26 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 
   void _refreshData() {
     setState(() {
+      _subjectReportCache.clear();
+      _subjectReportRequests.clear();
       _future = _loadData();
     });
   }
 
-  Future<void> _loadShownSubjectBonusKeys() async {
+  Future<void> _loadShownPopupKeys() async {
     List<String> storedKeys = const <String>[];
+    List<String> welcomeKeys = const <String>[];
     try {
       final prefs = await SharedPreferences.getInstance();
       storedKeys =
           prefs.getStringList(_shownSubjectBonusStorageKey) ?? const <String>[];
+      welcomeKeys =
+          prefs.getStringList(_shownDailyWelcomeStorageKey) ?? const <String>[];
     } catch (error) {
       // WHY: Web/plugin bootstrap can briefly miss shared_preferences during
       // hot restarts; fallback keeps the dashboard usable for testing.
       storedKeys = const <String>[];
+      welcomeKeys = const <String>[];
     }
     if (!mounted) {
       return;
@@ -102,7 +130,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       _shownSubjectBonusKeys
         ..clear()
         ..addAll(storedKeys);
-      _isBonusStorageReady = true;
+      _shownDailyWelcomeKeys
+        ..clear()
+        ..addAll(welcomeKeys);
+      _isPopupStorageReady = true;
     });
   }
 
@@ -129,187 +160,255 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
           final today = data.dashboard.today;
           final mySubjects = _buildSubjectSummaries(data);
           _maybeShowSubjectCompletionBonus(data.dashboard.dailyXp);
+          _maybeShowDailyWelcome(data, mySubjects);
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.screen),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _ScreenHeader(
-                  title: 'Student View',
-                  onBack: () => Navigator.of(context).pop(),
-                  user: _session.user,
-                  onProfileTap: _openProfile,
+          return Stack(
+            children: [
+              SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screen,
+                  AppSpacing.screen,
+                  AppSpacing.screen,
+                  120,
                 ),
-                const SizedBox(height: AppSpacing.section),
-                ProgressHeroCard(
-                  name: _session.user.name,
-                  streakLabel: _journeyLabel(data.dashboard.student),
-                  currentXp: data.dashboard.student.xp,
-                  goalXp: 200,
-                  trailingIcon: Icons.emoji_events_rounded,
-                  avatarUrl: _session.user.avatar,
-                ),
-                const SizedBox(height: AppSpacing.item),
-                _DailyXpPanel(summary: data.dashboard.dailyXp),
-                const SizedBox(height: AppSpacing.section),
-                Text(
-                  'Today: ${today?.day ?? 'No schedule'}',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.item),
-                if (today != null) ...[
-                  MissionCard(
-                    title: 'Morning Mission',
-                    subtitle: _missionSubtitle(
-                      today.morningMission.name,
-                      today.room,
-                      today.morningTeacher?.name,
-                    ),
-                    actionLabel: 'Start Mission',
-                    icon: Icons.computer_rounded,
-                    colors: AppPalette.studentGradient,
-                    onPressed: () => _startMissionWithChoice(
-                      studentId: data.dashboard.student.id,
-                      subjectId: today.morningMission.id,
-                      sessionType: 'morning',
-                      subjectName: today.morningMission.name,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.item),
-                  MissionCard(
-                    title: 'Afternoon Mission',
-                    subtitle: _missionSubtitle(
-                      today.afternoonMission.name,
-                      today.room,
-                      today.afternoonTeacher?.name,
-                    ),
-                    actionLabel: 'Start Mission',
-                    icon: Icons.account_balance_rounded,
-                    colors: const [AppPalette.primaryBlue, AppPalette.sun],
-                    onPressed: () => _startMissionWithChoice(
-                      studentId: data.dashboard.student.id,
-                      subjectId: today.afternoonMission.id,
-                      sessionType: 'afternoon',
-                      subjectName: today.afternoonMission.name,
-                    ),
-                  ),
-                ] else
-                  const SoftPanel(
-                    child: Text('No mission is assigned for today yet.'),
-                  ),
-                const SizedBox(height: AppSpacing.section),
-                Text(
-                  'This week',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.item),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    StatChip(
-                      value: '${_averageFocus(data.dashboard.recentSessions)}%',
-                      label: 'Focus score',
-                      colors: AppPalette.studentGradient,
+                    _ScreenHeader(
+                      title: 'Student View',
+                      subtitle: 'Tiny wins, clear missions, calm progress.',
+                      onBack: () => Navigator.of(context).pop(),
+                      user: _session.user,
+                      onProfileTap: _openProfile,
                     ),
-                    StatChip(
-                      value: '${data.dashboard.student.xp}',
-                      label: 'XP total',
-                      colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+                    const SizedBox(height: AppSpacing.section),
+                    ProgressHeroCard(
+                      name: _session.user.name,
+                      streakLabel: _journeyLabel(data.dashboard.student),
+                      currentXp: data.dashboard.student.xp,
+                      goalXp: 200,
+                      trailingIcon: Icons.emoji_events_rounded,
+                      avatarUrl: _session.user.avatar,
+                      titleBadge: _heroTitleBadge(today),
+                      highlightMessage: _heroHighlightMessage(data, today),
+                      statBadges: <String>[
+                        '${mySubjects.length} subjects',
+                        '${data.dashboard.dailyXp.totalXp}/${data.dashboard.dailyXp.totalXpCap} XP today',
+                        '${_averageFocus(data.dashboard.recentSessions)}% focus average',
+                      ],
                     ),
-                    StatChip(
-                      value: '${data.dashboard.recentSessions.length}',
-                      label: 'Recent sessions',
-                      colors: const [AppPalette.sky, AppPalette.primaryBlue],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.section),
-                Text(
-                  'My Subjects',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.item),
-                if (mySubjects.isEmpty)
-                  const SoftPanel(
-                    child: Text(
-                      'No subjects are linked to your timetable yet. Your teacher will add them soon.',
-                    ),
-                  )
-                else
-                  ...mySubjects.map(
-                    (subject) => Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.item),
-                      child: _MySubjectCard(
-                        summary: subject,
-                        onTap: () => _openSubjectReport(subject),
-                        onOpenLatestResult: () =>
-                            _openLatestSubjectResult(subject),
+                    const SizedBox(height: AppSpacing.item),
+                    _DailyXpPanel(summary: data.dashboard.dailyXp),
+                    const SizedBox(height: AppSpacing.section),
+                    KeyedSubtree(
+                      key: _todaySectionKey,
+                      child: _SectionLead(
+                        title: 'Today: ${today?.day ?? 'No schedule yet'}',
+                        subtitle:
+                            'Pick one mission, keep it simple, and let the helper do the cheering.',
                       ),
                     ),
-                  ),
-                const SizedBox(height: AppSpacing.section),
-                Text(
-                  'Recent activity',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.item),
-                if (data.dashboard.recentSessions.isEmpty)
-                  const SoftPanel(
-                    child: Text(
-                      'No completed sessions yet. Start the next mission.',
-                    ),
-                  )
-                else
-                  ...data.dashboard.recentSessions.map(
-                    (session) => Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.item),
-                      child: SoftPanel(
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: AppPalette.teacherGradient,
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Icon(
-                                Icons.check_rounded,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.item),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    session.subjectName,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${session.sessionType} · ${session.completedQuestions} questions · ${session.focusScore}% focus',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                    const SizedBox(height: AppSpacing.item),
+                    if (today != null) ...[
+                      MissionCard(
+                        title: 'Morning Mission',
+                        subtitle: _missionSubtitle(
+                          today.morningMission.name,
+                          today.room,
+                          today.morningTeacher?.name,
+                        ),
+                        actionLabel: 'Start Mission',
+                        icon: Icons.computer_rounded,
+                        colors: AppPalette.studentGradient,
+                        eyebrow: 'Warm-up mode',
+                        toneMessage:
+                            'Start light, build rhythm, keep your brain comfy.',
+                        featurePills: <String>[
+                          today.morningMission.name,
+                          today.room,
+                        ],
+                        onPressed: () => _startMissionWithChoice(
+                          studentId: data.dashboard.student.id,
+                          subjectId: today.morningMission.id,
+                          sessionType: 'morning',
+                          subjectName: today.morningMission.name,
                         ),
                       ),
+                      const SizedBox(height: AppSpacing.item),
+                      MissionCard(
+                        title: 'Afternoon Mission',
+                        subtitle: _missionSubtitle(
+                          today.afternoonMission.name,
+                          today.room,
+                          today.afternoonTeacher?.name,
+                        ),
+                        actionLabel: 'Start Mission',
+                        icon: Icons.account_balance_rounded,
+                        colors: const [AppPalette.primaryBlue, AppPalette.sun],
+                        eyebrow: 'Round two',
+                        toneMessage:
+                            'Steady beats speedy. One focused run is enough.',
+                        featurePills: <String>[
+                          today.afternoonMission.name,
+                          today.room,
+                        ],
+                        onPressed: () => _startMissionWithChoice(
+                          studentId: data.dashboard.student.id,
+                          subjectId: today.afternoonMission.id,
+                          sessionType: 'afternoon',
+                          subjectName: today.afternoonMission.name,
+                        ),
+                      ),
+                    ] else
+                      const SoftPanel(
+                        child: Text(
+                          'No mission is assigned for today yet. Your board will wake up as soon as one is added.',
+                        ),
+                      ),
+                    const SizedBox(height: AppSpacing.section),
+                    const _SectionLead(
+                      title: 'This week',
+                      subtitle:
+                          'Quick signals only. No giant dashboard maze today.',
                     ),
-                  ),
-              ],
-            ),
+                    const SizedBox(height: AppSpacing.item),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        StatChip(
+                          value:
+                              '${_averageFocus(data.dashboard.recentSessions)}%',
+                          label: 'Focus score',
+                          colors: AppPalette.studentGradient,
+                        ),
+                        StatChip(
+                          value: '${data.dashboard.student.xp}',
+                          label: 'XP total',
+                          colors: const [
+                            AppPalette.primaryBlue,
+                            AppPalette.aqua,
+                          ],
+                        ),
+                        StatChip(
+                          value: '${data.dashboard.recentSessions.length}',
+                          label: 'Recent sessions',
+                          colors: const [
+                            AppPalette.sky,
+                            AppPalette.primaryBlue,
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.section),
+                    const _SectionLead(
+                      title: 'My Subjects',
+                      subtitle:
+                          'Open a subject when you want a calm, read-only progress check.',
+                    ),
+                    const SizedBox(height: AppSpacing.item),
+                    if (mySubjects.isEmpty)
+                      const SoftPanel(
+                        child: Text(
+                          'No subjects are linked to your timetable yet. Your teacher will add them soon.',
+                        ),
+                      )
+                    else
+                      ...mySubjects.map(
+                        (subject) => Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: AppSpacing.item,
+                          ),
+                          child: _MySubjectCard(
+                            summary: subject,
+                            onTap: () => _openSubjectReport(subject),
+                            onOpenLatestResult: () =>
+                                _openLatestSubjectResult(subject),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: AppSpacing.section),
+                    const _SectionLead(
+                      title: 'Recent activity',
+                      subtitle:
+                          'These are your latest wins, kept short and easy to scan.',
+                    ),
+                    const SizedBox(height: AppSpacing.item),
+                    if (data.dashboard.recentSessions.isEmpty)
+                      const SoftPanel(
+                        child: Text(
+                          'No completed sessions yet. Start the next mission and the board will start telling your story.',
+                        ),
+                      )
+                    else
+                      ...data.dashboard.recentSessions.map(
+                        (session) => Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: AppSpacing.item,
+                          ),
+                          child: SoftPanel(
+                            colors: [
+                              Colors.white.withValues(alpha: 0.92),
+                              AppPalette.teacherGradient.last.withValues(
+                                alpha: 0.18,
+                              ),
+                            ],
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: AppPalette.teacherGradient,
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: const Icon(
+                                    Icons.check_rounded,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.item),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        session.subjectName,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${session.sessionType} · ${session.completedQuestions} questions · ${session.focusScore}% focus',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const _MiniPill(label: 'Nice work'),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Positioned(
+                right: AppSpacing.screen,
+                bottom: AppSpacing.screen,
+                child: _HelperBubbleButton(
+                  onTap: () => _openHelper(data, mySubjects),
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -665,6 +764,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     String? missionId,
   }) async {
     try {
+      final previousStudent = _session.user;
       final startedMission = await _api.startSession(
         token: _session.token,
         studentId: studentId,
@@ -705,6 +805,12 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
           );
         });
         _refreshData();
+        _queueMissionMomentumPopup(
+          previousStudent: previousStudent,
+          updatedStudent: updatedStudent,
+          subjectName: subjectName,
+          sessionType: sessionType,
+        );
         return;
       }
 
@@ -761,11 +867,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     StudentSubjectReportSummary summary,
   ) async {
     try {
-      final report = await _api.fetchStudentSubjectReport(
-        token: _session.token,
-        studentId: _session.user.id,
-        subjectId: summary.subjectId,
-      );
+      final report = await _loadSubjectReport(summary.subjectId);
 
       if (!mounted) {
         return;
@@ -967,7 +1069,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   }
 
   void _maybeShowSubjectCompletionBonus(DailyXpSummary summary) {
-    if (!_isBonusStorageReady) {
+    if (!_isPopupStorageReady) {
       return;
     }
 
@@ -995,12 +1097,12 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       }
     }();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _enqueuePopup(() async {
       if (!mounted) {
         return;
       }
 
-      showDialog<void>(
+      await showDialog<void>(
         context: context,
         builder: (context) {
           return Dialog(
@@ -1018,7 +1120,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                   ),
                   const SizedBox(height: AppSpacing.item),
                   Text(
-                    'You completed a subject and earned +$bonusXp bonus XP today.',
+                    'You completed a subject and earned +$bonusXp bonus XP today. Tiny confetti moment unlocked.',
                     style: Theme.of(context).textTheme.bodyLarge,
                   ),
                   const SizedBox(height: AppSpacing.section),
@@ -1033,6 +1135,345 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         },
       );
     });
+  }
+
+  void _maybeShowDailyWelcome(
+    _StudentScreenData data,
+    List<StudentSubjectReportSummary> subjects,
+  ) {
+    if (!_isPopupStorageReady) {
+      return;
+    }
+
+    final dateKey = data.dashboard.dailyXp.dateKey.trim().isEmpty
+        ? DateTime.now().toIso8601String().split('T').first
+        : data.dashboard.dailyXp.dateKey.trim();
+    final storageKey = '${_session.user.id}:$dateKey';
+    if (_shownDailyWelcomeKeys.contains(storageKey)) {
+      return;
+    }
+
+    _shownDailyWelcomeKeys.add(storageKey);
+    () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(
+          _shownDailyWelcomeStorageKey,
+          _shownDailyWelcomeKeys.toList(growable: false),
+        );
+      } catch (error) {
+        // WHY: The welcome popup is supportive polish; if storage misses, the
+        // dashboard still needs to stay usable.
+      }
+    }();
+
+    final today = data.dashboard.today;
+    final moodCopy = today == null
+        ? 'Fresh board, soft landing. I can cheer you on while your next mission is being added.'
+        : 'Your board is ready with ${today.morningMission.name} and ${today.afternoonMission.name}. Pick one calm win.';
+
+    _enqueuePopup(() async {
+      if (!mounted) {
+        return;
+      }
+
+      final action = await showDialog<_DailyWelcomeAction>(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            insetPadding: const EdgeInsets.all(AppSpacing.screen),
+            backgroundColor: Colors.transparent,
+            child: SoftPanel(
+              colors: const [Color(0xFFFFFCF4), Color(0xFFE9F8FF)],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [AppPalette.sun, AppPalette.aqua],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Icon(
+                          Icons.waving_hand_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.item),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Morning, ${_firstName(_session.user.name)}',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              moodCopy,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: AppPalette.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.item),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _MiniPill(
+                        label:
+                            '${data.dashboard.dailyXp.totalXp}/${data.dashboard.dailyXp.totalXpCap} XP today',
+                      ),
+                      _MiniPill(
+                        label: '${data.dashboard.student.streak} day streak',
+                      ),
+                      _MiniPill(label: '${subjects.length} subjects'),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.section),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => Navigator.of(
+                          context,
+                        ).pop(_DailyWelcomeAction.helper),
+                        icon: const Icon(Icons.chat_bubble_rounded),
+                        label: const Text('Ask helper'),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: today == null
+                            ? null
+                            : () => Navigator.of(
+                                context,
+                              ).pop(_DailyWelcomeAction.missions),
+                        icon: const Icon(Icons.rocket_launch_rounded),
+                        label: Text(
+                          today == null
+                              ? 'Waiting for mission'
+                              : 'Show mission',
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(
+                          context,
+                        ).pop(_DailyWelcomeAction.close),
+                        child: const Text('Later'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      switch (action) {
+        case _DailyWelcomeAction.helper:
+          await _openHelper(data, subjects);
+          break;
+        case _DailyWelcomeAction.missions:
+          await _scrollToTodaySection();
+          break;
+        case _DailyWelcomeAction.close:
+        case null:
+          break;
+      }
+    });
+  }
+
+  Future<StudentSubjectReportData> _loadSubjectReport(String subjectId) {
+    final cached = _subjectReportCache[subjectId];
+    if (cached != null) {
+      return Future<StudentSubjectReportData>.value(cached);
+    }
+
+    final inFlight = _subjectReportRequests[subjectId];
+    if (inFlight != null) {
+      return inFlight;
+    }
+
+    final request = _api
+        .fetchStudentSubjectReport(
+          token: _session.token,
+          studentId: _session.user.id,
+          subjectId: subjectId,
+        )
+        .then((report) {
+          _subjectReportCache[subjectId] = report;
+          _subjectReportRequests.remove(subjectId);
+          return report;
+        })
+        .catchError((error) {
+          _subjectReportRequests.remove(subjectId);
+          throw error;
+        });
+
+    _subjectReportRequests[subjectId] = request;
+    return request;
+  }
+
+  Future<void> _openHelper(
+    _StudentScreenData data,
+    List<StudentSubjectReportSummary> subjects,
+  ) {
+    return showFlexibleLearningHelperSheet(
+      context,
+      session: _session,
+      dashboard: data.dashboard,
+      timetable: data.timetable,
+      subjects: subjects,
+      loadSubjectReport: _loadSubjectReport,
+    );
+  }
+
+  Future<void> _scrollToTodaySection() async {
+    final targetContext = _todaySectionKey.currentContext;
+    if (targetContext == null) {
+      return;
+    }
+
+    await Scrollable.ensureVisible(
+      targetContext,
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeOutCubic,
+      alignment: 0.06,
+    );
+  }
+
+  void _queueMissionMomentumPopup({
+    required AppUser previousStudent,
+    required AppUser updatedStudent,
+    required String subjectName,
+    required String sessionType,
+  }) {
+    final gainedXp = updatedStudent.xp - previousStudent.xp;
+    final streakGrew = updatedStudent.streak > previousStudent.streak;
+    final xpMilestoneCrossed =
+        previousStudent.xp ~/ 100 != updatedStudent.xp ~/ 100;
+
+    if (gainedXp <= 0 && !streakGrew && !xpMilestoneCrossed) {
+      return;
+    }
+
+    _enqueuePopup(() async {
+      if (!mounted) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            insetPadding: const EdgeInsets.all(AppSpacing.screen),
+            backgroundColor: Colors.transparent,
+            child: SoftPanel(
+              colors: const [Color(0xFFF8FFFB), Color(0xFFFFF8EF)],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    xpMilestoneCrossed
+                        ? 'XP Milestone Hit'
+                        : streakGrew
+                        ? 'Streak Growing'
+                        : 'Mission Win',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: AppSpacing.item),
+                  Text(
+                    'Your $sessionType $subjectName mission pushed the board forward.',
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: AppSpacing.compact),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (gainedXp > 0) _MiniPill(label: '+$gainedXp XP'),
+                      if (streakGrew)
+                        _MiniPill(label: '${updatedStudent.streak} day streak'),
+                      if (xpMilestoneCrossed)
+                        _MiniPill(label: '${updatedStudent.xp} XP total'),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.section),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Nice'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    });
+  }
+
+  String _heroTitleBadge(TodaySchedule? today) {
+    if (today == null) {
+      return 'Helper mode';
+    }
+    return '${today.morningMission.name} + ${today.afternoonMission.name} day';
+  }
+
+  String _heroHighlightMessage(_StudentScreenData data, TodaySchedule? today) {
+    final remainingXp =
+        (data.dashboard.dailyXp.totalXpCap - data.dashboard.dailyXp.totalXp)
+            .clamp(0, data.dashboard.dailyXp.totalXpCap);
+    if (today == null) {
+      return 'Your board is calm right now. The helper can still cheer you on while lessons are being lined up.';
+    }
+    return 'You have $remainingXp XP left in today\'s target and ${today.morningMission.name} is ready whenever you are.';
+  }
+
+  void _enqueuePopup(Future<void> Function() popup) {
+    _popupQueue.add(popup);
+    _drainPopupQueue();
+  }
+
+  Future<void> _drainPopupQueue() async {
+    if (_isPopupVisible || _popupQueue.isEmpty || !mounted) {
+      return;
+    }
+
+    _isPopupVisible = true;
+    final popup = _popupQueue.removeAt(0);
+    try {
+      await popup();
+    } finally {
+      _isPopupVisible = false;
+      if (mounted && _popupQueue.isNotEmpty) {
+        _drainPopupQueue();
+      }
+    }
+  }
+
+  String _firstName(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return 'friend';
+    }
+    return trimmed.split(RegExp(r'\s+')).first;
   }
 }
 
@@ -1107,12 +1548,14 @@ class _ErrorState extends StatelessWidget {
 class _ScreenHeader extends StatelessWidget {
   const _ScreenHeader({
     required this.title,
+    required this.subtitle,
     required this.onBack,
     required this.user,
     required this.onProfileTap,
   });
 
   final String title;
+  final String subtitle;
   final VoidCallback onBack;
   final AppUser user;
   final VoidCallback onProfileTap;
@@ -1124,7 +1567,19 @@ class _ScreenHeader extends StatelessWidget {
         _RoundIconButton(icon: Icons.arrow_back_ios_new_rounded, onTap: onBack),
         const SizedBox(width: 14),
         Expanded(
-          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+              ),
+            ],
+          ),
         ),
         ProfileAvatarButton(user: user, onTap: onProfileTap),
       ],
@@ -1164,11 +1619,29 @@ class _DailyXpPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoftPanel(
+      colors: const [Color(0xFFFFFCFF), Color(0xFFEAF9FF)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Daily XP', style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Daily XP rocket',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              const _MiniPill(label: 'Keep it light'),
+            ],
+          ),
           const SizedBox(height: 8),
+          Text(
+            'Every little point counts. You do not need a perfect day to make progress.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 10),
           Text(
             '${summary.totalXp} / ${summary.totalXpCap} XP',
             style: Theme.of(context).textTheme.bodyLarge,
@@ -1212,6 +1685,30 @@ class _DailyXpPanel extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SectionLead extends StatelessWidget {
+  const _SectionLead({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+        ),
+      ],
     );
   }
 }
@@ -1347,6 +1844,63 @@ class _MySubjectCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HelperBubbleButton extends StatelessWidget {
+  const _HelperBubbleButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCompact = MediaQuery.sizeOf(context).width < 760;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Ink(
+          padding: EdgeInsets.symmetric(
+            horizontal: isCompact ? 16 : 18,
+            vertical: isCompact ? 16 : 14,
+          ),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [AppPalette.aqua, AppPalette.primaryBlue],
+            ),
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: [
+              BoxShadow(
+                color: AppPalette.primaryBlue.withValues(alpha: 0.28),
+                blurRadius: 24,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.chat_bubble_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+              if (!isCompact) ...[
+                const SizedBox(width: 10),
+                Text(
+                  'Helper',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge?.copyWith(color: Colors.white),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
