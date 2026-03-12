@@ -100,6 +100,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _isSavingCertification = false;
   bool _isSavingTimetable = false;
   bool _showTimetableEditor = false;
+  bool _showCertificationSetup = false;
+  bool _showCreateUserPanel = false;
   bool _certificationEnabled = false;
   AppUser? _lastCreatedUser;
   final Set<String> _selectedCertificationTaskCodes = <String>{};
@@ -257,6 +259,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           ..clear()
           ..addAll(updated.requiredCertificationTaskCodes);
         _certificationLabelController.text = updated.certificationLabel;
+        _showCertificationSetup = false;
         _future = _loadWorkspace();
       });
 
@@ -619,6 +622,33 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     });
   }
 
+  String _buildCertificationSetupSummary(
+    SubjectCertificationSettings? selectedCertificationSettings,
+  ) {
+    if (selectedCertificationSettings == null) {
+      return 'No certification subject is ready yet.';
+    }
+
+    final sortedTaskCodes = _selectedCertificationTaskCodes.toList(
+      growable: false,
+    )..sort();
+    final taskCodeSummary = sortedTaskCodes.isEmpty
+        ? 'No task focuses selected'
+        : '${sortedTaskCodes.length} task focus${sortedTaskCodes.length == 1 ? '' : 'es'}';
+
+    return '${selectedCertificationSettings.subjectName} · ${_certificationEnabled ? 'Enabled' : 'Off'} · $taskCodeSummary';
+  }
+
+  String _buildCreateUserSummary() {
+    if (_lastCreatedUser != null) {
+      return 'Last created: ${_lastCreatedUser!.name} · ${_lastCreatedUser!.role}';
+    }
+
+    return _createRole == 'student'
+        ? 'Student account form is ready when needed.'
+        : 'Teacher account form with subject specialty is ready.';
+  }
+
   @override
   Widget build(BuildContext context) {
     return FocusScaffold(
@@ -848,123 +878,157 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Certification Setup',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Choose which task focuses a student must pass to unlock the subject certificate. Changes are blocked after live evidence exists.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppPalette.textMuted,
+                      _ManagementExpandableHeader(
+                        title: 'Certification Setup',
+                        subtitle:
+                            'Choose which task focuses a student must pass to unlock the subject certificate. Changes are blocked after live evidence exists.',
+                        summary: _buildCertificationSetupSummary(
+                          selectedCertificationSettings,
+                        ),
+                        isExpanded: _showCertificationSetup,
+                        onToggle: () => setState(
+                          () => _showCertificationSetup =
+                              !_showCertificationSetup,
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.compact),
-                      if (data.certificationSubjects.isEmpty)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(AppSpacing.item),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.78),
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.radiusMd,
-                            ),
-                          ),
-                          child: Text(
-                            'No subjects are available to configure yet.',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        )
-                      else ...[
-                        DropdownButtonFormField<String>(
-                          initialValue:
-                              selectedCertificationSettings?.subjectId,
-                          decoration: const InputDecoration(
-                            labelText: 'Subject',
-                          ),
-                          items: data.certificationSubjects
-                              .map(
-                                (subject) => DropdownMenuItem<String>(
-                                  value: subject.subjectId,
-                                  child: Text(subject.subjectName),
-                                ),
-                              )
-                              .toList(growable: false),
-                          onChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            _selectCertificationEditorSubject(
-                              value,
-                              data.certificationSubjects,
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        SwitchListTile.adaptive(
-                          value: _certificationEnabled,
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Enable certification'),
-                          subtitle: const Text(
-                            'Use task-focus passes to unlock a subject certificate.',
-                          ),
-                          onChanged: (value) =>
-                              setState(() => _certificationEnabled = value),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _certificationLabelController,
-                          decoration: const InputDecoration(
-                            labelText: 'Certificate label',
-                            hintText: 'Course Certification',
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Required task focuses',
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: _certificationTaskCodeOptions
-                              .map(
-                                (taskCode) => _CreateRoleChip(
-                                  label: taskCode,
-                                  icon: Icons.flag_rounded,
-                                  selected: _selectedCertificationTaskCodes
-                                      .contains(taskCode),
-                                  onTap: () =>
-                                      _toggleCertificationTaskCode(taskCode),
-                                ),
-                              )
-                              .toList(growable: false),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          _selectedCertificationTaskCodes.isEmpty
-                              ? 'No task focuses selected yet.'
-                              : 'Required: ${(_selectedCertificationTaskCodes.toList(growable: false)..sort()).join(', ')}',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AppPalette.textMuted),
-                        ),
-                        const SizedBox(height: AppSpacing.compact),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _isSavingCertification
-                                ? null
-                                : _saveCertificationTemplate,
-                            icon: const Icon(Icons.save_rounded),
-                            label: Text(
-                              _isSavingCertification
-                                  ? 'Saving certification...'
-                                  : 'Save Certification Setup',
-                            ),
-                          ),
-                        ),
-                      ],
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        child: !_showCertificationSetup
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AppSpacing.compact),
+                                  if (data.certificationSubjects.isEmpty)
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.item,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.78,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.radiusMd,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'No subjects are available to configure yet.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    )
+                                  else ...[
+                                    DropdownButtonFormField<String>(
+                                      initialValue:
+                                          selectedCertificationSettings
+                                              ?.subjectId,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Subject',
+                                      ),
+                                      items: data.certificationSubjects
+                                          .map(
+                                            (subject) =>
+                                                DropdownMenuItem<String>(
+                                                  value: subject.subjectId,
+                                                  child: Text(
+                                                    subject.subjectName,
+                                                  ),
+                                                ),
+                                          )
+                                          .toList(growable: false),
+                                      onChanged: (value) {
+                                        if (value == null) {
+                                          return;
+                                        }
+                                        _selectCertificationEditorSubject(
+                                          value,
+                                          data.certificationSubjects,
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 12),
+                                    SwitchListTile.adaptive(
+                                      value: _certificationEnabled,
+                                      contentPadding: EdgeInsets.zero,
+                                      title: const Text('Enable certification'),
+                                      subtitle: const Text(
+                                        'Use task-focus passes to unlock a subject certificate.',
+                                      ),
+                                      onChanged: (value) => setState(
+                                        () => _certificationEnabled = value,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      controller: _certificationLabelController,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Certificate label',
+                                        hintText: 'Course Certification',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Required task focuses',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleSmall,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: _certificationTaskCodeOptions
+                                          .map(
+                                            (taskCode) => _CreateRoleChip(
+                                              label: taskCode,
+                                              icon: Icons.flag_rounded,
+                                              selected:
+                                                  _selectedCertificationTaskCodes
+                                                      .contains(taskCode),
+                                              compact: true,
+                                              onTap: () =>
+                                                  _toggleCertificationTaskCode(
+                                                    taskCode,
+                                                  ),
+                                            ),
+                                          )
+                                          .toList(growable: false),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      _selectedCertificationTaskCodes.isEmpty
+                                          ? 'No task focuses selected yet.'
+                                          : 'Required: ${(_selectedCertificationTaskCodes.toList(growable: false)..sort()).join(', ')}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: AppPalette.textMuted,
+                                          ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.compact),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: FilledButton.icon(
+                                        onPressed: _isSavingCertification
+                                            ? null
+                                            : _saveCertificationTemplate,
+                                        icon: const Icon(Icons.save_rounded),
+                                        label: Text(
+                                          _isSavingCertification
+                                              ? 'Saving certification...'
+                                              : 'Save Certification Setup',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                      ),
                     ],
                   ),
                 ),
@@ -974,150 +1038,176 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _createRole == 'student'
+                      _ManagementExpandableHeader(
+                        title: _createRole == 'student'
                             ? 'Add New Student'
                             : 'Add New Teacher',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _createRole == 'student'
+                        subtitle: _createRole == 'student'
                             ? 'Create a student account and add that learner to management immediately.'
                             : 'Create a teacher account with a subject specialty.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppPalette.textMuted,
+                        summary: _buildCreateUserSummary(),
+                        isExpanded: _showCreateUserPanel,
+                        onToggle: () => setState(
+                          () => _showCreateUserPanel = !_showCreateUserPanel,
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.compact),
-                      Text(
-                        'Account type',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _CreateRoleChip(
-                              label: 'Student',
-                              icon: Icons.school_rounded,
-                              selected: _createRole == 'student',
-                              onTap: () =>
-                                  setState(() => _createRole = 'student'),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _CreateRoleChip(
-                              label: 'Teacher',
-                              icon: Icons.menu_book_rounded,
-                              selected: _createRole == 'teacher',
-                              onTap: () =>
-                                  setState(() => _createRole = 'teacher'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.compact),
-                      Form(
-                        key: _createUserFormKey,
-                        child: Column(
-                          children: [
-                            TextFormField(
-                              controller: _nameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Full name',
-                                hintText: 'Enter full name',
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        child: !_showCreateUserPanel
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AppSpacing.compact),
+                                  Text(
+                                    'Account type',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleSmall,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _CreateRoleChip(
+                                          label: 'Student',
+                                          icon: Icons.school_rounded,
+                                          selected: _createRole == 'student',
+                                          onTap: () => setState(
+                                            () => _createRole = 'student',
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: _CreateRoleChip(
+                                          label: 'Teacher',
+                                          icon: Icons.menu_book_rounded,
+                                          selected: _createRole == 'teacher',
+                                          onTap: () => setState(
+                                            () => _createRole = 'teacher',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: AppSpacing.compact),
+                                  Form(
+                                    key: _createUserFormKey,
+                                    child: Column(
+                                      children: [
+                                        TextFormField(
+                                          controller: _nameController,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Full name',
+                                            hintText: 'Enter full name',
+                                          ),
+                                          validator: (value) {
+                                            if ((value ?? '').trim().isEmpty) {
+                                              return 'Enter a name.';
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                        const SizedBox(height: 12),
+                                        TextFormField(
+                                          controller: _emailController,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Email',
+                                            hintText: 'name@school.org',
+                                          ),
+                                          validator: (value) {
+                                            final email = (value ?? '').trim();
+                                            if (email.isEmpty ||
+                                                !email.contains('@')) {
+                                              return 'Enter a valid email.';
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                        const SizedBox(height: 12),
+                                        TextFormField(
+                                          controller: _passwordController,
+                                          obscureText: true,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Password',
+                                            hintText: 'At least 8 characters',
+                                          ),
+                                          validator: (value) {
+                                            if ((value ?? '').length < 8) {
+                                              return 'Use at least 8 characters.';
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                        if (_createRole == 'teacher') ...[
+                                          const SizedBox(height: 12),
+                                          TextFormField(
+                                            controller:
+                                                _subjectSpecialtyController,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Subject specialty',
+                                              hintText:
+                                                  'English, Science, Business',
+                                            ),
+                                            validator: (value) {
+                                              if (_createRole == 'teacher' &&
+                                                  (value ?? '')
+                                                      .trim()
+                                                      .isEmpty) {
+                                                return 'Enter a subject specialty.';
+                                              }
+                                              return null;
+                                            },
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.compact),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      onPressed: _isCreatingUser
+                                          ? null
+                                          : _createManagedUser,
+                                      icon: const Icon(
+                                        Icons.person_add_alt_1_rounded,
+                                      ),
+                                      label: Text(
+                                        _isCreatingUser
+                                            ? 'Creating account...'
+                                            : 'Create ${_createRole == 'student' ? 'Student' : 'Teacher'}',
+                                      ),
+                                    ),
+                                  ),
+                                  if (_lastCreatedUser != null) ...[
+                                    const SizedBox(height: AppSpacing.compact),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.item,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.78,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.radiusMd,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'Created: ${_lastCreatedUser!.name} · ${_lastCreatedUser!.role} · ${_lastCreatedUser!.email ?? ''}',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
-                              validator: (value) {
-                                if ((value ?? '').trim().isEmpty) {
-                                  return 'Enter a name.';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _emailController,
-                              decoration: const InputDecoration(
-                                labelText: 'Email',
-                                hintText: 'name@school.org',
-                              ),
-                              validator: (value) {
-                                final email = (value ?? '').trim();
-                                if (email.isEmpty || !email.contains('@')) {
-                                  return 'Enter a valid email.';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _passwordController,
-                              obscureText: true,
-                              decoration: const InputDecoration(
-                                labelText: 'Password',
-                                hintText: 'At least 8 characters',
-                              ),
-                              validator: (value) {
-                                if ((value ?? '').length < 8) {
-                                  return 'Use at least 8 characters.';
-                                }
-                                return null;
-                              },
-                            ),
-                            if (_createRole == 'teacher') ...[
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _subjectSpecialtyController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Subject specialty',
-                                  hintText: 'English, Science, Business',
-                                ),
-                                validator: (value) {
-                                  if (_createRole == 'teacher' &&
-                                      (value ?? '').trim().isEmpty) {
-                                    return 'Enter a subject specialty.';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            ],
-                          ],
-                        ),
                       ),
-                      const SizedBox(height: AppSpacing.compact),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: _isCreatingUser
-                              ? null
-                              : _createManagedUser,
-                          icon: const Icon(Icons.person_add_alt_1_rounded),
-                          label: Text(
-                            _isCreatingUser
-                                ? 'Creating account...'
-                                : 'Create ${_createRole == 'student' ? 'Student' : 'Teacher'}',
-                          ),
-                        ),
-                      ),
-                      if (_lastCreatedUser != null) ...[
-                        const SizedBox(height: AppSpacing.compact),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(AppSpacing.item),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.78),
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.radiusMd,
-                            ),
-                          ),
-                          child: Text(
-                            'Created: ${_lastCreatedUser!.name} · ${_lastCreatedUser!.role} · ${_lastCreatedUser!.email ?? ''}',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -1139,6 +1229,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                       'Confirm lesson coverage across week and month for the selected student.',
                   entries: workspace.timetable,
                   date: _selectedTimetableDate,
+                  showDateEditIcon: true,
                   actionLabel: _showTimetableEditor
                       ? 'Hide timetable editor'
                       : selectedTimetableHasEntry
@@ -1443,6 +1534,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
       setState(() {
         _lastCreatedUser = createdUser;
+        _showCreateUserPanel = false;
         _nameController.clear();
         _emailController.clear();
         _passwordController.clear();
@@ -1963,6 +2055,119 @@ class _StudentPickerSheet extends StatelessWidget {
   }
 }
 
+class _ManagementExpandableHeader extends StatelessWidget {
+  const _ManagementExpandableHeader({
+    required this.title,
+    required this.subtitle,
+    required this.summary,
+    required this.isExpanded,
+    required this.onToggle,
+  });
+
+  final String title;
+  final String subtitle;
+  final String summary;
+  final bool isExpanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final toggleButton = TextButton.icon(
+      onPressed: onToggle,
+      icon: Icon(
+        isExpanded
+            ? Icons.keyboard_arrow_up_rounded
+            : Icons.keyboard_arrow_down_rounded,
+      ),
+      label: Text(isExpanded ? 'Hide' : 'Show'),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 840;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (stacked) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  toggleButton,
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+              ),
+              const SizedBox(height: 10),
+              _ManagementSectionSummary(summary: summary),
+            ] else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          subtitle,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                        const SizedBox(height: 10),
+                        _ManagementSectionSummary(summary: summary),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  toggleButton,
+                ],
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ManagementSectionSummary extends StatelessWidget {
+  const _ManagementSectionSummary({required this.summary});
+
+  final String summary;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        summary,
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+      ),
+    );
+  }
+}
+
 class _TopIconButton extends StatelessWidget {
   const _TopIconButton({required this.icon, this.onTap});
 
@@ -2031,12 +2236,14 @@ class _CreateRoleChip extends StatelessWidget {
     required this.icon,
     required this.selected,
     required this.onTap,
+    this.compact = false,
   });
 
   final String label;
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -2044,7 +2251,10 @@ class _CreateRoleChip extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
       child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 16,
+          vertical: compact ? 10 : 14,
+        ),
         decoration: BoxDecoration(
           color: selected
               ? const Color(0xFFFFE2B8)
@@ -2056,20 +2266,27 @@ class _CreateRoleChip extends StatelessWidget {
           ),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
-              size: 18,
+              size: compact ? 16 : 18,
               color: selected ? AppPalette.orange : AppPalette.textMuted,
             ),
             const SizedBox(width: 8),
             Text(
               label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppPalette.navy,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
+              style:
+                  (compact
+                          ? Theme.of(context).textTheme.labelLarge
+                          : Theme.of(context).textTheme.bodyMedium)
+                      ?.copyWith(
+                        color: AppPalette.navy,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
             ),
           ],
         ),
