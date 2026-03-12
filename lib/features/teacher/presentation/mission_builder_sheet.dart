@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/gradient_button.dart';
@@ -1071,6 +1072,12 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                   ],
                 ),
               ),
+              const SizedBox(width: 12),
+              TextButton.icon(
+                onPressed: _isGenerating || _isSaving ? null : _downloadDraft,
+                icon: const Icon(Icons.download_rounded, size: 18),
+                label: const Text('Download draft'),
+              ),
             ],
           ),
         ),
@@ -1688,6 +1695,249 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         setState(() => _isSaving = false);
       }
     }
+  }
+
+  Future<void> _downloadDraft() async {
+    if (_draftMission == null) {
+      return;
+    }
+
+    final fileName = _buildDraftDownloadFileName();
+    final content = _buildDraftDownloadContent();
+
+    try {
+      final downloaded = await downloadTextFile(
+        fileName: fileName,
+        content: content,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (downloaded) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Downloaded $fileName.')));
+        return;
+      }
+
+      await Clipboard.setData(ClipboardData(text: content));
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Download is not available on this device yet. Draft copied to clipboard.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not export draft: $error')));
+    }
+  }
+
+  String _buildDraftDownloadFileName() {
+    final title = _sanitizeFileNameSegment(_titleController.text.trim());
+    final student = _sanitizeFileNameSegment(widget.student.name);
+    final subject = _sanitizeFileNameSegment(widget.subject.name);
+    final date = _dateKey(_resolvedTargetDate);
+    return '${title}_${student}_${subject}_${_selectedSessionType}_$date.txt';
+  }
+
+  String _buildDraftDownloadContent() {
+    final draft = _draftMission;
+    final buffer = StringBuffer()
+      ..writeln('FOCUS MISSION DRAFT EXPORT')
+      ..writeln('=========================')
+      ..writeln('Title: ${_titleController.text.trim()}')
+      ..writeln('Student: ${widget.student.name}')
+      ..writeln('Subject: ${widget.subject.name}')
+      ..writeln('Session: ${_selectedSessionType.toUpperCase()}')
+      ..writeln('Target Date: ${_formatTargetDate(_resolvedTargetDate)}')
+      ..writeln('Status: ${draft?.status ?? 'draft'}')
+      ..writeln('Draft Format: $_draftFormat')
+      ..writeln('Difficulty: ${_effectiveDifficulty.toUpperCase()}')
+      ..writeln('XP Reward: $_effectiveXpReward')
+      ..writeln(
+        'Task Focus: ${_selectedTaskCodes.isEmpty ? 'None selected' : _selectedTaskCodes.join(', ')}',
+      );
+
+    if ((draft?.aiModel ?? '').trim().isNotEmpty) {
+      buffer.writeln('AI Model: ${draft!.aiModel!.trim()}');
+    }
+    if (_resolvedSourceFileName.isNotEmpty) {
+      buffer.writeln('Source File: $_resolvedSourceFileName');
+    }
+    if (_resolvedSourceFileType.isNotEmpty) {
+      buffer.writeln('Source Type: $_resolvedSourceFileType');
+    }
+
+    final teacherNote = _teacherNoteController.text.trim();
+    if (teacherNote.isNotEmpty) {
+      buffer
+        ..writeln('')
+        ..writeln('TEACHER NOTE')
+        ..writeln('------------')
+        ..writeln(teacherNote);
+    }
+
+    if (_draftFormat == 'ESSAY_BUILDER') {
+      _writeEssayBuilderDraft(buffer);
+    } else {
+      _writeQuestionDraft(buffer);
+    }
+
+    return buffer.toString().trimRight();
+  }
+
+  void _writeQuestionDraft(StringBuffer buffer) {
+    const optionLabels = ['A', 'B', 'C', 'D'];
+
+    buffer
+      ..writeln('')
+      ..writeln(_draftFormat == 'THEORY' ? 'THEORY QUESTIONS' : 'QUESTIONS')
+      ..writeln('----------------');
+
+    for (var index = 0; index < _questionEditors.length; index += 1) {
+      final editor = _questionEditors[index];
+      buffer
+        ..writeln('')
+        ..writeln('Question ${index + 1}')
+        ..writeln('Learn First: ${editor.learningTextController.text.trim()}')
+        ..writeln('Prompt: ${editor.promptController.text.trim()}');
+
+      if (_draftFormat == 'THEORY') {
+        buffer
+          ..writeln(
+            'Expected Answer: ${editor.expectedAnswerController.text.trim()}',
+          )
+          ..writeln(
+            'Minimum Words: ${editor.minWordCountController.text.trim()}',
+          );
+        final explanation = editor.explanationController.text.trim();
+        if (explanation.isNotEmpty) {
+          buffer.writeln('Teacher Guidance: $explanation');
+        }
+        continue;
+      }
+
+      for (
+        var optionIndex = 0;
+        optionIndex < editor.optionControllers.length;
+        optionIndex += 1
+      ) {
+        final label = optionLabels[optionIndex];
+        buffer.writeln(
+          '$label) ${editor.optionControllers[optionIndex].text.trim()}',
+        );
+      }
+      final correctLabel = optionLabels[editor.correctIndex.clamp(0, 3)];
+      final correctAnswer = editor
+          .optionControllers[editor.correctIndex.clamp(0, 3)]
+          .text
+          .trim();
+      buffer.writeln('Correct Answer: $correctLabel) $correctAnswer');
+      final explanation = editor.explanationController.text.trim();
+      if (explanation.isNotEmpty) {
+        buffer.writeln('Explanation: $explanation');
+      }
+    }
+  }
+
+  void _writeEssayBuilderDraft(StringBuffer buffer) {
+    final draft = _draftMission?.essayBuilderDraft;
+    if (draft == null) {
+      buffer
+        ..writeln('')
+        ..writeln('ESSAY BUILDER')
+        ..writeln('-------------')
+        ..writeln('Essay builder draft is missing.');
+      return;
+    }
+
+    buffer
+      ..writeln('')
+      ..writeln('ESSAY BUILDER')
+      ..writeln('-------------')
+      ..writeln('Mode: ${draft.mode}')
+      ..writeln(
+        'Target Words: ${draft.targets.targetWordMin}-${draft.targets.targetWordMax}',
+      )
+      ..writeln('Target Sentences: ${draft.targets.targetSentenceCount}')
+      ..writeln('Target Blanks: ${draft.targets.targetBlankCount}');
+
+    for (
+      var sentenceIndex = 0;
+      sentenceIndex < draft.sentences.length;
+      sentenceIndex += 1
+    ) {
+      final sentence = draft.sentences[sentenceIndex];
+      buffer
+        ..writeln('')
+        ..writeln('Sentence ${sentenceIndex + 1} · ${sentence.role}')
+        ..writeln(
+          'Learn First Title: ${sentence.learnFirst.title.trim().isEmpty ? 'LEARN FIRST' : sentence.learnFirst.title.trim()}',
+        );
+
+      for (
+        var bulletIndex = 0;
+        bulletIndex < sentence.learnFirst.bullets.length;
+        bulletIndex += 1
+      ) {
+        final bullet = sentence.learnFirst.bullets[bulletIndex].trim();
+        if (bullet.isEmpty) {
+          continue;
+        }
+        buffer.writeln('Learn First Bullet ${bulletIndex + 1}: $bullet');
+      }
+
+      buffer.writeln('Sentence Preview: ${_sentencePreviewText(sentence)}');
+
+      final blankParts = sentence.parts
+          .where((part) => part.isBlank)
+          .toList(growable: false);
+      for (
+        var blankIndex = 0;
+        blankIndex < blankParts.length;
+        blankIndex += 1
+      ) {
+        final part = blankParts[blankIndex];
+        buffer.writeln('Blank ${blankIndex + 1}:');
+        if (part.hint.trim().isNotEmpty) {
+          buffer.writeln('Hint: ${part.hint.trim()}');
+        }
+        for (final label in const ['A', 'B', 'C', 'D']) {
+          buffer.writeln('$label) ${part.options[label] ?? ''}');
+        }
+        buffer.writeln(
+          'Correct Answer: ${part.correctOption}) ${part.options[part.correctOption] ?? ''}',
+        );
+      }
+    }
+  }
+
+  String _sentencePreviewText(EssayBuilderSentence sentence) {
+    return sentence.parts
+        .map((part) => part.isBlank ? '____' : part.value)
+        .join();
+  }
+
+  String _sanitizeFileNameSegment(String value) {
+    final normalized = value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+    return normalized.isEmpty ? 'draft' : normalized;
   }
 
   String? _validateDraftQuestions() {
