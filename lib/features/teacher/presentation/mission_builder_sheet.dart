@@ -347,14 +347,26 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                   Column(
                     children: [
                       if (_isPublishedMission)
-                        GradientButton(
-                          label: _isSaving
-                              ? 'Saving changes...'
-                              : 'Save Changes',
-                          colors: AppPalette.progressGradient,
-                          onPressed: _isSaving || _isTargetDateInPast
-                              ? () {}
-                              : () => _saveDraft(true),
+                        Column(
+                          children: [
+                            GradientButton(
+                              label: _isSaving
+                                  ? 'Saving changes...'
+                                  : 'Save Changes',
+                              colors: AppPalette.progressGradient,
+                              onPressed: _isSaving || _isTargetDateInPast
+                                  ? () {}
+                                  : () => _saveDraft(true),
+                            ),
+                            const SizedBox(height: 10),
+                            GradientButton(
+                              label: 'Download Draft Text',
+                              colors: AppPalette.teacherGradient,
+                              onPressed: _isSaving || _isGenerating
+                                  ? () {}
+                                  : _downloadDraft,
+                            ),
+                          ],
                         )
                       else ...[
                         GradientButton(
@@ -384,6 +396,17 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                           onPressed: _isSaving || _isTargetDateInPast
                               ? () {}
                               : () => _saveDraft(false),
+                        ),
+                        const SizedBox(height: 10),
+                        GradientButton(
+                          label: 'Download Draft Text',
+                          colors: const [
+                            AppPalette.primaryBlue,
+                            AppPalette.aqua,
+                          ],
+                          onPressed: _isSaving || _isGenerating
+                              ? () {}
+                              : _downloadDraft,
                         ),
                         if (_isAssessmentMode) ...[
                           const SizedBox(height: 8),
@@ -1072,12 +1095,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              TextButton.icon(
-                onPressed: _isGenerating || _isSaving ? null : _downloadDraft,
-                icon: const Icon(Icons.download_rounded, size: 18),
-                label: const Text('Download draft'),
-              ),
             ],
           ),
         ),
@@ -1754,6 +1771,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
   String _buildDraftDownloadContent() {
     final draft = _draftMission;
+    final unitText = _unitTextForGroq.trim();
     final buffer = StringBuffer()
       ..writeln('FOCUS MISSION DRAFT EXPORT')
       ..writeln('=========================')
@@ -1789,16 +1807,24 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         ..writeln(teacherNote);
     }
 
+    if (unitText.isNotEmpty) {
+      buffer
+        ..writeln('')
+        ..writeln('UNIT TEXT')
+        ..writeln('---------')
+        ..writeln(unitText);
+    }
+
     if (_draftFormat == 'ESSAY_BUILDER') {
-      _writeEssayBuilderDraft(buffer);
+      _writeEssayBuilderDraft(buffer, unitText: unitText);
     } else {
-      _writeQuestionDraft(buffer);
+      _writeQuestionDraft(buffer, unitText: unitText);
     }
 
     return buffer.toString().trimRight();
   }
 
-  void _writeQuestionDraft(StringBuffer buffer) {
+  void _writeQuestionDraft(StringBuffer buffer, {required String unitText}) {
     const optionLabels = ['A', 'B', 'C', 'D'];
 
     buffer
@@ -1811,6 +1837,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       buffer
         ..writeln('')
         ..writeln('Question ${index + 1}')
+        ..writeln(
+          'Unit Text: ${unitText.isEmpty ? 'No unit text saved for this draft.' : unitText}',
+        )
         ..writeln('Learn First: ${editor.learningTextController.text.trim()}')
         ..writeln('Prompt: ${editor.promptController.text.trim()}');
 
@@ -1852,7 +1881,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     }
   }
 
-  void _writeEssayBuilderDraft(StringBuffer buffer) {
+  void _writeEssayBuilderDraft(
+    StringBuffer buffer, {
+    required String unitText,
+  }) {
     final draft = _draftMission?.essayBuilderDraft;
     if (draft == null) {
       buffer
@@ -1883,6 +1915,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       buffer
         ..writeln('')
         ..writeln('Sentence ${sentenceIndex + 1} · ${sentence.role}')
+        ..writeln(
+          'Unit Text: ${unitText.isEmpty ? 'No unit text saved for this draft.' : unitText}',
+        )
         ..writeln(
           'Learn First Title: ${sentence.learnFirst.title.trim().isEmpty ? 'LEARN FIRST' : sentence.learnFirst.title.trim()}',
         );
