@@ -2045,6 +2045,15 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
     for (var index = 0; index < _questionEditors.length; index += 1) {
       final question = _questionEditors[index];
+      final learnFirstReviewError = question.learnFirstReviewError(
+        questionNumber: index + 1,
+      );
+      if (learnFirstReviewError != null) {
+        // WHY: Once a teacher changes Learn First, the linked prompt and answer
+        // content must also be reviewed so the mission stays instructionally
+        // aligned instead of mixing old questions with new teaching text.
+        return learnFirstReviewError;
+      }
 
       if (question.promptController.text.trim().isEmpty) {
         return 'Question ${index + 1} needs a prompt.';
@@ -3663,6 +3672,12 @@ class _UnitPlanDraftCard extends StatelessWidget {
 class _EditableQuestionController {
   _EditableQuestionController.emptyTheory()
     : answerMode = 'short_answer',
+      _hasOriginalSnapshot = false,
+      _originalLearningText = '',
+      _originalPrompt = '',
+      _originalExpectedAnswer = '',
+      _originalOptions = const <String>[],
+      _originalCorrectIndex = 0,
       learningTextController = TextEditingController(),
       promptController = TextEditingController(),
       explanationController = TextEditingController(),
@@ -3679,6 +3694,18 @@ class _EditableQuestionController {
     : answerMode = question.answerMode.trim().isEmpty
           ? (question.isShortAnswerTheory ? 'short_answer' : 'multiple_choice')
           : question.answerMode.trim(),
+      _hasOriginalSnapshot = true,
+      _originalLearningText = question.learningText,
+      _originalPrompt = question.prompt,
+      _originalExpectedAnswer = question.expectedAnswer,
+      _originalOptions = List<String>.unmodifiable(
+        List<String>.generate(
+          4,
+          (index) =>
+              index < question.options.length ? question.options[index] : '',
+        ),
+      ),
+      _originalCorrectIndex = question.correctIndex.clamp(0, 3),
       learningTextController = TextEditingController(
         text: question.learningText,
       ),
@@ -3700,6 +3727,12 @@ class _EditableQuestionController {
       correctIndex = question.correctIndex.clamp(0, 3);
 
   final String answerMode;
+  final bool _hasOriginalSnapshot;
+  final String _originalLearningText;
+  final String _originalPrompt;
+  final String _originalExpectedAnswer;
+  final List<String> _originalOptions;
+  final int _originalCorrectIndex;
   final TextEditingController learningTextController;
   final TextEditingController promptController;
   final TextEditingController explanationController;
@@ -3709,6 +3742,68 @@ class _EditableQuestionController {
   int correctIndex;
 
   bool get isTheoryShortAnswer => answerMode == 'short_answer';
+  bool get hasLearnFirstChanged =>
+      _hasOriginalSnapshot &&
+      _normalizeDraftReviewValue(learningTextController.text) !=
+          _normalizeDraftReviewValue(_originalLearningText);
+
+  String? learnFirstReviewError({required int questionNumber}) {
+    if (!_hasOriginalSnapshot || !hasLearnFirstChanged) {
+      return null;
+    }
+
+    final promptChanged =
+        _normalizeDraftReviewValue(promptController.text) !=
+        _normalizeDraftReviewValue(_originalPrompt);
+    if (!promptChanged) {
+      return isTheoryShortAnswer
+          ? 'Theory question $questionNumber changed Learn First, so the prompt must be updated too.'
+          : 'Question $questionNumber changed Learn First, so the prompt must be updated too.';
+    }
+
+    if (isTheoryShortAnswer) {
+      final expectedAnswerChanged =
+          _normalizeDraftReviewValue(expectedAnswerController.text) !=
+          _normalizeDraftReviewValue(_originalExpectedAnswer);
+      if (!expectedAnswerChanged) {
+        return 'Theory question $questionNumber changed Learn First, so the expected answer must be updated too.';
+      }
+      return null;
+    }
+
+    final currentOptions = optionControllers
+        .map((controller) => controller.text.trim())
+        .toList(growable: false);
+    final optionsChanged =
+        currentOptions.length != _originalOptions.length ||
+        currentOptions.asMap().entries.any(
+          (entry) =>
+              _normalizeDraftReviewValue(entry.value) !=
+              _normalizeDraftReviewValue(_originalOptions[entry.key]),
+        );
+    if (!optionsChanged) {
+      return 'Question $questionNumber changed Learn First, so the answer options must be updated too.';
+    }
+
+    final currentCorrectAnswer = currentOptions.isEmpty
+        ? ''
+        : currentOptions[correctIndex.clamp(0, currentOptions.length - 1)];
+    final originalCorrectAnswer = _originalOptions.isEmpty
+        ? ''
+        : _originalOptions[_originalCorrectIndex.clamp(
+            0,
+            _originalOptions.length - 1,
+          )];
+    final correctAnswerChanged =
+        correctIndex != _originalCorrectIndex ||
+        _normalizeDraftReviewValue(currentCorrectAnswer) !=
+            _normalizeDraftReviewValue(originalCorrectAnswer);
+    if (!correctAnswerChanged) {
+      return 'Question $questionNumber changed Learn First, so the correct answer must be updated too.';
+    }
+
+    return null;
+  }
 
   MissionQuestion toMissionQuestion() {
     final minWordCount = int.tryParse(minWordCountController.text.trim()) ?? 0;
@@ -3755,6 +3850,11 @@ class _QuestionEditorCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const optionLabels = ['A', 'B', 'C', 'D'];
+    final reviewListenable = Listenable.merge([
+      editor.learningTextController,
+      editor.promptController,
+      ...editor.optionControllers,
+    ]);
 
     return SoftPanel(
       colors: const [Color(0xFFFFFFFF), Color(0xFFF5FAFF)],
@@ -3797,8 +3897,39 @@ class _QuestionEditorCard extends StatelessWidget {
             maxLines: 4,
             decoration: const InputDecoration(
               hintText:
-                  'Teach first: explain the concept and include the exact answer idea the student should use before answering.',
+                  'Teach first: explain the concept and clue the question will use before the student answers.',
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              'If you rewrite Learn First, also rewrite the prompt, options, and correct answer before saving.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF65749B),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          AnimatedBuilder(
+            animation: reviewListenable,
+            builder: (context, child) {
+              final message = editor.learnFirstReviewError(
+                questionNumber: index + 1,
+              );
+              if (message == null) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  message,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFFB93B3B),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: AppSpacing.item),
           TextField(
@@ -3875,6 +4006,12 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reviewListenable = Listenable.merge([
+      editor.learningTextController,
+      editor.promptController,
+      editor.expectedAnswerController,
+    ]);
+
     return SoftPanel(
       colors: const [Color(0xFFFFFEFB), Color(0xFFFFF2D8)],
       child: Column(
@@ -3922,8 +4059,39 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
             maxLines: 6,
             decoration: const InputDecoration(
               hintText:
-                  'LEARN FIRST: teach the exact idea, clue, and success criteria the student should use before writing.',
+                  'LEARN FIRST: teach the idea, clue, and success criteria the student should use before writing.',
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              'If you rewrite Learn First, also rewrite the prompt and expected answer before saving.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF65749B),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          AnimatedBuilder(
+            animation: reviewListenable,
+            builder: (context, child) {
+              final message = editor.learnFirstReviewError(
+                questionNumber: index + 1,
+              );
+              if (message == null) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  message,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFFB93B3B),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: AppSpacing.item),
           TextField(
@@ -3978,6 +4146,14 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _normalizeDraftReviewValue(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ');
 }
 
 class _OptionBadge extends StatelessWidget {
