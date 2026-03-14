@@ -803,7 +803,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
               ),
               const SizedBox(height: AppSpacing.item),
               SoftPanel(
-                colors: const [Color(0xFFF7FCFF), Color(0xFFE9F4FF)],
+                colors: const [Color(0xFFFFFCF5), Color(0xFFF4EEDF)],
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -840,7 +840,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                           ? _mission.sourceFileName
                           : 'The teacher uploaded lesson text for this theory mission.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textMuted,
+                        color: const Color(0xFF6E728C),
                       ),
                     ),
                     if (showSourceBody) ...[
@@ -849,16 +849,22 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                         width: double.infinity,
                         padding: const EdgeInsets.all(AppSpacing.item),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.92),
+                          color: const Color(0xFFFFFCF7),
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: AppPalette.primaryBlue.withValues(
-                              alpha: 0.08,
+                          border: Border.all(color: const Color(0xFFE4D8BE)),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x14B8A98A),
+                              blurRadius: 20,
+                              offset: Offset(0, 8),
                             ),
-                          ),
+                          ],
                         ),
-                        child: _TheorySourcePreview(
-                          sections: theorySourceSections,
+                        child: DefaultTextStyle.merge(
+                          style: const TextStyle(color: Color(0xFF33415C)),
+                          child: _TheorySourcePreview(
+                            sections: theorySourceSections,
+                          ),
                         ),
                       ),
                     ],
@@ -3170,6 +3176,10 @@ class _TheorySourcePreview extends StatelessWidget {
   const _TheorySourcePreview({required this.sections});
 
   final List<_TheorySourceSection> sections;
+  static const Color _headingColor = Color(0xFF2D3E5E);
+  static const Color _bodyColor = Color(0xFF44516B);
+  static const Color _sectionSurface = Color(0xFFFFF9EE);
+  static const Color _sectionBorder = Color(0xFFECE1C9);
 
   @override
   Widget build(BuildContext context) {
@@ -3178,7 +3188,7 @@ class _TheorySourcePreview extends StatelessWidget {
         'No lesson text is available yet.',
         style: Theme.of(
           context,
-        ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+        ).textTheme.bodyMedium?.copyWith(color: _bodyColor),
       );
     }
 
@@ -3194,8 +3204,9 @@ class _TheorySourcePreview extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(AppSpacing.item),
             decoration: BoxDecoration(
-              color: const Color(0xFFFDFEFF),
+              color: _sectionSurface,
               borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _sectionBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3204,7 +3215,7 @@ class _TheorySourcePreview extends StatelessWidget {
                   Text(
                     section.heading!,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppPalette.navy,
+                      color: _headingColor,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -3221,9 +3232,9 @@ class _TheorySourcePreview extends StatelessWidget {
                     child: SelectableText(
                       paragraph,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: AppPalette.navy,
+                        color: _bodyColor,
                         height: 1.55,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   );
