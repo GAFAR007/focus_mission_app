@@ -153,6 +153,78 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     return _mission.sourceUnitText.trim();
   }
 
+  List<_TheorySourceSection> _parseTheorySourceSections(String sourceText) {
+    final normalized = sourceText
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .replaceAll('\t', ' ')
+        .replaceAll(RegExp(r'[ ]{2,}'), ' ')
+        .trim();
+    if (normalized.isEmpty) {
+      return const <_TheorySourceSection>[];
+    }
+
+    final sections = <_TheorySourceSection>[];
+    String? currentHeading;
+    final currentParagraphParts = <String>[];
+    final currentParagraphs = <String>[];
+
+    void flushParagraph() {
+      if (currentParagraphParts.isEmpty) {
+        return;
+      }
+      currentParagraphs.add(_joinTheorySourceParagraph(currentParagraphParts));
+      currentParagraphParts.clear();
+    }
+
+    void flushSection() {
+      flushParagraph();
+      final hasHeading = currentHeading?.trim().isNotEmpty == true;
+      if (!hasHeading && currentParagraphs.isEmpty) {
+        currentHeading = null;
+        return;
+      }
+      sections.add(
+        _TheorySourceSection(
+          heading: hasHeading ? currentHeading!.trim() : null,
+          paragraphs: List<String>.unmodifiable([...currentParagraphs]),
+        ),
+      );
+      currentHeading = null;
+      currentParagraphs.clear();
+    }
+
+    for (final rawLine in normalized.split('\n')) {
+      final line = rawLine.trim();
+      if (line.isEmpty) {
+        flushParagraph();
+        continue;
+      }
+
+      if (_looksLikeTheorySourceHeading(line)) {
+        flushSection();
+        currentHeading = line;
+        continue;
+      }
+
+      currentParagraphParts.add(line);
+    }
+
+    flushSection();
+
+    if (sections.isEmpty) {
+      return <_TheorySourceSection>[
+        _TheorySourceSection(
+          paragraphs: <String>[
+            _joinTheorySourceParagraph(normalized.split('\n')),
+          ],
+        ),
+      ];
+    }
+
+    return sections;
+  }
+
   int get _theoryAnsweredCount => _theorySubmittedAnswers.length;
 
   int _countWords(String value) {
@@ -197,6 +269,61 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
     return result
         .replaceAll(RegExp(r'\s+([,.;:!?])'), r'$1')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  bool _looksLikeTheorySourceHeading(String line) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) {
+      return false;
+    }
+
+    if (RegExp(r'^\d+\.\s+\S+').hasMatch(trimmed)) {
+      return true;
+    }
+
+    final wordCount = trimmed
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .length;
+    if (wordCount > 8) {
+      return false;
+    }
+
+    if (trimmed.endsWith('.') ||
+        trimmed.endsWith('?') ||
+        trimmed.endsWith('!')) {
+      return false;
+    }
+
+    // WHY: Uploaded PDF text often separates short headings onto their own
+    // line, so the student view reshapes those lines into readable sections.
+    return RegExp(r'^[A-Z0-9]').hasMatch(trimmed);
+  }
+
+  String _joinTheorySourceParagraph(Iterable<String> lines) {
+    var result = '';
+    for (final rawLine in lines) {
+      final line = rawLine.trim();
+      if (line.isEmpty) {
+        continue;
+      }
+      if (result.isEmpty) {
+        result = line;
+        continue;
+      }
+
+      final leftChar = result[result.length - 1];
+      final rightChar = line[0];
+      final needsSpace = _isWordChar(leftChar) && _isWordChar(rightChar);
+      result = '$result${needsSpace ? ' ' : ''}$line';
+    }
+
+    return result
+        .replaceAll(RegExp(r'\s+([,.;:!?])'), r'$1')
+        .replaceAll(RegExp(r'\(\s+'), '(')
+        .replaceAll(RegExp(r'\s+\)'), ')')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
   }
@@ -590,6 +717,9 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     final wordCount = _countWords(currentAnswer);
     final hasSourceText = _theorySourceText.isNotEmpty;
     final showSourceBody = _showTheorySource && hasSourceText;
+    final theorySourceSections = hasSourceText
+        ? _parseTheorySourceSections(_theorySourceText)
+        : const <_TheorySourceSection>[];
 
     return Stack(
       children: [
@@ -721,10 +851,14 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.92),
                           borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: AppPalette.primaryBlue.withValues(
+                              alpha: 0.08,
+                            ),
+                          ),
                         ),
-                        child: Text(
-                          _theorySourceText,
-                          style: Theme.of(context).textTheme.bodyMedium,
+                        child: _TheorySourcePreview(
+                          sections: theorySourceSections,
                         ),
                       ),
                     ],
@@ -1352,6 +1486,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     if (completedResult == null) {
       return const SizedBox.shrink();
     }
+    final theoryXpPending =
+        _isTheoryMission && completedResult.theoryXpPending == true;
     final total = _isEssayBuilderMission
         ? _essayTotalCount
         : _isTheoryMission
@@ -1370,7 +1506,9 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     final fallbackEarnedXp = total >= 10
         ? ((50 * focusScore) / 100).round()
         : ((30 * focusScore) / 100).round();
-    final earnedXp = completedResult.sessionXpAwarded > 0
+    final earnedXp = theoryXpPending
+        ? 0
+        : completedResult.sessionXpAwarded > 0
         ? completedResult.sessionXpAwarded
         : fallbackEarnedXp;
 
@@ -1385,7 +1523,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Mission Complete',
+                  theoryXpPending ? 'Submitted for Review' : 'Mission Complete',
                   style: Theme.of(context).textTheme.displaySmall,
                 ),
                 const SizedBox(height: AppSpacing.item),
@@ -1393,6 +1531,15 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                   _mission.title,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
+                if (theoryXpPending) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Your teacher will score each theory answer and award XP after review.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppPalette.textMuted,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.section),
                 Wrap(
                   spacing: 12,
@@ -1413,8 +1560,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                       colors: const [AppPalette.primaryBlue, AppPalette.aqua],
                     ),
                     _SummaryChip(
-                      label: 'XP Earned',
-                      value: '+$earnedXp',
+                      label: theoryXpPending ? 'XP Status' : 'XP Earned',
+                      value: theoryXpPending ? 'Pending' : '+$earnedXp',
                       colors: const [AppPalette.sun, AppPalette.orange],
                     ),
                     if (completedResult.subjectCompletionBonusXp > 0)
@@ -3005,6 +3152,87 @@ class _SummaryChip extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TheorySourceSection {
+  const _TheorySourceSection({
+    this.heading,
+    this.paragraphs = const <String>[],
+  });
+
+  final String? heading;
+  final List<String> paragraphs;
+}
+
+class _TheorySourcePreview extends StatelessWidget {
+  const _TheorySourcePreview({required this.sections});
+
+  final List<_TheorySourceSection> sections;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sections.isEmpty) {
+      return Text(
+        'No lesson text is available yet.',
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: List.generate(sections.length, (index) {
+        final section = sections[index];
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: index == sections.length - 1 ? 0 : AppSpacing.item,
+          ),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.item),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFDFEFF),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (section.heading?.trim().isNotEmpty == true) ...[
+                  Text(
+                    section.heading!,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: AppPalette.navy,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (section.paragraphs.isNotEmpty) const SizedBox(height: 10),
+                ],
+                ...List.generate(section.paragraphs.length, (paragraphIndex) {
+                  final paragraph = section.paragraphs[paragraphIndex];
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: paragraphIndex == section.paragraphs.length - 1
+                          ? 0
+                          : 12,
+                    ),
+                    child: SelectableText(
+                      paragraph,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: AppPalette.navy,
+                        height: 1.55,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      }),
     );
   }
 }
