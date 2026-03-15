@@ -56,6 +56,8 @@ Future<MissionPayload?> showMissionBuilderSheet(
   );
 }
 
+enum _DraftExportAudience { teacher, student }
+
 class _MissionBuilderSheet extends StatefulWidget {
   const _MissionBuilderSheet({
     required this.session,
@@ -360,11 +362,26 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                             ),
                             const SizedBox(height: 10),
                             GradientButton(
-                              label: 'Download Draft Text',
-                              colors: AppPalette.teacherGradient,
+                              label: 'Download Teacher Copy',
+                              colors: const [
+                                AppPalette.primaryBlue,
+                                AppPalette.aqua,
+                              ],
                               onPressed: _isSaving || _isGenerating
                                   ? () {}
-                                  : _downloadDraft,
+                                  : () => _downloadDraft(
+                                      audience: _DraftExportAudience.teacher,
+                                    ),
+                            ),
+                            const SizedBox(height: 10),
+                            GradientButton(
+                              label: 'Download Student Copy',
+                              colors: const [AppPalette.sun, AppPalette.orange],
+                              onPressed: _isSaving || _isGenerating
+                                  ? () {}
+                                  : () => _downloadDraft(
+                                      audience: _DraftExportAudience.student,
+                                    ),
                             ),
                           ],
                         )
@@ -399,14 +416,26 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                         ),
                         const SizedBox(height: 10),
                         GradientButton(
-                          label: 'Download Draft Text',
+                          label: 'Download Teacher Copy',
                           colors: const [
                             AppPalette.primaryBlue,
                             AppPalette.aqua,
                           ],
                           onPressed: _isSaving || _isGenerating
                               ? () {}
-                              : _downloadDraft,
+                              : () => _downloadDraft(
+                                  audience: _DraftExportAudience.teacher,
+                                ),
+                        ),
+                        const SizedBox(height: 10),
+                        GradientButton(
+                          label: 'Download Student Copy',
+                          colors: const [AppPalette.sun, AppPalette.orange],
+                          onPressed: _isSaving || _isGenerating
+                              ? () {}
+                              : () => _downloadDraft(
+                                  audience: _DraftExportAudience.student,
+                                ),
                         ),
                         if (_isAssessmentMode) ...[
                           const SizedBox(height: 8),
@@ -1714,18 +1743,21 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     }
   }
 
-  Future<void> _downloadDraft() async {
+  Future<void> _downloadDraft({required _DraftExportAudience audience}) async {
     if (_draftMission == null) {
       return;
     }
 
-    final fileName = _buildDraftDownloadFileName();
-    final content = _buildDraftDownloadContent();
+    final fileName = _buildDraftDownloadFileName(audience: audience);
+    final htmlContent = _buildDraftDownloadHtml(audience: audience);
+    final clipboardContent = _buildDraftClipboardContent(audience: audience);
+    final audienceLabel = _draftExportAudienceLabel(audience);
 
     try {
       final downloaded = await downloadTextFile(
         fileName: fileName,
-        content: content,
+        content: htmlContent,
+        mimeType: 'text/html;charset=utf-8',
       );
 
       if (!mounted) {
@@ -1735,18 +1767,18 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       if (downloaded) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Downloaded $fileName.')));
+        ).showSnackBar(SnackBar(content: Text('Downloaded $audienceLabel.')));
         return;
       }
 
-      await Clipboard.setData(ClipboardData(text: content));
+      await Clipboard.setData(ClipboardData(text: clipboardContent));
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Download is not available on this device yet. Draft copied to clipboard.',
+            'Download is not available on this device yet. $audienceLabel copied to clipboard.',
           ),
         ),
       );
@@ -1755,51 +1787,68 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         return;
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not export draft: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not export $audienceLabel: $error')),
+      );
     }
   }
 
-  String _buildDraftDownloadFileName() {
+  String _draftExportAudienceLabel(_DraftExportAudience audience) {
+    return audience == _DraftExportAudience.teacher
+        ? 'Teacher Copy'
+        : 'Student Copy';
+  }
+
+  String _buildDraftDownloadFileName({required _DraftExportAudience audience}) {
     final title = _sanitizeFileNameSegment(_titleController.text.trim());
     final student = _sanitizeFileNameSegment(widget.student.name);
     final subject = _sanitizeFileNameSegment(widget.subject.name);
     final date = _dateKey(_resolvedTargetDate);
-    return '${title}_${student}_${subject}_${_selectedSessionType}_$date.txt';
+    final audienceSlug = audience == _DraftExportAudience.teacher
+        ? 'teacher-copy'
+        : 'student-copy';
+    return '${title}_${student}_${subject}_${_selectedSessionType}_${date}_$audienceSlug.html';
   }
 
-  String _buildDraftDownloadContent() {
+  String _buildDraftClipboardContent({required _DraftExportAudience audience}) {
+    final includeAnswers = audience == _DraftExportAudience.teacher;
+    final includeTeacherContext = audience == _DraftExportAudience.teacher;
     final draft = _draftMission;
-    final unitText = _unitTextForGroq.trim();
+    final unitText = includeTeacherContext ? _unitTextForGroq.trim() : '';
     final buffer = StringBuffer()
-      ..writeln('FOCUS MISSION DRAFT EXPORT')
-      ..writeln('=========================')
+      ..writeln(
+        'FOCUS MISSION ${_draftExportAudienceLabel(audience).toUpperCase()}',
+      )
+      ..writeln('====================================')
       ..writeln('Title: ${_titleController.text.trim()}')
       ..writeln('Student: ${widget.student.name}')
       ..writeln('Subject: ${widget.subject.name}')
       ..writeln('Session: ${_selectedSessionType.toUpperCase()}')
       ..writeln('Target Date: ${_formatTargetDate(_resolvedTargetDate)}')
+      ..writeln('Copy: ${_draftExportAudienceLabel(audience)}')
       ..writeln('Status: ${draft?.status ?? 'draft'}')
       ..writeln('Draft Format: $_draftFormat')
       ..writeln('Difficulty: ${_effectiveDifficulty.toUpperCase()}')
-      ..writeln('XP Reward: $_effectiveXpReward')
-      ..writeln(
+      ..writeln('XP Reward: $_effectiveXpReward');
+
+    if (includeTeacherContext) {
+      buffer.writeln(
         'Task Focus: ${_selectedTaskCodes.isEmpty ? 'None selected' : _selectedTaskCodes.join(', ')}',
       );
+    }
 
-    if ((draft?.aiModel ?? '').trim().isNotEmpty) {
+    if (includeTeacherContext && (draft?.aiModel ?? '').trim().isNotEmpty) {
       buffer.writeln('AI Model: ${draft!.aiModel!.trim()}');
     }
-    if (_resolvedSourceFileName.isNotEmpty) {
+    if (includeTeacherContext && _resolvedSourceFileName.isNotEmpty) {
       buffer.writeln('Source File: $_resolvedSourceFileName');
     }
-    if (_resolvedSourceFileType.isNotEmpty) {
+    if (includeTeacherContext && _resolvedSourceFileType.isNotEmpty) {
       buffer.writeln('Source Type: $_resolvedSourceFileType');
     }
 
     final teacherNote = _teacherNoteController.text.trim();
-    if (teacherNote.isNotEmpty) {
+    if (includeTeacherContext && teacherNote.isNotEmpty) {
       buffer
         ..writeln('')
         ..writeln('TEACHER NOTE')
@@ -1816,15 +1865,189 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     }
 
     if (_draftFormat == 'ESSAY_BUILDER') {
-      _writeEssayBuilderDraft(buffer, unitText: unitText);
+      _writeEssayBuilderDraftText(
+        buffer,
+        unitText: unitText,
+        includeAnswers: includeAnswers,
+      );
     } else {
-      _writeQuestionDraft(buffer, unitText: unitText);
+      _writeQuestionDraftText(
+        buffer,
+        unitText: unitText,
+        includeAnswers: includeAnswers,
+      );
     }
 
     return buffer.toString().trimRight();
   }
 
-  void _writeQuestionDraft(StringBuffer buffer, {required String unitText}) {
+  String _buildDraftDownloadHtml({required _DraftExportAudience audience}) {
+    final includeAnswers = audience == _DraftExportAudience.teacher;
+    final includeTeacherContext = audience == _DraftExportAudience.teacher;
+    final draft = _draftMission;
+    final audienceLabel = _draftExportAudienceLabel(audience);
+    final title = _titleController.text.trim();
+    final taskFocusText = _selectedTaskCodes.isEmpty
+        ? 'None selected'
+        : _selectedTaskCodes.join(', ');
+    final teacherNote = _teacherNoteController.text.trim();
+    final unitText = includeTeacherContext ? _unitTextForGroq.trim() : '';
+    final summary = includeAnswers
+        ? 'Teacher copy with answers, expected responses, and review notes.'
+        : 'Student copy with the mission content only. Answers and teacher-only notes are removed.';
+
+    final buffer = StringBuffer()
+      ..writeln('<!DOCTYPE html>')
+      ..writeln('<html lang="en">')
+      ..writeln('<head>')
+      ..writeln('<meta charset="utf-8" />')
+      ..writeln(
+        '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+      )
+      ..writeln('<title>${_escapeHtml('$title · $audienceLabel')}</title>')
+      ..writeln('<style>${_buildDraftExportStyles()}</style>')
+      ..writeln('</head>')
+      ..writeln('<body>')
+      ..writeln('<main class="page">')
+      ..writeln('<section class="hero">')
+      ..writeln('<div class="hero-copy">')
+      ..writeln('<span class="copy-chip">${_escapeHtml(audienceLabel)}</span>')
+      ..writeln('<h1>${_escapeHtml(title)}</h1>')
+      ..writeln('<p class="hero-summary">${_escapeHtml(summary)}</p>')
+      ..writeln('</div>')
+      ..writeln('<div class="meta-grid">')
+      ..writeln(
+        _buildMetaCardHtml(label: 'Student', value: widget.student.name),
+      )
+      ..writeln(
+        _buildMetaCardHtml(label: 'Subject', value: widget.subject.name),
+      )
+      ..writeln(
+        _buildMetaCardHtml(
+          label: 'Session',
+          value: _selectedSessionType.toUpperCase(),
+        ),
+      )
+      ..writeln(
+        _buildMetaCardHtml(
+          label: 'Target Date',
+          value: _formatTargetDate(_resolvedTargetDate),
+        ),
+      )
+      ..writeln(_buildMetaCardHtml(label: 'Format', value: _draftFormat))
+      ..writeln(
+        _buildMetaCardHtml(
+          label: 'Difficulty',
+          value: _effectiveDifficulty.toUpperCase(),
+        ),
+      )
+      ..writeln(
+        _buildMetaCardHtml(label: 'XP Reward', value: '$_effectiveXpReward XP'),
+      );
+
+    if (includeTeacherContext) {
+      buffer.writeln(
+        _buildMetaCardHtml(label: 'Task Focus', value: taskFocusText),
+      );
+    }
+
+    buffer
+      ..writeln('</div>')
+      ..writeln('</section>')
+      ..writeln(
+        '<section class="section-card notice-card ${includeAnswers ? 'teacher-note' : 'student-note'}">',
+      )
+      ..writeln('<h2>${_escapeHtml(audienceLabel)}</h2>')
+      ..writeln(
+        '<p>${_escapeHtml(includeAnswers ? 'Use this version for review, marking, and answer checking.' : 'Use this version with the learner. It keeps the mission clean and answer-free.')}</p>',
+      )
+      ..writeln('</section>');
+
+    if (includeTeacherContext && teacherNote.isNotEmpty) {
+      buffer
+        ..writeln('<section class="section-card">')
+        ..writeln('<h2>Teacher Note</h2>')
+        ..writeln(_buildRichTextHtml(teacherNote))
+        ..writeln('</section>');
+    }
+
+    if (includeTeacherContext && unitText.isNotEmpty) {
+      buffer
+        ..writeln('<section class="section-card">')
+        ..writeln('<h2>Unit Text</h2>')
+        ..writeln(
+          '<p class="section-kicker">Source guidance used for draft generation.</p>',
+        )
+        ..writeln(_buildRichTextHtml(unitText))
+        ..writeln('</section>');
+    }
+
+    if (_draftFormat == 'ESSAY_BUILDER') {
+      buffer.writeln(
+        _buildEssayBuilderDraftHtml(
+          includeAnswers: includeAnswers,
+          audienceLabel: audienceLabel,
+        ),
+      );
+    } else {
+      buffer.writeln(
+        _buildQuestionDraftHtml(
+          includeAnswers: includeAnswers,
+          audienceLabel: audienceLabel,
+        ),
+      );
+    }
+
+    if (includeTeacherContext &&
+        (_resolvedSourceFileName.isNotEmpty ||
+            (draft?.aiModel ?? '').trim().isNotEmpty)) {
+      buffer
+        ..writeln('<section class="section-card footer-card">')
+        ..writeln('<h2>Draft Source</h2>')
+        ..writeln('<div class="meta-grid">');
+      if (_resolvedSourceFileName.isNotEmpty) {
+        buffer.writeln(
+          _buildMetaCardHtml(
+            label: 'Source File',
+            value: _resolvedSourceFileName,
+          ),
+        );
+      }
+      if (_resolvedSourceFileType.isNotEmpty) {
+        buffer.writeln(
+          _buildMetaCardHtml(
+            label: 'Source Type',
+            value: _resolvedSourceFileType,
+          ),
+        );
+      }
+      if ((draft?.aiModel ?? '').trim().isNotEmpty) {
+        buffer.writeln(
+          _buildMetaCardHtml(label: 'AI Model', value: draft!.aiModel!.trim()),
+        );
+      }
+      buffer
+        ..writeln('</div>')
+        ..writeln('</section>');
+    }
+
+    buffer
+      ..writeln('</main>')
+      ..writeln('</body>')
+      ..writeln('</html>');
+
+    return buffer.toString();
+  }
+
+  String _buildMetaCardHtml({required String label, required String value}) {
+    return '<div class="meta-card"><span class="meta-label">${_escapeHtml(label)}</span><strong class="meta-value">${_escapeHtml(value)}</strong></div>';
+  }
+
+  void _writeQuestionDraftText(
+    StringBuffer buffer, {
+    required String unitText,
+    required bool includeAnswers,
+  }) {
     const optionLabels = ['A', 'B', 'C', 'D'];
 
     buffer
@@ -1837,23 +2060,25 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       buffer
         ..writeln('')
         ..writeln('Question ${index + 1}')
-        ..writeln(
-          'Unit Text: ${unitText.isEmpty ? 'No unit text saved for this draft.' : unitText}',
-        )
         ..writeln('Learn First: ${editor.learningTextController.text.trim()}')
         ..writeln('Prompt: ${editor.promptController.text.trim()}');
 
+      if (unitText.isNotEmpty) {
+        buffer.writeln('Unit Text: $unitText');
+      }
+
       if (_draftFormat == 'THEORY') {
-        buffer
-          ..writeln(
+        buffer.writeln(
+          'Minimum Words: ${editor.minWordCountController.text.trim()}',
+        );
+        if (includeAnswers) {
+          buffer.writeln(
             'Expected Answer: ${editor.expectedAnswerController.text.trim()}',
-          )
-          ..writeln(
-            'Minimum Words: ${editor.minWordCountController.text.trim()}',
           );
-        final explanation = editor.explanationController.text.trim();
-        if (explanation.isNotEmpty) {
-          buffer.writeln('Teacher Guidance: $explanation');
+          final explanation = editor.explanationController.text.trim();
+          if (explanation.isNotEmpty) {
+            buffer.writeln('Teacher Guidance: $explanation');
+          }
         }
         continue;
       }
@@ -1868,22 +2093,25 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           '$label) ${editor.optionControllers[optionIndex].text.trim()}',
         );
       }
-      final correctLabel = optionLabels[editor.correctIndex.clamp(0, 3)];
-      final correctAnswer = editor
-          .optionControllers[editor.correctIndex.clamp(0, 3)]
-          .text
-          .trim();
-      buffer.writeln('Correct Answer: $correctLabel) $correctAnswer');
-      final explanation = editor.explanationController.text.trim();
-      if (explanation.isNotEmpty) {
-        buffer.writeln('Explanation: $explanation');
+      if (includeAnswers) {
+        final correctLabel = optionLabels[editor.correctIndex.clamp(0, 3)];
+        final correctAnswer = editor
+            .optionControllers[editor.correctIndex.clamp(0, 3)]
+            .text
+            .trim();
+        buffer.writeln('Correct Answer: $correctLabel) $correctAnswer');
+        final explanation = editor.explanationController.text.trim();
+        if (explanation.isNotEmpty) {
+          buffer.writeln('Explanation: $explanation');
+        }
       }
     }
   }
 
-  void _writeEssayBuilderDraft(
+  void _writeEssayBuilderDraftText(
     StringBuffer buffer, {
     required String unitText,
+    required bool includeAnswers,
   }) {
     final draft = _draftMission?.essayBuilderDraft;
     if (draft == null) {
@@ -1914,13 +2142,15 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       final sentence = draft.sentences[sentenceIndex];
       buffer
         ..writeln('')
-        ..writeln('Sentence ${sentenceIndex + 1} · ${sentence.role}')
-        ..writeln(
-          'Unit Text: ${unitText.isEmpty ? 'No unit text saved for this draft.' : unitText}',
-        )
-        ..writeln(
-          'Learn First Title: ${sentence.learnFirst.title.trim().isEmpty ? 'LEARN FIRST' : sentence.learnFirst.title.trim()}',
-        );
+        ..writeln('Sentence ${sentenceIndex + 1} · ${sentence.role}');
+
+      if (unitText.isNotEmpty) {
+        buffer.writeln('Unit Text: $unitText');
+      }
+
+      buffer.writeln(
+        'Learn First Title: ${sentence.learnFirst.title.trim().isEmpty ? 'LEARN FIRST' : sentence.learnFirst.title.trim()}',
+      );
 
       for (
         var bulletIndex = 0;
@@ -1952,11 +2182,548 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         for (final label in const ['A', 'B', 'C', 'D']) {
           buffer.writeln('$label) ${part.options[label] ?? ''}');
         }
-        buffer.writeln(
-          'Correct Answer: ${part.correctOption}) ${part.options[part.correctOption] ?? ''}',
-        );
+        if (includeAnswers) {
+          buffer.writeln(
+            'Correct Answer: ${part.correctOption}) ${part.options[part.correctOption] ?? ''}',
+          );
+        }
       }
     }
+  }
+
+  String _buildQuestionDraftHtml({
+    required bool includeAnswers,
+    required String audienceLabel,
+  }) {
+    const optionLabels = ['A', 'B', 'C', 'D'];
+    final buffer = StringBuffer()
+      ..writeln('<section class="section-card">')
+      ..writeln(
+        '<h2>${_escapeHtml(_draftFormat == 'THEORY' ? 'Theory Questions' : 'Questions')}</h2>',
+      )
+      ..writeln(
+        '<p class="section-kicker">${_escapeHtml(includeAnswers ? 'Teacher-ready answer view with guidance.' : 'Student-ready mission copy without answers.')}</p>',
+      );
+
+    for (var index = 0; index < _questionEditors.length; index += 1) {
+      final editor = _questionEditors[index];
+      buffer
+        ..writeln('<article class="question-card">')
+        ..writeln('<div class="question-top">')
+        ..writeln(
+          '<span class="question-pill">Question ${index + 1}</span><span class="copy-pill">${_escapeHtml(audienceLabel)}</span>',
+        )
+        ..writeln('</div>')
+        ..writeln('<div class="field-label">Learn First</div>')
+        ..writeln(_buildRichTextHtml(editor.learningTextController.text.trim()))
+        ..writeln('<div class="field-label">Prompt</div>')
+        ..writeln(_buildRichTextHtml(editor.promptController.text.trim()));
+
+      if (_draftFormat == 'THEORY') {
+        buffer.writeln(
+          '<div class="pill-row"><span class="soft-pill">Minimum Words: ${_escapeHtml(editor.minWordCountController.text.trim())}</span></div>',
+        );
+        if (includeAnswers) {
+          buffer
+            ..writeln('<div class="answer-card">')
+            ..writeln('<div class="field-label">Expected Answer</div>')
+            ..writeln(
+              _buildRichTextHtml(editor.expectedAnswerController.text.trim()),
+            );
+          final explanation = editor.explanationController.text.trim();
+          if (explanation.isNotEmpty) {
+            buffer
+              ..writeln('<div class="field-label">Teacher Guidance</div>')
+              ..writeln(_buildRichTextHtml(explanation));
+          }
+          buffer.writeln('</div>');
+        }
+        buffer.writeln('</article>');
+        continue;
+      }
+
+      buffer
+        ..writeln('<div class="field-label">Options</div>')
+        ..writeln('<ul class="option-list">');
+      for (
+        var optionIndex = 0;
+        optionIndex < editor.optionControllers.length;
+        optionIndex += 1
+      ) {
+        final isCorrect = includeAnswers && editor.correctIndex == optionIndex;
+        buffer.writeln(
+          '<li class="option-row ${isCorrect ? 'correct-option' : ''}"><span class="option-badge">${optionLabels[optionIndex]}</span><span>${_escapeHtml(editor.optionControllers[optionIndex].text.trim())}</span></li>',
+        );
+      }
+      buffer.writeln('</ul>');
+
+      if (includeAnswers) {
+        final correctLabel = optionLabels[editor.correctIndex.clamp(0, 3)];
+        final correctAnswer = editor
+            .optionControllers[editor.correctIndex.clamp(0, 3)]
+            .text
+            .trim();
+        buffer
+          ..writeln('<div class="answer-card">')
+          ..writeln(
+            '<p class="answer-inline"><strong>Correct Answer:</strong> ${_escapeHtml('$correctLabel) $correctAnswer')}</p>',
+          );
+        final explanation = editor.explanationController.text.trim();
+        if (explanation.isNotEmpty) {
+          buffer
+            ..writeln('<div class="field-label">Explanation</div>')
+            ..writeln(_buildRichTextHtml(explanation));
+        }
+        buffer.writeln('</div>');
+      }
+
+      buffer.writeln('</article>');
+    }
+
+    buffer.writeln('</section>');
+    return buffer.toString();
+  }
+
+  String _buildEssayBuilderDraftHtml({
+    required bool includeAnswers,
+    required String audienceLabel,
+  }) {
+    final draft = _draftMission?.essayBuilderDraft;
+    if (draft == null) {
+      return '<section class="section-card"><h2>Essay Builder</h2><p class="section-kicker">Essay builder draft is missing.</p></section>';
+    }
+
+    final buffer = StringBuffer()
+      ..writeln('<section class="section-card">')
+      ..writeln('<h2>Essay Builder</h2>')
+      ..writeln(
+        '<p class="section-kicker">${_escapeHtml(includeAnswers ? 'Teacher-ready essay builder with answer keys for each blank.' : 'Student-ready essay builder worksheet without answer keys.')}</p>',
+      )
+      ..writeln('<div class="pill-row">')
+      ..writeln(
+        '<span class="soft-pill">Mode: ${_escapeHtml(draft.mode)}</span>',
+      )
+      ..writeln(
+        '<span class="soft-pill">Target Words: ${_escapeHtml('${draft.targets.targetWordMin}-${draft.targets.targetWordMax}')}</span>',
+      )
+      ..writeln(
+        '<span class="soft-pill">Target Sentences: ${_escapeHtml('${draft.targets.targetSentenceCount}')}</span>',
+      )
+      ..writeln(
+        '<span class="soft-pill">Target Blanks: ${_escapeHtml('${draft.targets.targetBlankCount}')}</span>',
+      )
+      ..writeln('</div>');
+
+    for (
+      var sentenceIndex = 0;
+      sentenceIndex < draft.sentences.length;
+      sentenceIndex += 1
+    ) {
+      final sentence = draft.sentences[sentenceIndex];
+      buffer
+        ..writeln('<article class="question-card">')
+        ..writeln('<div class="question-top">')
+        ..writeln(
+          '<span class="question-pill">Sentence ${sentenceIndex + 1}</span><span class="copy-pill">${_escapeHtml(audienceLabel)}</span>',
+        )
+        ..writeln('</div>')
+        ..writeln(
+          '<h3 class="sentence-role">${_escapeHtml(sentence.role)}</h3>',
+        )
+        ..writeln('<div class="field-label">Learn First</div>')
+        ..writeln('<ul class="bullet-list">');
+
+      for (final bullet in sentence.learnFirst.bullets) {
+        final trimmedBullet = bullet.trim();
+        if (trimmedBullet.isEmpty) {
+          continue;
+        }
+        buffer.writeln('<li>${_escapeHtml(trimmedBullet)}</li>');
+      }
+
+      buffer
+        ..writeln('</ul>')
+        ..writeln('<div class="field-label">Sentence Preview</div>')
+        ..writeln(
+          '<p class="sentence-preview">${_escapeHtml(_sentencePreviewText(sentence))}</p>',
+        );
+
+      final blankParts = sentence.parts
+          .where((part) => part.isBlank)
+          .toList(growable: false);
+      for (
+        var blankIndex = 0;
+        blankIndex < blankParts.length;
+        blankIndex += 1
+      ) {
+        final part = blankParts[blankIndex];
+        buffer
+          ..writeln('<div class="blank-card">')
+          ..writeln('<div class="blank-head">Blank ${blankIndex + 1}</div>');
+        if (part.hint.trim().isNotEmpty) {
+          buffer.writeln(
+            '<p class="blank-hint">${_escapeHtml(part.hint.trim())}</p>',
+          );
+        }
+        buffer.writeln('<ul class="option-list">');
+        for (final label in const ['A', 'B', 'C', 'D']) {
+          final isCorrect = includeAnswers && part.correctOption == label;
+          buffer.writeln(
+            '<li class="option-row ${isCorrect ? 'correct-option' : ''}"><span class="option-badge">$label</span><span>${_escapeHtml(part.options[label] ?? '')}</span></li>',
+          );
+        }
+        buffer.writeln('</ul>');
+        if (includeAnswers) {
+          buffer.writeln(
+            '<p class="answer-inline"><strong>Correct Answer:</strong> ${_escapeHtml('${part.correctOption}) ${part.options[part.correctOption] ?? ''}')}</p>',
+          );
+        }
+        buffer.writeln('</div>');
+      }
+
+      buffer.writeln('</article>');
+    }
+
+    buffer.writeln('</section>');
+    return buffer.toString();
+  }
+
+  String _buildDraftExportStyles() {
+    return '''
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+        background: linear-gradient(180deg, #f6fbff 0%, #eef4ff 52%, #f9f4ea 100%);
+        color: #263854;
+      }
+      .page {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+      .hero,
+      .section-card {
+        background: rgba(255, 252, 246, 0.94);
+        border: 1px solid #e8decb;
+        border-radius: 28px;
+        box-shadow: 0 18px 40px rgba(83, 108, 152, 0.12);
+      }
+      .hero {
+        padding: 30px;
+        margin-bottom: 18px;
+      }
+      .hero h1,
+      .section-card h2,
+      .section-card h3,
+      .section-card h4 {
+        margin: 0;
+        color: #23334d;
+      }
+      .hero-summary,
+      .section-kicker,
+      .meta-label,
+      .blank-hint {
+        color: #6b7691;
+      }
+      .hero-summary,
+      .section-kicker,
+      .answer-inline,
+      .sentence-preview,
+      p,
+      li {
+        font-size: 16px;
+        line-height: 1.65;
+      }
+      .copy-chip,
+      .question-pill,
+      .copy-pill,
+      .soft-pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        font-weight: 700;
+      }
+      .copy-chip {
+        padding: 8px 14px;
+        background: linear-gradient(135deg, #7fddeb, #6b8cff);
+        color: white;
+        margin-bottom: 14px;
+      }
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-top: 22px;
+      }
+      .meta-card {
+        background: #fffdfa;
+        border: 1px solid #ece2d2;
+        border-radius: 18px;
+        padding: 14px 16px;
+      }
+      .meta-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+      .meta-value {
+        font-size: 17px;
+        color: #243650;
+      }
+      .section-card {
+        padding: 24px;
+        margin-bottom: 18px;
+      }
+      .notice-card.teacher-note {
+        background: linear-gradient(135deg, #eef5ff, #f5fbff);
+      }
+      .notice-card.student-note {
+        background: linear-gradient(135deg, #fff8e8, #fffdf4);
+      }
+      .question-card {
+        background: #fffefb;
+        border: 1px solid #ede3d1;
+        border-radius: 22px;
+        padding: 22px;
+        margin-top: 16px;
+      }
+      .question-top,
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      .question-pill {
+        padding: 7px 12px;
+        background: #eaf3ff;
+        color: #36507d;
+      }
+      .copy-pill {
+        padding: 7px 12px;
+        background: #fff4d5;
+        color: #8d6418;
+      }
+      .field-label {
+        margin-top: 18px;
+        margin-bottom: 10px;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #6a7287;
+      }
+      .option-list,
+      .bullet-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .bullet-list li {
+        position: relative;
+        padding-left: 20px;
+        margin-bottom: 10px;
+      }
+      .bullet-list li::before {
+        content: "•";
+        position: absolute;
+        left: 0;
+        color: #5b7fd8;
+      }
+      .option-row,
+      .blank-card {
+        border: 1px solid #ece3d2;
+        border-radius: 16px;
+        background: #fffdfa;
+      }
+      .option-row {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+      }
+      .option-row.correct-option {
+        background: #eef9ea;
+        border-color: #b7ddb1;
+      }
+      .option-badge {
+        min-width: 30px;
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: #eaf1ff;
+        color: #36507d;
+        font-weight: 800;
+      }
+      .answer-card,
+      .blank-card {
+        margin-top: 16px;
+        padding: 16px;
+      }
+      .answer-card {
+        background: #f2f7ff;
+        border-left: 4px solid #7d9cff;
+      }
+      .answer-inline {
+        margin: 0;
+      }
+      .soft-pill {
+        padding: 8px 12px;
+        background: #f2eee1;
+        color: #5b6580;
+      }
+      .sentence-role {
+        margin-top: 14px !important;
+        font-size: 22px;
+      }
+      .sentence-preview {
+        margin: 0;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: #f7fbff;
+        border: 1px dashed #c7d8f4;
+        color: #314764;
+      }
+      .blank-head {
+        font-size: 18px;
+        font-weight: 800;
+        color: #243650;
+        margin-bottom: 10px;
+      }
+      .blank-hint {
+        margin-top: 0;
+        margin-bottom: 12px;
+      }
+      .footer-card {
+        margin-bottom: 0;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid #ebdfca;
+        margin: 16px 0;
+      }
+      @media print {
+        body {
+          background: white;
+        }
+        .page {
+          max-width: none;
+          padding: 0;
+        }
+        .hero,
+        .section-card,
+        .question-card,
+        .blank-card,
+        .option-row {
+          box-shadow: none;
+        }
+      }
+    ''';
+  }
+
+  String _buildRichTextHtml(String value) {
+    final normalized = value
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .trim();
+    if (normalized.isEmpty) {
+      return '<p class="section-kicker">Not added yet.</p>';
+    }
+
+    final buffer = StringBuffer();
+    final paragraphLines = <String>[];
+    var inList = false;
+
+    void flushParagraph() {
+      if (paragraphLines.isEmpty) {
+        return;
+      }
+      buffer.writeln('<p>${_buildInlineHtml(paragraphLines.join(' '))}</p>');
+      paragraphLines.clear();
+    }
+
+    void closeList() {
+      if (!inList) {
+        return;
+      }
+      buffer.writeln('</ul>');
+      inList = false;
+    }
+
+    for (final rawLine in normalized.split('\n')) {
+      final line = rawLine.trim();
+      if (line.isEmpty) {
+        flushParagraph();
+        closeList();
+        continue;
+      }
+
+      if (line == '---') {
+        flushParagraph();
+        closeList();
+        buffer.writeln('<hr />');
+        continue;
+      }
+
+      final headingMatch = RegExp(r'^(#{1,3})\s+(.+)$').firstMatch(line);
+      if (headingMatch != null) {
+        flushParagraph();
+        closeList();
+        final level = headingMatch.group(1)!.length + 1;
+        final heading = headingMatch.group(2)!.trim();
+        buffer.writeln('<h$level>${_buildInlineHtml(heading)}</h$level>');
+        continue;
+      }
+
+      final bulletMatch = RegExp(r'^[-*]\s+(.+)$').firstMatch(line);
+      if (bulletMatch != null) {
+        flushParagraph();
+        if (!inList) {
+          buffer.writeln('<ul class="bullet-list">');
+          inList = true;
+        }
+        buffer.writeln(
+          '<li>${_buildInlineHtml(bulletMatch.group(1)!.trim())}</li>',
+        );
+        continue;
+      }
+
+      closeList();
+      paragraphLines.add(line);
+    }
+
+    flushParagraph();
+    closeList();
+    return buffer.toString();
+  }
+
+  String _buildInlineHtml(String value) {
+    final escaped = _escapeHtml(value);
+    return escaped.replaceAllMapped(
+      RegExp(r'\*\*(.+?)\*\*'),
+      (match) => '<strong>${match.group(1)}</strong>',
+    );
+  }
+
+  String _escapeHtml(String value) {
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
   }
 
   String _sentencePreviewText(EssayBuilderSentence sentence) {

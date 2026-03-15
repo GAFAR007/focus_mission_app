@@ -1,9 +1,9 @@
 /**
  * WHAT:
- * downloadTextFile exposes a small cross-platform wrapper for text file
+ * downloadTextFile exposes a small cross-platform wrapper for teacher export
  * downloads from the Flutter frontend.
  * WHY:
- * Teacher authoring flows need one safe way to export reviewed draft text
+ * Teacher authoring flows need one safe way to export reviewed draft content
  * without adding backend endpoints or platform-specific logic inside screens.
  * HOW:
  * Delegate to a conditional implementation that uses browser downloads on web
@@ -18,6 +18,11 @@ import 'download_text_file_stub.dart'
 Future<bool> downloadTextFile({
   required String fileName,
   required String content,
+  String mimeType = 'text/plain;charset=utf-8',
 }) {
-  return impl.downloadTextFile(fileName: fileName, content: content);
+  return impl.downloadTextFile(
+    fileName: fileName,
+    content: content,
+    mimeType: mimeType,
+  );
 }
