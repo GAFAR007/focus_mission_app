@@ -2746,57 +2746,86 @@ class _DraftMissionsPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: AppPalette.teacherGradient,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isCompact = constraints.maxWidth < 860;
+              final actionButtons = Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: isCompact ? WrapAlignment.start : WrapAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: onOpenDailyDrafts,
+                    icon: const Icon(Icons.list_alt_rounded, size: 18),
+                    label: Text(
+                      dailyDraftCount <= 0
+                          ? 'Daily drafts'
+                          : 'Daily drafts ($dailyDraftCount)',
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(Icons.edit_note_rounded, color: Colors.white),
-              ),
-              const SizedBox(width: AppSpacing.item),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Draft Missions',
-                      style: Theme.of(context).textTheme.titleMedium,
+                  TextButton.icon(
+                    onPressed: onOpenAssessmentDrafts,
+                    icon: const Icon(Icons.assignment_rounded, size: 18),
+                    label: Text(
+                      assessmentDraftCount <= 0
+                          ? 'Assessment drafts'
+                          : 'Assessment drafts ($assessmentDraftCount)',
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Review and edit these drafts before the student can begin.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
+                  ),
+                ],
+              );
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: AppPalette.teacherGradient,
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Icon(
+                          Icons.edit_note_rounded,
+                          color: Colors.white,
+                        ),
                       ),
+                      const SizedBox(width: AppSpacing.item),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Draft Missions',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Review and edit these drafts before the student can begin.',
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: AppPalette.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.compact),
+                  if (isCompact)
+                    actionButtons
+                  else
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: actionButtons,
                     ),
-                  ],
-                ),
-              ),
-              TextButton.icon(
-                onPressed: onOpenDailyDrafts,
-                icon: const Icon(Icons.list_alt_rounded, size: 18),
-                label: Text(
-                  dailyDraftCount <= 0
-                      ? 'Daily drafts'
-                      : 'Daily drafts ($dailyDraftCount)',
-                ),
-              ),
-              TextButton.icon(
-                onPressed: onOpenAssessmentDrafts,
-                icon: const Icon(Icons.assignment_rounded, size: 18),
-                label: Text(
-                  assessmentDraftCount <= 0
-                      ? 'Assessment drafts'
-                      : 'Assessment drafts ($assessmentDraftCount)',
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           ),
           if (missions.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.compact),

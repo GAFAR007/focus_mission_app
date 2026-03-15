@@ -205,6 +205,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   Widget build(BuildContext context) {
     final isAssessmentPublishLockedForActions =
         !_isPublishedMission && _isAssessmentPublishLocked;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return SafeArea(
       child: FractionallySizedBox(
@@ -319,6 +320,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 ],
                 Expanded(
                   child: SingleChildScrollView(
+                    padding: EdgeInsets.only(
+                      bottom: AppSpacing.section + bottomPadding,
+                    ),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -329,146 +333,153 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                             const SizedBox(height: AppSpacing.section),
                             _buildDraftPreview(context),
                           ],
+                          const SizedBox(height: AppSpacing.section),
+                          _buildActionSection(
+                            context,
+                            isAssessmentPublishLockedForActions:
+                                isAssessmentPublishLockedForActions,
+                          ),
                         ],
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.item),
-                if (!_hasDraft)
-                  GradientButton(
-                    label: _isGenerating
-                        ? 'Generating Draft with Groq...'
-                        : 'Generate Draft with Groq',
-                    colors: AppPalette.teacherGradient,
-                    onPressed: _isGenerating || _isTargetDateInPast
-                        ? () {}
-                        : _generateDraft,
-                  )
-                else
-                  Column(
-                    children: [
-                      if (_isPublishedMission)
-                        Column(
-                          children: [
-                            GradientButton(
-                              label: _isSaving
-                                  ? 'Saving changes...'
-                                  : 'Save Changes',
-                              colors: AppPalette.progressGradient,
-                              onPressed: _isSaving || _isTargetDateInPast
-                                  ? () {}
-                                  : () => _saveDraft(true),
-                            ),
-                            const SizedBox(height: 10),
-                            GradientButton(
-                              label: 'Download Teacher Copy',
-                              colors: const [
-                                AppPalette.primaryBlue,
-                                AppPalette.aqua,
-                              ],
-                              onPressed: _isSaving || _isGenerating
-                                  ? () {}
-                                  : () => _downloadDraft(
-                                      audience: _DraftExportAudience.teacher,
-                                    ),
-                            ),
-                            const SizedBox(height: 10),
-                            GradientButton(
-                              label: 'Download Student Copy',
-                              colors: const [AppPalette.sun, AppPalette.orange],
-                              onPressed: _isSaving || _isGenerating
-                                  ? () {}
-                                  : () => _downloadDraft(
-                                      audience: _DraftExportAudience.student,
-                                    ),
-                            ),
-                          ],
-                        )
-                      else ...[
-                        GradientButton(
-                          label: _isSaving
-                              ? 'Publishing...'
-                              : 'Publish Mission',
-                          colors: AppPalette.progressGradient,
-                          onPressed:
-                              _isSaving ||
-                                  _isTargetDateInPast ||
-                                  isAssessmentPublishLockedForActions
-                              ? () {}
-                              : () => _saveDraft(true),
-                        ),
-                        if (isAssessmentPublishLockedForActions) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            'Complete Task Focus to unlock publishing.',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: AppPalette.textMuted),
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        GradientButton(
-                          label: _isSaving ? 'Saving...' : 'Save Draft',
-                          colors: AppPalette.teacherGradient,
-                          onPressed: _isSaving || _isTargetDateInPast
-                              ? () {}
-                              : () => _saveDraft(false),
-                        ),
-                        const SizedBox(height: 10),
-                        GradientButton(
-                          label: 'Download Teacher Copy',
-                          colors: const [
-                            AppPalette.primaryBlue,
-                            AppPalette.aqua,
-                          ],
-                          onPressed: _isSaving || _isGenerating
-                              ? () {}
-                              : () => _downloadDraft(
-                                  audience: _DraftExportAudience.teacher,
-                                ),
-                        ),
-                        const SizedBox(height: 10),
-                        GradientButton(
-                          label: 'Download Student Copy',
-                          colors: const [AppPalette.sun, AppPalette.orange],
-                          onPressed: _isSaving || _isGenerating
-                              ? () {}
-                              : () => _downloadDraft(
-                                  audience: _DraftExportAudience.student,
-                                ),
-                        ),
-                        if (_isAssessmentMode) ...[
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton.icon(
-                              onPressed: _isSaving || _isTargetDateInPast
-                                  ? null
-                                  : () => _saveDraft(false),
-                              icon: const Icon(
-                                Icons.auto_awesome_rounded,
-                                size: 16,
-                              ),
-                              label: const Text('Draft Super Mission'),
-                              style: TextButton.styleFrom(
-                                minimumSize: const Size(0, 34),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ],
-                  ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildActionSection(
+    BuildContext context, {
+    required bool isAssessmentPublishLockedForActions,
+  }) {
+    if (!_hasDraft) {
+      return GradientButton(
+        label: _isGenerating
+            ? 'Generating Draft with Groq...'
+            : 'Generate Draft with Groq',
+        colors: AppPalette.teacherGradient,
+        onPressed: _isGenerating || _isTargetDateInPast
+            ? () {}
+            : _generateDraft,
+      );
+    }
+
+    final actionButtons = <Widget>[
+      GradientButton(
+        label: _isPublishedMission
+            ? (_isSaving ? 'Saving changes...' : 'Save Changes')
+            : (_isSaving ? 'Publishing...' : 'Publish Mission'),
+        colors: AppPalette.progressGradient,
+        onPressed:
+            _isSaving ||
+                _isTargetDateInPast ||
+                (!_isPublishedMission && isAssessmentPublishLockedForActions)
+            ? () {}
+            : () => _saveDraft(true),
+      ),
+      if (!_isPublishedMission)
+        GradientButton(
+          label: _isSaving ? 'Saving...' : 'Save Draft',
+          colors: AppPalette.teacherGradient,
+          onPressed: _isSaving || _isTargetDateInPast
+              ? () {}
+              : () => _saveDraft(false),
+        ),
+      GradientButton(
+        label: 'Download Teacher Copy',
+        colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+        onPressed: _isSaving || _isGenerating
+            ? () {}
+            : () => _downloadDraft(audience: _DraftExportAudience.teacher),
+      ),
+      GradientButton(
+        label: 'Download Student Copy',
+        colors: const [AppPalette.sun, AppPalette.orange],
+        onPressed: _isSaving || _isGenerating
+            ? () {}
+            : () => _downloadDraft(audience: _DraftExportAudience.student),
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final twoColumns = constraints.maxWidth >= 640;
+            if (!twoColumns) {
+              return Column(
+                children: List.generate(actionButtons.length, (index) {
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index == actionButtons.length - 1 ? 0 : 10,
+                    ),
+                    child: actionButtons[index],
+                  );
+                }),
+              );
+            }
+
+            final rows = <Widget>[];
+            for (var index = 0; index < actionButtons.length; index += 2) {
+              final secondIndex = index + 1;
+              rows.add(
+                Padding(
+                  padding: EdgeInsets.only(
+                    bottom: secondIndex >= actionButtons.length ? 0 : 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(child: actionButtons[index]),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: secondIndex < actionButtons.length
+                            ? actionButtons[secondIndex]
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return Column(children: rows);
+          },
+        ),
+        if (!_isPublishedMission && isAssessmentPublishLockedForActions) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Complete Task Focus to unlock publishing.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+        ],
+        if (!_isPublishedMission && _isAssessmentMode) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _isSaving || _isTargetDateInPast
+                  ? null
+                  : () => _saveDraft(false),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+              label: const Text('Draft Super Mission'),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 34),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
