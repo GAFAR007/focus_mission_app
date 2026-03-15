@@ -63,6 +63,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   final GlobalKey _todaySectionKey = GlobalKey();
   bool _isPopupStorageReady = false;
   bool _isPopupVisible = false;
+  bool _hasQueuedDailyLoginBonus = false;
 
   late AuthSession _session;
   late Future<_StudentScreenData> _future;
@@ -159,6 +160,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
           final data = snapshot.data!;
           final today = data.dashboard.today;
           final mySubjects = _buildSubjectSummaries(data);
+          _maybeShowDailyLoginBonus(data.dashboard.dailyXp);
           _maybeShowSubjectCompletionBonus(data.dashboard.dailyXp);
           _maybeShowDailyWelcome(data, mySubjects);
 
@@ -1137,6 +1139,104 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     });
   }
 
+  void _maybeShowDailyLoginBonus(DailyXpSummary summary) {
+    if (_hasQueuedDailyLoginBonus) {
+      return;
+    }
+
+    if (!_session.loginMeta.dailyLoginRewardGranted ||
+        _session.loginMeta.dailyLoginXpAwarded <= 0) {
+      return;
+    }
+
+    _hasQueuedDailyLoginBonus = true;
+    _enqueuePopup(() async {
+      if (!mounted) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            insetPadding: const EdgeInsets.all(AppSpacing.screen),
+            backgroundColor: Colors.transparent,
+            child: SoftPanel(
+              colors: const [Color(0xFFFFFCF4), Color(0xFFE8F7FF)],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [AppPalette.sun, AppPalette.primaryBlue],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Icon(
+                          Icons.bolt_rounded,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.item),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Daily bonus unlocked',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Nice one, ${_firstName(_session.user.name)}. You picked up +${_session.loginMeta.dailyLoginXpAwarded} XP for showing up today.',
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: AppPalette.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.item),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _MiniPill(
+                        label:
+                            '+${_session.loginMeta.dailyLoginXpAwarded} XP today',
+                      ),
+                      _MiniPill(
+                        label:
+                            '${summary.totalXp}/${summary.totalXpCap} XP on the board',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.section),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.rocket_launch_rounded),
+                      label: const Text('Keep going'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    });
+  }
+
   void _maybeShowDailyWelcome(
     _StudentScreenData data,
     List<StudentSubjectReportSummary> subjects,
@@ -1667,7 +1767,7 @@ class _DailyXpPanel extends StatelessWidget {
                 label:
                     'Performance ${summary.performanceXp}/${summary.performanceXpCap}',
               ),
-              _MiniPill(label: 'Attendance ${summary.attendanceXp}/20'),
+              _MiniPill(label: 'Daily bonus ${summary.dailyLoginXp}/20'),
               _MiniPill(label: 'Challenge ${summary.challengeXp}/30'),
               _MiniPill(label: 'Assessment ${summary.assessmentXp}/50'),
               _MiniPill(

@@ -49,6 +49,9 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   final FocusMissionApi _api = FocusMissionApi();
   final math.Random _random = math.Random();
   static const int _essaySubmissionMinWords = 100;
+  static const int _objectiveMissionXpReward = 30;
+  static const int _assessmentMissionXpReward = 50;
+  static const int _essayMissionXpReward = 20;
   static const Map<int, int> _requiredCorrectByTotal = {
     5: 4,
     8: 6,
@@ -86,6 +89,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   MissionPayload get _mission => widget.startedMission.mission;
   bool get _isEssayBuilderMission => _essayDraft != null;
   bool get _isTheoryMission => _mission.draftFormat == 'THEORY';
+  bool get _usesScoreBasedObjectiveXp =>
+      !_isTheoryMission &&
+      !_isEssayBuilderMission &&
+      _mission.questions.length >= 10;
 
   int get _essayTotalCount {
     final draft = _essayDraft;
@@ -637,9 +644,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                   child: Padding(
                     padding: const EdgeInsets.only(top: AppSpacing.item),
                     child: _XpPulsePill(
-                      label: _xpPulsePositive
-                          ? 'Nice! Potential +$_xpPulseValue XP'
-                          : 'Keep going. Next one can add XP.',
+                      label: _objectiveXpPulseLabel(),
                       positive: _xpPulsePositive,
                     ),
                   ),
@@ -1509,9 +1514,13 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         : _isTheoryMission
         ? _theoryFocusScore()
         : _focusScore();
-    final fallbackEarnedXp = total >= 10
-        ? ((50 * focusScore) / 100).round()
-        : ((30 * focusScore) / 100).round();
+    final fallbackEarnedXp = _isEssayBuilderMission
+        ? _essayMissionXpReward
+        : _isTheoryMission
+        ? 0
+        : total >= 10
+        ? ((_assessmentMissionXpReward * focusScore) / 100).round()
+        : _objectiveMissionXpReward;
     final earnedXp = theoryXpPending
         ? 0
         : completedResult.sessionXpAwarded > 0
@@ -2125,14 +2134,16 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       if (remaining > 0) {
         return '$remaining more question$plural to go, you are almost there.';
       }
-      return 'Final question. Finish strong and lock your score.';
+      return _usesScoreBasedObjectiveXp
+          ? 'Final question. Finish strong and lock your score.'
+          : 'Final question. Finish strong and lock your reward.';
     }
 
     if (selectedIndex == question.correctIndex) {
       const correctMessages = [
-        'Great answer. XP is stacking up.',
+        'Great answer. Keep building toward your reward.',
         'Correct. Keep this rhythm going.',
-        'Sharp work. You are in control.',
+        'Sharp work. You are getting closer.',
       ];
       return correctMessages[(_answers.length + _coachVersion) %
           correctMessages.length];
@@ -2142,12 +2153,32 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   }
 
   int _previewXpForAnswer(bool isCorrect) {
-    if (!isCorrect || _mission.questions.isEmpty) {
+    if (!isCorrect ||
+        _mission.questions.isEmpty ||
+        !_usesScoreBasedObjectiveXp) {
       return 0;
     }
 
-    final xpPool = _mission.questions.length >= 10 ? 50 : 30;
-    return math.max(1, (xpPool / _mission.questions.length).ceil());
+    return math.max(
+      1,
+      (_assessmentMissionXpReward / _mission.questions.length).ceil(),
+    );
+  }
+
+  String _objectiveXpPulseLabel() {
+    if (_xpPulsePositive) {
+      if (_usesScoreBasedObjectiveXp) {
+        return 'Nice! Potential +$_xpPulseValue XP';
+      }
+
+      return 'Nice! Finish strong to lock +$_objectiveMissionXpReward XP.';
+    }
+
+    if (_usesScoreBasedObjectiveXp) {
+      return 'Keep going. Next one can add XP.';
+    }
+
+    return 'Keep going. Pass the mission to lock your XP.';
   }
 
   void _triggerConfettiBurst({required bool success}) {

@@ -114,19 +114,49 @@ class AppUser {
 }
 
 class AuthSession {
-  const AuthSession({required this.token, required this.user});
+  const AuthSession({
+    required this.token,
+    required this.user,
+    this.loginMeta = const LoginMeta(),
+  });
 
   final String token;
   final AppUser user;
+  final LoginMeta loginMeta;
 
-  AuthSession copyWith({String? token, AppUser? user}) {
-    return AuthSession(token: token ?? this.token, user: user ?? this.user);
+  AuthSession copyWith({String? token, AppUser? user, LoginMeta? loginMeta}) {
+    return AuthSession(
+      token: token ?? this.token,
+      user: user ?? this.user,
+      loginMeta: loginMeta ?? this.loginMeta,
+    );
   }
 
   factory AuthSession.fromJson(Map<String, dynamic> json) {
     return AuthSession(
       token: (json['token'] ?? '').toString(),
       user: AppUser.fromJson(_asMap(json['user'])),
+      loginMeta: LoginMeta.fromJson(_asMap(json['loginMeta'])),
+    );
+  }
+}
+
+class LoginMeta {
+  const LoginMeta({
+    this.dailyLoginRewardGranted = false,
+    this.dailyLoginXpAwarded = 0,
+    this.dateKey = '',
+  });
+
+  final bool dailyLoginRewardGranted;
+  final int dailyLoginXpAwarded;
+  final String dateKey;
+
+  factory LoginMeta.fromJson(Map<String, dynamic> json) {
+    return LoginMeta(
+      dailyLoginRewardGranted: json['dailyLoginRewardGranted'] == true,
+      dailyLoginXpAwarded: _asInt(json['dailyLoginXpAwarded']),
+      dateKey: (json['dateKey'] ?? '').toString(),
     );
   }
 }
@@ -286,6 +316,7 @@ class StudentDashboardData {
 class DailyXpSummary {
   const DailyXpSummary({
     required this.dateKey,
+    required this.dailyLoginXp,
     required this.attendanceXp,
     required this.challengeXp,
     required this.assessmentXp,
@@ -303,6 +334,7 @@ class DailyXpSummary {
   });
 
   final String dateKey;
+  final int dailyLoginXp;
   final int attendanceXp;
   final int challengeXp;
   final int assessmentXp;
@@ -321,6 +353,7 @@ class DailyXpSummary {
   factory DailyXpSummary.fromJson(Map<String, dynamic> json) {
     return DailyXpSummary(
       dateKey: (json['dateKey'] ?? '').toString(),
+      dailyLoginXp: _asInt(json['dailyLoginXp']),
       attendanceXp: _asInt(json['attendanceXp']),
       challengeXp: _asInt(json['challengeXp']),
       assessmentXp: _asInt(json['assessmentXp']),

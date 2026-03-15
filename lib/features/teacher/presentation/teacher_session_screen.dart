@@ -611,7 +611,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       lessonLabel: lessonLabel,
       subjectId: selectedSubject.id,
     );
-    final xpReward = publishedMission?.xpReward ?? 20;
+    final xpReward = publishedMission?.xpReward ?? 30;
 
     setState(() => _isSaving = true);
 

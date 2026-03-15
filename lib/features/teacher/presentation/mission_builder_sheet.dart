@@ -88,8 +88,11 @@ class _MissionBuilderSheet extends StatefulWidget {
 }
 
 class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
+  static const int _objectiveXpReward = 30;
   static const int _assessmentQuestionCount = 10;
   static const int _assessmentXpReward = 50;
+  static const int _theoryXpReward = _assessmentXpReward;
+  static const int _essayXpReward = 20;
   static const int _theoryQuestionCountMin = 2;
   static const int _theoryQuestionCountMax = 5;
   static const List<String> _taskCodeOptions = [
@@ -113,7 +116,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
   String _difficulty = 'medium';
   int _questionCount = 5;
-  int _xpReward = 20;
   late String _selectedSessionType;
   late DateTime _selectedTargetDate;
   String _draftFormat = 'QUESTIONS';
@@ -147,11 +149,29 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       _draftFormat == 'ESSAY_BUILDER' ||
       _draftFormat == 'THEORY' ||
       (_draftFormat == 'QUESTIONS' && _questionCount >= 10);
-  bool get _usesFixedXpReward =>
-      _isAssessmentMode || _isTheoryDraft || _draftFormat == 'ESSAY_BUILDER';
+  bool get _usesScoreBasedXpReward =>
+      _draftFormat == 'QUESTIONS' && _questionCount >= _assessmentQuestionCount;
   String get _effectiveDifficulty => _isAssessmentMode ? 'hard' : _difficulty;
-  int get _effectiveXpReward =>
-      _usesFixedXpReward ? _assessmentXpReward : _xpReward;
+  int get _effectiveXpReward => _resolvedXpRewardFor(
+    draftFormat: _draftFormat,
+    questionCount: _questionCount,
+  );
+  String get _xpRewardPolicySummary {
+    if (_draftFormat == 'THEORY') {
+      return 'Theory missions hold a fixed 50 XP reward until the teacher marks the answers.';
+    }
+
+    if (_draftFormat == 'ESSAY_BUILDER') {
+      return 'Essay builder missions award a fixed 20 XP when the guided work and final response are completed.';
+    }
+
+    if (_usesScoreBasedXpReward) {
+      return '10-question assessment missions award up to 50 XP based on the student score.';
+    }
+
+    return '5 and 8 question objective missions award a fixed 30 XP when the student passes.';
+  }
+
   SubjectCertificationSummary? get _selectedSubjectCertification {
     for (final certification in _studentCertification) {
       if (certification.subjectId == widget.subject.id) {
@@ -583,7 +603,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               ? 'Assessment mode uses questions only.'
               : _hasDraft
               ? 'Draft format locks after generation.'
-              : 'Questions create a standard mission. Theory creates a fast-focus doc or scan check with 2 to 5 questions and fixed 50 XP. Essay (A/B/C/D) builds a guided essay with no typing.',
+              : 'Questions create objective missions with fixed 30 XP at 5 or 8 questions and score-based 50 XP at 10 questions. Theory keeps 50 XP after teacher review. Essay (A/B/C/D) awards a fixed 20 XP on completion.',
           style: Theme.of(
             context,
           ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -742,7 +762,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           Text(
             !canEditQuestionCount
                 ? 'Question count is locked after generation. Use Add Question or Remove to adjust the saved theory draft within 2 to 5 questions.'
-                : 'Theory keeps a fixed 50 XP reward and uses 2 to 5 fast-focus questions from the scanned unit text.',
+                : 'Theory keeps a fixed 50 XP reward after teacher review and uses 2 to 5 fast-focus questions from the scanned unit text.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -877,17 +897,13 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               _CountChip(
                 label: '$value XP',
                 selected: _effectiveXpReward == value,
-                onTap: _usesFixedXpReward
-                    ? null
-                    : () => setState(() => _xpReward = value),
+                onTap: null,
               ),
           ],
         ),
         const SizedBox(height: 8),
         Text(
-          _usesFixedXpReward
-              ? 'Assessment, Theory, and essay builder drafts use a fixed reward of 50 XP.'
-              : 'Set the mission reward now so the planned XP and the awarded XP stay aligned when the teacher saves the lesson.',
+          _xpRewardPolicySummary,
           style: Theme.of(
             context,
           ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -941,7 +957,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         ],
         if (_uploadedSource != null) ...[
           const SizedBox(height: AppSpacing.item),
-          _UnitPlanDraftCard(draft: _uploadedSource!),
+          _UnitPlanDraftCard(
+            draft: _uploadedSource!,
+            appliedXpReward: _effectiveXpReward,
+          ),
         ],
         const SizedBox(height: AppSpacing.section),
         Text('Unit text', style: Theme.of(context).textTheme.titleMedium),
@@ -3461,7 +3480,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         if (!hasAppliedTaskScope) {
           _unitTextController.text = extracted.extractedText;
         }
-        _xpReward = extracted.unitPlan.suggestedXpReward;
 
         // WHY: The upload flow should save the teacher time by prefilling the
         // draft suggestion fields before any mission is generated.
@@ -3557,11 +3575,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         : (mission.essayBuilderDraft?.mode.trim().isNotEmpty == true
               ? mission.essayBuilderDraft!.mode.trim().toUpperCase()
               : 'NORMAL');
-    _xpReward = mission.xpReward <= 0
-        ? ((_draftFormat == 'ESSAY_BUILDER' || _draftFormat == 'THEORY')
-              ? _assessmentXpReward
-              : 20)
-        : mission.xpReward;
     _selectedTaskCodes = mission.taskCodes
         .map((code) => code.trim().toUpperCase())
         .where((code) => code.isNotEmpty)
@@ -3607,6 +3620,25 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     return questionCount > 0 ? questionCount : 5;
   }
 
+  int _resolvedXpRewardFor({
+    required String draftFormat,
+    required int questionCount,
+  }) {
+    final normalizedDraftFormat = draftFormat.trim().toUpperCase();
+
+    if (normalizedDraftFormat == 'THEORY') {
+      return _theoryXpReward;
+    }
+
+    if (normalizedDraftFormat == 'ESSAY_BUILDER') {
+      return _essayXpReward;
+    }
+
+    return questionCount >= _assessmentQuestionCount
+        ? _assessmentXpReward
+        : _objectiveXpReward;
+  }
+
   void _setDraftFormat(String draftFormat) {
     final normalized = draftFormat.trim().toUpperCase();
 
@@ -3616,13 +3648,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         _questionCount,
         draftFormat: normalized,
       );
-
-      if (normalized == 'THEORY') {
-        // WHY: Fast-focus theory always uses the fixed 50 XP contract even if
-        // the teacher switches from a custom-XP question draft.
-        _xpReward = _assessmentXpReward;
-      }
-
       _applyAssessmentModeDefaultsIfNeeded();
     });
   }
@@ -3639,7 +3664,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     // WHY: Assessment mode must stay standardized so difficulty and reward
     // remain consistent across teacher drafts and publishing.
     _difficulty = 'hard';
-    _xpReward = _assessmentXpReward;
     _draftFormat = 'QUESTIONS';
   }
 
@@ -3969,7 +3993,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       _selectedSessionType = result.sessionType;
       _selectedTargetDate = _dateOnly(result.targetDate);
       _difficulty = 'hard';
-      _xpReward = _assessmentXpReward;
       _selectedTaskCodes = result.taskCodes;
       _errorMessage = null;
       if (result.sourceRawText.trim().isNotEmpty) {
@@ -4344,9 +4367,13 @@ class _SourceSummaryCard extends StatelessWidget {
 }
 
 class _UnitPlanDraftCard extends StatelessWidget {
-  const _UnitPlanDraftCard({required this.draft});
+  const _UnitPlanDraftCard({
+    required this.draft,
+    required this.appliedXpReward,
+  });
 
   final UploadedSourceDraft draft;
+  final int appliedXpReward;
 
   @override
   Widget build(BuildContext context) {
@@ -4436,7 +4463,7 @@ class _UnitPlanDraftCard extends StatelessWidget {
               _InfoPill(
                 label: '${draft.unitPlan.suggestedQuestionCount} questions',
               ),
-              _InfoPill(label: '${draft.unitPlan.suggestedXpReward} XP reward'),
+              _InfoPill(label: '$appliedXpReward XP mission policy'),
               if ((draft.unitPlan.aiModel ?? '').isNotEmpty)
                 _InfoPill(label: draft.unitPlan.aiModel!),
             ],
