@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
@@ -28,6 +29,7 @@ import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import '../../teacher/presentation/result_report_screen.dart';
 
 const _allSubjectsFilterLabel = 'All subjects';
+const _allResultDatesFilterLabel = 'All dates';
 const _allCertificationSubjectsFilterLabel = 'All certification subjects';
 const List<String> _managementWeekdayOptions = <String>[
   'Monday',
@@ -85,6 +87,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   late DateTime _selectedTimetableDate;
   String _selectedStudentId = '';
   String _selectedSubject = _allSubjectsFilterLabel;
+  String _selectedResultDate = _allResultDatesFilterLabel;
   String _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
   String _selectedCertificationEditorSubjectId = '';
   String _selectedTimetableDay = _managementWeekdayOptions.first;
@@ -97,6 +100,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   String _createRole = 'student';
   NotificationInboxData? _notificationInbox;
   bool _isCreatingUser = false;
+  bool _isDownloadingResults = false;
   bool _isSavingCertification = false;
   bool _isSavingTimetable = false;
   bool _showTimetableEditor = false;
@@ -156,6 +160,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     final certificationFilters = _buildCertificationFilters(certifications);
     if (!certificationFilters.contains(_selectedCertificationSubject)) {
       _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
+    }
+    final resultDateFilters = _buildResultDateFilters(recentResults);
+    if (!resultDateFilters.contains(_selectedResultDate)) {
+      _selectedResultDate = _allResultDatesFilterLabel;
     }
     return _ManagementScreenData(
       workspace: workspace,
@@ -671,12 +679,18 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           final overview = workspace.overview;
           final inbox = _notificationInbox ?? workspace.notificationInbox;
           final subjectFilters = _buildSubjectFilters(data.recentResults);
+          final resultDateFilters = _buildResultDateFilters(data.recentResults);
           final selectedSubject = subjectFilters.contains(_selectedSubject)
               ? _selectedSubject
               : _allSubjectsFilterLabel;
+          final selectedResultDate =
+              resultDateFilters.contains(_selectedResultDate)
+              ? _selectedResultDate
+              : _allResultDatesFilterLabel;
           final filteredResults = _filterResults(
             data.recentResults,
-            selectedSubject,
+            subject: selectedSubject,
+            dateKey: selectedResultDate,
           );
           final certificationFilters = _buildCertificationFilters(
             data.certifications,
@@ -1340,6 +1354,90 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             )
                             .toList(growable: false),
                       ),
+                      const SizedBox(height: AppSpacing.compact),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final compact = constraints.maxWidth < 760;
+                          final dateFilter = DropdownButtonFormField<String>(
+                            initialValue: selectedResultDate,
+                            decoration: const InputDecoration(
+                              labelText: 'Mission date',
+                            ),
+                            items: resultDateFilters
+                                .map(
+                                  (dateLabel) => DropdownMenuItem<String>(
+                                    value: dateLabel,
+                                    child: Text(dateLabel),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            onChanged: (value) {
+                              if (value == null) {
+                                return;
+                              }
+                              setState(() => _selectedResultDate = value);
+                            },
+                          );
+                          final downloadButton = SizedBox(
+                            width: compact ? double.infinity : null,
+                            child: FilledButton.icon(
+                              onPressed:
+                                  filteredResults.isEmpty ||
+                                      _isDownloadingResults
+                                  ? null
+                                  : () => _downloadFilteredResults(
+                                      student: workspace.selectedStudent,
+                                      missions: filteredResults,
+                                    ),
+                              icon: Icon(
+                                _isDownloadingResults
+                                    ? Icons.hourglass_top_rounded
+                                    : Icons.download_rounded,
+                              ),
+                              label: Text(
+                                _isDownloadingResults
+                                    ? 'Preparing download...'
+                                    : 'Download filtered results',
+                              ),
+                            ),
+                          );
+                          final resultCount = Text(
+                            '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppPalette.textMuted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          );
+
+                          if (compact) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                dateFilter,
+                                const SizedBox(height: 10),
+                                resultCount,
+                                const SizedBox(height: 10),
+                                downloadButton,
+                              ],
+                            );
+                          }
+
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(child: dateFilter),
+                              const SizedBox(width: 12),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: resultCount,
+                              ),
+                              const SizedBox(width: 12),
+                              downloadButton,
+                            ],
+                          );
+                        },
+                      ),
                       const SizedBox(height: AppSpacing.item),
                       if (filteredResults.isEmpty)
                         Container(
@@ -1476,6 +1574,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       // the screen refreshes immediately after switching student context.
       _selectedStudentId = selectedStudentId;
       _selectedSubject = _allSubjectsFilterLabel;
+      _selectedResultDate = _allResultDatesFilterLabel;
       _notificationInbox = null;
       _future = _loadWorkspace();
     });
@@ -1553,6 +1652,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           );
           _selectedStudentId = createdUser.id;
           _selectedSubject = _allSubjectsFilterLabel;
+          _selectedResultDate = _allResultDatesFilterLabel;
           _notificationInbox = null;
           _future = _loadWorkspace();
         }
@@ -1651,17 +1751,647 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return labels.toList(growable: false);
   }
 
-  List<MissionPayload> _filterResults(
-    List<MissionPayload> missions,
-    String subject,
-  ) {
-    if (subject == _allSubjectsFilterLabel) {
-      return missions;
+  List<String> _buildResultDateFilters(List<MissionPayload> missions) {
+    final dates = <String>{};
+
+    for (final mission in missions) {
+      final dateKey = _resultDateKeyForMission(mission);
+      if (dateKey != 'No date') {
+        dates.add(dateKey);
+      }
     }
 
+    final sortedDates = dates.toList(growable: false)
+      ..sort((left, right) => right.compareTo(left));
+    return <String>[_allResultDatesFilterLabel, ...sortedDates];
+  }
+
+  List<MissionPayload> _filterResults(
+    List<MissionPayload> missions, {
+    required String subject,
+    required String dateKey,
+  }) {
     return missions
-        .where((mission) => (mission.subject?.name ?? '').trim() == subject)
+        .where((mission) {
+          final matchesSubject =
+              subject == _allSubjectsFilterLabel ||
+              (mission.subject?.name ?? '').trim() == subject;
+          final matchesDate =
+              dateKey == _allResultDatesFilterLabel ||
+              _resultDateKeyForMission(mission) == dateKey;
+          return matchesSubject && matchesDate;
+        })
         .toList(growable: false);
+  }
+
+  String _resultDateKeyForMission(MissionPayload mission) {
+    final scheduledDate = (mission.availableOnDate ?? '').trim();
+    if (scheduledDate.isNotEmpty) {
+      return _formatManagementMissionDate(scheduledDate);
+    }
+
+    return _formatManagementMissionDate(
+      mission.publishedAt ?? mission.createdAt,
+    );
+  }
+
+  Future<void> _downloadFilteredResults({
+    required StudentSummary student,
+    required List<MissionPayload> missions,
+  }) async {
+    if (_isDownloadingResults || missions.isEmpty) {
+      return;
+    }
+
+    setState(() => _isDownloadingResults = true);
+    try {
+      final exportRows = await Future.wait(
+        missions
+            .where((mission) => mission.latestResultPackageId.trim().isNotEmpty)
+            .map((mission) async {
+              final resultPackage = await _api.getManagementResultPackage(
+                token: _session.token,
+                resultPackageId: mission.latestResultPackageId.trim(),
+              );
+              return _ManagementResultExportRow(
+                mission: mission,
+                resultPackage: resultPackage,
+              );
+            }),
+      );
+
+      if (exportRows.isEmpty) {
+        throw Exception('No saved result packages were available to download.');
+      }
+
+      final downloaded = await downloadTextFile(
+        fileName: _buildManagementResultsFileName(student: student),
+        content: _buildManagementResultsHtml(
+          student: student,
+          rows: exportRows,
+        ),
+        mimeType: 'text/html;charset=utf-8',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            downloaded
+                ? 'Downloaded ${exportRows.length} result package${exportRows.length == 1 ? '' : 's'}.'
+                : 'Download is not available on this device yet.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isDownloadingResults = false);
+      }
+    }
+  }
+
+  String _buildManagementResultsFileName({required StudentSummary student}) {
+    final studentSlug = _sanitizeManagementFileName(student.name);
+    final subjectSlug = _selectedSubject == _allSubjectsFilterLabel
+        ? 'all-subjects'
+        : _sanitizeManagementFileName(_selectedSubject);
+    final dateSlug = _selectedResultDate == _allResultDatesFilterLabel
+        ? 'all-dates'
+        : _sanitizeManagementFileName(_selectedResultDate);
+    return '${studentSlug}_results_${dateSlug}_$subjectSlug.html';
+  }
+
+  String _buildManagementResultsHtml({
+    required StudentSummary student,
+    required List<_ManagementResultExportRow> rows,
+  }) {
+    final sortedRows = [...rows]
+      ..sort((left, right) {
+        final leftDate = _resultDateForExport(left);
+        final rightDate = _resultDateForExport(right);
+        final dateCompare = rightDate.compareTo(leftDate);
+        if (dateCompare != 0) {
+          return dateCompare;
+        }
+        final subjectCompare = _subjectNameForExport(
+          left,
+        ).compareTo(_subjectNameForExport(right));
+        if (subjectCompare != 0) {
+          return subjectCompare;
+        }
+        return left.resultPackage.meta.missionTitle.compareTo(
+          right.resultPackage.meta.missionTitle,
+        );
+      });
+
+    final groupedRows =
+        <String, Map<String, List<_ManagementResultExportRow>>>{};
+    for (final row in sortedRows) {
+      final dateKey = _resultDateForExport(row);
+      final subjectKey = _subjectNameForExport(row);
+      groupedRows.putIfAbsent(
+        dateKey,
+        () => <String, List<_ManagementResultExportRow>>{},
+      );
+      groupedRows[dateKey]!.putIfAbsent(
+        subjectKey,
+        () => <_ManagementResultExportRow>[],
+      );
+      groupedRows[dateKey]![subjectKey]!.add(row);
+    }
+
+    final summaryLabel = [
+      _selectedResultDate == _allResultDatesFilterLabel
+          ? 'All dates'
+          : _selectedResultDate,
+      _selectedSubject == _allSubjectsFilterLabel
+          ? 'All subjects'
+          : _selectedSubject,
+    ].join(' · ');
+
+    final buffer = StringBuffer()
+      ..writeln('<!DOCTYPE html>')
+      ..writeln('<html lang="en">')
+      ..writeln('<head>')
+      ..writeln('<meta charset="utf-8" />')
+      ..writeln(
+        '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+      )
+      ..writeln(
+        '<title>${_escapeManagementHtml('${student.name} · Result Download')}</title>',
+      )
+      ..writeln('<style>${_buildManagementResultsStyles()}</style>')
+      ..writeln('</head>')
+      ..writeln('<body>')
+      ..writeln('<main class="page">')
+      ..writeln('<section class="hero">')
+      ..writeln('<span class="copy-chip">Management Download</span>')
+      ..writeln('<h1>${_escapeManagementHtml(student.name)} Result Export</h1>')
+      ..writeln(
+        '<p class="hero-summary">Grouped by mission date and subject using saved result packages from the management workspace.</p>',
+      )
+      ..writeln('<div class="meta-grid">')
+      ..writeln(
+        _buildManagementMetaCardHtml(label: 'Student', value: student.name),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(label: 'Filter', value: summaryLabel),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Result packages',
+          value: '${rows.length}',
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Generated',
+          value: DateTime.now().toLocal().toIso8601String(),
+        ),
+      )
+      ..writeln('</div>')
+      ..writeln('</section>');
+
+    for (final dateEntry in groupedRows.entries) {
+      buffer
+        ..writeln('<section class="date-group">')
+        ..writeln('<h2>${_escapeManagementHtml(dateEntry.key)}</h2>');
+      for (final subjectEntry in dateEntry.value.entries) {
+        buffer
+          ..writeln('<section class="subject-group">')
+          ..writeln('<h3>${_escapeManagementHtml(subjectEntry.key)}</h3>');
+        for (final row in subjectEntry.value) {
+          buffer.writeln(_buildManagementResultCardHtml(row));
+        }
+        buffer.writeln('</section>');
+      }
+      buffer.writeln('</section>');
+    }
+
+    buffer
+      ..writeln('</main>')
+      ..writeln('</body>')
+      ..writeln('</html>');
+    return buffer.toString();
+  }
+
+  String _buildManagementResultCardHtml(_ManagementResultExportRow row) {
+    final mission = row.mission;
+    final resultPackage = row.resultPackage;
+    final meta = resultPackage.meta;
+    final taskCodes = meta.taskCodes.isEmpty
+        ? 'None'
+        : meta.taskCodes.join(', ');
+    final scoreLabel = meta.scoreTotal > 0
+        ? '${meta.scoreCorrect}/${meta.scoreTotal} (${meta.scorePercent}%)'
+        : meta.scorePercent > 0
+        ? '${meta.scorePercent}%'
+        : 'Pending review';
+
+    final buffer = StringBuffer()
+      ..writeln('<article class="result-card">')
+      ..writeln('<div class="result-header">')
+      ..writeln('<div>')
+      ..writeln('<h4>${_escapeManagementHtml(meta.missionTitle)}</h4>')
+      ..writeln(
+        '<p class="result-subtitle">${_escapeManagementHtml(_managementFormatLabel(mission))} · ${_escapeManagementHtml(mission.sessionType.toUpperCase())}</p>',
+      )
+      ..writeln('</div>')
+      ..writeln(
+        '<span class="result-pill">${_escapeManagementHtml(scoreLabel)} · ${meta.xpAwarded}/${mission.xpReward} XP</span>',
+      )
+      ..writeln('</div>')
+      ..writeln('<div class="meta-grid compact">')
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Assigned date',
+          value: meta.assignedDate,
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Submitted',
+          value: _formatManagementMissionDate(meta.submitTime),
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Duration',
+          value: '${meta.durationSeconds}s',
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(label: 'Task focus', value: taskCodes),
+      )
+      ..writeln('</div>')
+      ..writeln(_buildManagementEvidenceHtml(row))
+      ..writeln('</article>');
+
+    return buffer.toString();
+  }
+
+  String _buildManagementEvidenceHtml(_ManagementResultExportRow row) {
+    final evidence = row.resultPackage.evidence;
+    final format = (evidence['format'] ?? row.mission.draftFormat).toString();
+    if (format == 'THEORY') {
+      return _buildManagementTheoryEvidenceHtml(row.resultPackage);
+    }
+    if (format == 'ESSAY_BUILDER') {
+      return _buildManagementEssayEvidenceHtml(row.resultPackage);
+    }
+    return _buildManagementQuestionEvidenceHtml(row.resultPackage);
+  }
+
+  String _buildManagementQuestionEvidenceHtml(ResultPackageData resultPackage) {
+    final questions =
+        resultPackage.evidence['questions'] as List<dynamic>? ?? const [];
+    if (questions.isEmpty) {
+      return '<p class="empty-copy">No question evidence saved.</p>';
+    }
+
+    final buffer = StringBuffer()
+      ..writeln('<section class="evidence-block"><h5>Question evidence</h5>');
+    for (final entry in questions.asMap().entries) {
+      final question = (entry.value as Map<dynamic, dynamic>)
+          .cast<String, dynamic>();
+      final correct = question['correctness'] == true;
+      final prompt = (question['questionText'] ?? '').toString();
+      final selectedLetter = (question['selectedOptionLetter'] ?? '')
+          .toString()
+          .trim();
+      final selectedAnswer = (question['selectedAnswer'] ?? '')
+          .toString()
+          .trim();
+      final correctLetter = (question['correctOptionLetter'] ?? '')
+          .toString()
+          .trim();
+      final correctAnswer = (question['correctAnswer'] ?? '').toString().trim();
+      buffer
+        ..writeln(
+          '<div class="question-card ${correct ? 'success' : 'support'}">',
+        )
+        ..writeln('<h6>Question ${entry.key + 1}</h6>')
+        ..writeln('<p>${_escapeManagementHtml(prompt)}</p>')
+        ..writeln(
+          '<p><strong>Selected:</strong> ${_escapeManagementHtml('${selectedLetter.isEmpty ? '' : '$selectedLetter) '}${selectedAnswer.isEmpty ? 'No selection recorded' : selectedAnswer}')}</p>',
+        )
+        ..writeln(
+          '<p><strong>Correct:</strong> ${_escapeManagementHtml('${correctLetter.isEmpty ? '' : '$correctLetter) '}$correctAnswer')}</p>',
+        )
+        ..writeln('</div>');
+    }
+    buffer.writeln('</section>');
+    return buffer.toString();
+  }
+
+  String _buildManagementTheoryEvidenceHtml(ResultPackageData resultPackage) {
+    final questions =
+        resultPackage.evidence['questions'] as List<dynamic>? ?? const [];
+    if (questions.isEmpty) {
+      return '<p class="empty-copy">No theory evidence saved.</p>';
+    }
+
+    final buffer = StringBuffer()
+      ..writeln('<section class="evidence-block"><h5>Theory evidence</h5>');
+    for (final entry in questions.asMap().entries) {
+      final question = (entry.value as Map<dynamic, dynamic>)
+          .cast<String, dynamic>();
+      final learnFirst = (question['learnFirst'] ?? '').toString().trim();
+      final expectedAnswer = (question['expectedAnswer'] ?? '')
+          .toString()
+          .trim();
+      final studentAnswer = (question['studentAnswer'] ?? '').toString().trim();
+      final teacherFeedback = (question['teacherFeedback'] ?? '')
+          .toString()
+          .trim();
+      final teacherScore = question['teacherScorePercent']?.toString() ?? '';
+      buffer
+        ..writeln('<div class="question-card theory">')
+        ..writeln('<h6>Theory ${entry.key + 1}</h6>')
+        ..writeln(
+          '<p>${_escapeManagementHtml((question['questionText'] ?? '').toString())}</p>',
+        );
+      if (learnFirst.isNotEmpty) {
+        buffer.writeln(
+          '<p><strong>Learn First:</strong> ${_escapeManagementHtml(learnFirst)}</p>',
+        );
+      }
+      if (expectedAnswer.isNotEmpty) {
+        buffer.writeln(
+          '<p><strong>Expected answer:</strong> ${_escapeManagementHtml(expectedAnswer)}</p>',
+        );
+      }
+      buffer.writeln(
+        '<p><strong>Student answer:</strong> ${_escapeManagementHtml(studentAnswer.isEmpty ? 'No written answer recorded.' : studentAnswer)}</p>',
+      );
+      if (teacherScore.isNotEmpty) {
+        buffer.writeln(
+          '<p><strong>Teacher score:</strong> ${_escapeManagementHtml('$teacherScore/100')}</p>',
+        );
+      }
+      if (teacherFeedback.isNotEmpty) {
+        buffer.writeln(
+          '<p><strong>Teacher feedback:</strong> ${_escapeManagementHtml(teacherFeedback)}</p>',
+        );
+      }
+      buffer.writeln('</div>');
+    }
+    buffer.writeln('</section>');
+    return buffer.toString();
+  }
+
+  String _buildManagementEssayEvidenceHtml(ResultPackageData resultPackage) {
+    final perSentence =
+        resultPackage.evidence['perSentence'] as List<dynamic>? ?? const [];
+    final finalEssayText = (resultPackage.evidence['finalEssayText'] ?? '')
+        .toString()
+        .trim();
+    final buffer = StringBuffer()
+      ..writeln('<section class="evidence-block"><h5>Essay evidence</h5>');
+    for (final entry in perSentence.asMap().entries) {
+      final sentence = (entry.value as Map<dynamic, dynamic>)
+          .cast<String, dynamic>();
+      final role = (sentence['role'] ?? 'detail').toString();
+      final bullets =
+          sentence['learnFirstBullets'] as List<dynamic>? ?? const [];
+      final blankSelections =
+          sentence['blankSelections'] as List<dynamic>? ?? const [];
+      buffer
+        ..writeln('<div class="question-card essay">')
+        ..writeln(
+          '<h6>Sentence ${entry.key + 1} · ${_escapeManagementHtml(role)}</h6>',
+        );
+      if (bullets.isNotEmpty) {
+        buffer.writeln('<ul>');
+        for (final bullet in bullets) {
+          final bulletText = bullet.toString().trim();
+          if (bulletText.isEmpty) {
+            continue;
+          }
+          buffer.writeln('<li>${_escapeManagementHtml(bulletText)}</li>');
+        }
+        buffer.writeln('</ul>');
+      }
+      for (final blank in blankSelections) {
+        final item = (blank as Map<dynamic, dynamic>).cast<String, dynamic>();
+        final hint = (item['hint'] ?? '').toString().trim();
+        final chosen = (item['chosenOptionText'] ?? '').toString().trim();
+        final correct = (item['correctOptionText'] ?? '').toString().trim();
+        buffer.writeln(
+          '<p><strong>${_escapeManagementHtml(hint.isEmpty ? 'Blank' : hint)}:</strong> ${_escapeManagementHtml(chosen.isEmpty ? 'No selection recorded' : chosen)}${correct.isEmpty ? '' : ' <span class="muted">(Correct: ${_escapeManagementHtml(correct)})</span>'}</p>',
+        );
+      }
+      buffer.writeln('</div>');
+    }
+    if (finalEssayText.isNotEmpty) {
+      buffer
+        ..writeln('<div class="question-card essay">')
+        ..writeln('<h6>Final essay</h6>')
+        ..writeln('<p>${_escapeManagementHtml(finalEssayText)}</p>')
+        ..writeln('</div>');
+    }
+    buffer.writeln('</section>');
+    return buffer.toString();
+  }
+
+  String _resultDateForExport(_ManagementResultExportRow row) {
+    final assignedDate = row.resultPackage.meta.assignedDate.trim();
+    if (assignedDate.isNotEmpty) {
+      return assignedDate;
+    }
+    return _resultDateKeyForMission(row.mission);
+  }
+
+  String _subjectNameForExport(_ManagementResultExportRow row) {
+    final subjectName = row.resultPackage.meta.subject.trim();
+    if (subjectName.isNotEmpty) {
+      return subjectName;
+    }
+    return (row.mission.subject?.name ?? 'No subject').trim();
+  }
+
+  String _managementFormatLabel(MissionPayload mission) {
+    if (mission.draftFormat == 'THEORY') {
+      return 'Theory';
+    }
+    if (mission.draftFormat == 'ESSAY_BUILDER') {
+      return 'Essay Builder';
+    }
+    return mission.questionCount >= 10 ? 'Assessment' : 'Objective Mission';
+  }
+
+  String _buildManagementMetaCardHtml({
+    required String label,
+    required String value,
+  }) {
+    return '<div class="meta-card"><span class="meta-label">${_escapeManagementHtml(label)}</span><strong class="meta-value">${_escapeManagementHtml(value)}</strong></div>';
+  }
+
+  String _buildManagementResultsStyles() {
+    return '''
+      :root {
+        color-scheme: light;
+        --ink: #20304b;
+        --muted: #5c6f8f;
+        --line: #d7e3f7;
+        --sky: #eef6ff;
+        --sun: #fff4de;
+        --panel: #ffffff;
+        --mint: #eaf9ef;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #f4f9ff 0%, #eef5ff 100%);
+        color: var(--ink);
+      }
+      .page {
+        width: min(1120px, calc(100% - 32px));
+        margin: 24px auto 48px;
+      }
+      .hero, .date-group, .subject-group, .result-card {
+        border-radius: 24px;
+      }
+      .hero {
+        background: linear-gradient(135deg, #ffffff 0%, #eaf4ff 100%);
+        border: 1px solid var(--line);
+        padding: 24px;
+        margin-bottom: 20px;
+      }
+      .copy-chip, .result-pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .copy-chip {
+        background: #dfeeff;
+        color: #27528f;
+      }
+      .hero h1, .date-group h2, .subject-group h3, .result-card h4, .question-card h6 {
+        margin: 0;
+      }
+      .hero-summary, .result-subtitle, .muted, .empty-copy {
+        color: var(--muted);
+      }
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+      }
+      .meta-grid.compact {
+        margin-top: 12px;
+      }
+      .meta-card {
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 14px;
+      }
+      .meta-label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 6px;
+      }
+      .meta-value {
+        font-size: 15px;
+      }
+      .date-group {
+        margin-bottom: 18px;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid var(--line);
+      }
+      .subject-group {
+        margin-top: 16px;
+        padding: 16px;
+        background: var(--sky);
+        border: 1px solid var(--line);
+      }
+      .result-card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        padding: 18px;
+        margin-top: 14px;
+      }
+      .result-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .result-pill {
+        background: var(--sun);
+        color: #845400;
+      }
+      .evidence-block {
+        margin-top: 16px;
+      }
+      .question-card {
+        background: #fdfefe;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 14px;
+        margin-top: 12px;
+      }
+      .question-card.success { background: var(--mint); }
+      .question-card.support { background: #fff8ec; }
+      .question-card.theory { background: #f8fbff; }
+      .question-card.essay { background: #fffdf6; }
+      h5 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      h6 {
+        font-size: 16px;
+        margin-bottom: 8px;
+      }
+      p, li {
+        line-height: 1.55;
+      }
+      @media (max-width: 720px) {
+        .page { width: calc(100% - 20px); }
+        .hero, .date-group, .subject-group, .result-card { padding: 16px; }
+        .result-header { flex-direction: column; }
+      }
+    ''';
+  }
+
+  String _escapeManagementHtml(String value) {
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+  }
+
+  String _sanitizeManagementFileName(String value) {
+    final trimmed = value.trim().toLowerCase();
+    if (trimmed.isEmpty) {
+      return 'results';
+    }
+    return trimmed
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
   }
 
   List<String> _buildCertificationFilters(
@@ -1933,6 +2663,16 @@ class _ManagementScreenData {
   final List<SubjectCertificationSummary> certifications;
   final List<SubjectCertificationSettings> certificationSubjects;
   final List<TeacherSummary> teachers;
+}
+
+class _ManagementResultExportRow {
+  const _ManagementResultExportRow({
+    required this.mission,
+    required this.resultPackage,
+  });
+
+  final MissionPayload mission;
+  final ResultPackageData resultPackage;
 }
 
 class _SelectedStudentCard extends StatelessWidget {
