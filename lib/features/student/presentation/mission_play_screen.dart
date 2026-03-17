@@ -75,6 +75,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   bool _showTheorySource = false;
   bool _isSubmitting = false;
   CompleteMissionResult? _completedResult;
+  _AssessmentRetryState? _assessmentRetryState;
   String? _errorMessage;
   Timer? _xpPulseTimer;
   bool _showXpPulse = false;
@@ -93,6 +94,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       !_isTheoryMission &&
       !_isEssayBuilderMission &&
       _mission.questions.length >= 10;
+  bool get _usesAssessmentRetryFlow =>
+      _usesScoreBasedObjectiveXp && _mission.questions.length == 10;
 
   int get _essayTotalCount {
     final draft = _essayDraft;
@@ -388,6 +391,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       child: SafeArea(
         child: _completedResult != null
             ? _buildSummary(context)
+            : _assessmentRetryState != null
+            ? _buildAssessmentRetrySummary(context)
             : _isEssayBuilderMission
             ? _buildEssayBuilder(context)
             : _isTheoryMission
@@ -431,8 +436,11 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
     final question = _mission.questions[_currentIndex];
     final selectedIndex = _selectedOptions[_currentIndex];
-    final answerLocked = _answers.containsKey(_currentIndex);
+    final answerLocked = _usesAssessmentRetryFlow
+        ? selectedIndex != null
+        : _answers.containsKey(_currentIndex);
     final wrongSelectionLocked =
+        !_usesAssessmentRetryFlow &&
         !answerLocked &&
         selectedIndex != null &&
         selectedIndex != question.correctIndex;
@@ -618,6 +626,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                           isCorrect: selectedIndex == question.correctIndex,
                           explanation: question.explanation,
                           answerText: question.options[question.correctIndex],
+                          assessmentFlow: _usesAssessmentRetryFlow,
                         ),
                       ],
                     ],
@@ -1607,11 +1616,102 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     );
   }
 
+  Widget _buildAssessmentRetrySummary(BuildContext context) {
+    final retryState = _assessmentRetryState;
+    if (retryState == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.screen),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: SoftPanel(
+            colors: const [Color(0xFFFFFCF5), Color(0xFFFFF1DE)],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Almost there',
+                  style: Theme.of(context).textTheme.displaySmall,
+                ),
+                const SizedBox(height: AppSpacing.item),
+                Text(
+                  _mission.title,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpacing.item),
+                Text(
+                  'You answered ${retryState.correctCount} out of ${retryState.totalCount} correctly. Reach ${retryState.requiredCorrect} out of ${retryState.totalCount} to pass this assessment and lock your XP.',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: AppSpacing.section),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    _SummaryChip(
+                      label: 'Correct',
+                      value:
+                          '${retryState.correctCount} / ${retryState.totalCount}',
+                      colors: AppPalette.studentGradient,
+                    ),
+                    _SummaryChip(
+                      label: 'Focus',
+                      value: '${retryState.focusScore}%',
+                      colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+                    ),
+                    _SummaryChip(
+                      label: 'Goal',
+                      value:
+                          '${retryState.requiredCorrect} / ${retryState.totalCount}',
+                      colors: const [AppPalette.sun, AppPalette.orange],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.section),
+                Text(
+                  'Take a breath, then tap Try Again when you are ready to replay the full mission.',
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: AppSpacing.section),
+                GradientButton(
+                  label: 'Try Again',
+                  colors: AppPalette.progressGradient,
+                  onPressed: _resetObjectiveAttempt,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _resetObjectiveAttempt() {
+    setState(() {
+      // WHY: Assessment retries restart from question one so the learner
+      // replays the full mission against the same pass requirement.
+      _selectedOptions.clear();
+      _answers.clear();
+      _moveToQuestion(0);
+      _showXpPulse = false;
+      _xpPulsePositive = false;
+      _xpPulseValue = 0;
+      _errorMessage = null;
+      _assessmentRetryState = null;
+    });
+  }
+
   void _pickAnswer(int index) {
     final question = _mission.questions[_currentIndex];
-    final answerLocked = _answers.containsKey(_currentIndex);
     final selectedIndex = _selectedOptions[_currentIndex];
+    final answerLocked = _usesAssessmentRetryFlow
+        ? selectedIndex != null
+        : _answers.containsKey(_currentIndex);
     final wrongSelectionLocked =
+        !_usesAssessmentRetryFlow &&
         !answerLocked &&
         selectedIndex != null &&
         selectedIndex != question.correctIndex;
@@ -1630,9 +1730,9 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
     setState(() {
       _selectedOptions[_currentIndex] = index;
-      if (isCorrect) {
-        // WHY: Lock progression only when the learner chooses the right answer,
-        // so the correct option is never revealed after a wrong tap.
+      if (_usesAssessmentRetryFlow || isCorrect) {
+        // WHY: Ten-question assessments lock each answer after one tap and
+        // wait until the full mission ends before deciding pass or retry.
         _answers[_currentIndex] = index;
         _errorMessage = null;
       } else {
@@ -1921,7 +2021,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
     if (!answerLocked &&
         selectedIndex != null &&
-        selectedIndex != question.correctIndex) {
+        selectedIndex != question.correctIndex &&
+        !_usesAssessmentRetryFlow) {
       return 'Retry';
     }
 
@@ -1946,7 +2047,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
     if (!answerLocked &&
         selectedIndex != null &&
-        selectedIndex != question.correctIndex) {
+        selectedIndex != question.correctIndex &&
+        !_usesAssessmentRetryFlow) {
       return const [Color(0xFFFFD39A), Color(0xFFFFB87A)];
     }
 
@@ -1975,20 +2077,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     }
 
     if (!answerLocked) {
-      if (selectedIndex != null && selectedIndex != question.correctIndex) {
-        return () {
-          setState(() {
-            // WHY: Try Again should restart from the first question so the
-            // learner intentionally replays the mission sequence.
-            _selectedOptions.clear();
-            _answers.clear();
-            _moveToQuestion(0);
-            _showXpPulse = false;
-            _xpPulsePositive = false;
-            _xpPulseValue = 0;
-            _errorMessage = null;
-          });
-        };
+      if (!_usesAssessmentRetryFlow &&
+          selectedIndex != null &&
+          selectedIndex != question.correctIndex) {
+        return _resetObjectiveAttempt;
       }
       return () {};
     }
@@ -2147,6 +2239,12 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       ];
       return correctMessages[(_answers.length + _coachVersion) %
           correctMessages.length];
+    }
+
+    if (_usesAssessmentRetryFlow) {
+      return remaining > 0
+          ? 'Answer saved. Keep going so you can see your full score at the end.'
+          : 'All answers are locked in. Finish the mission to see your score.';
     }
 
     return 'Nice work. You unlocked the next step.';
@@ -2461,6 +2559,22 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
           ? 0
           : _minimumCorrectForSubmit(completedCount);
       if (requiredCorrect > 0 && correctCount < requiredCorrect) {
+        if (_usesAssessmentRetryFlow) {
+          setState(() {
+            _isSubmitting = false;
+            // WHY: Ten-question assessments should finish all questions before
+            // showing a calm retry state tied to the final score threshold.
+            _assessmentRetryState = _AssessmentRetryState(
+              correctCount: correctCount,
+              totalCount: completedCount,
+              requiredCorrect: requiredCorrect,
+              focusScore: _focusScore(),
+            );
+            _errorMessage = null;
+          });
+          _triggerConfettiBurst(success: false);
+          return;
+        }
         setState(() {
           _isSubmitting = false;
           // WHY: Configured mission sizes enforce explicit minimum-correct
@@ -2929,11 +3043,13 @@ class _FeedbackPanel extends StatelessWidget {
     required this.isCorrect,
     required this.explanation,
     required this.answerText,
+    this.assessmentFlow = false,
   });
 
   final bool isCorrect;
   final String explanation;
   final String answerText;
+  final bool assessmentFlow;
 
   @override
   Widget build(BuildContext context) {
@@ -2945,13 +3061,19 @@ class _FeedbackPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isCorrect ? 'Nice work' : 'Try again',
+            isCorrect
+                ? 'Nice work'
+                : assessmentFlow
+                ? 'Answer saved'
+                : 'Try again',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 6),
           Text(
             isCorrect
                 ? answerText
+                : assessmentFlow
+                ? 'Keep going. Finish all 10 questions to see your final score.'
                 : 'Try again and pick the best answer to continue.',
             style: Theme.of(context).textTheme.bodyLarge,
           ),
@@ -2968,6 +3090,20 @@ class _FeedbackPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AssessmentRetryState {
+  const _AssessmentRetryState({
+    required this.correctCount,
+    required this.totalCount,
+    required this.requiredCorrect,
+    required this.focusScore,
+  });
+
+  final int correctCount;
+  final int totalCount;
+  final int requiredCorrect;
+  final int focusScore;
 }
 
 class _ConfettiParticle {
