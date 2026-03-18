@@ -102,6 +102,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _isCreatingUser = false;
   bool _isDownloadingResults = false;
   String _downloadingResultPackageId = '';
+  String _downloadingTeacherCopyMissionId = '';
   bool _isSavingCertification = false;
   bool _isSavingTimetable = false;
   bool _showTimetableEditor = false;
@@ -119,6 +120,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     _selectedTimetableDate = DateTime(now.year, now.month, now.day);
     _future = _loadWorkspace();
   }
+
+  bool get _isAnyManagementDownloadActive =>
+      _isDownloadingResults ||
+      _downloadingResultPackageId.isNotEmpty ||
+      _downloadingTeacherCopyMissionId.isNotEmpty;
 
   @override
   void dispose() {
@@ -1335,7 +1341,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Filter by subject or mission date, download the selected set, or export each completed mission on its own.',
+                        'Filter by subject or mission date, download the selected result set, or export each mission as a result or teacher copy.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppPalette.textMuted,
                         ),
@@ -1384,22 +1390,19 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             child: FilledButton.icon(
                               onPressed:
                                   filteredResults.isEmpty ||
-                                      _isDownloadingResults ||
-                                      _downloadingResultPackageId.isNotEmpty
+                                      _isAnyManagementDownloadActive
                                   ? null
                                   : () => _downloadFilteredResults(
                                       student: workspace.selectedStudent,
                                       missions: filteredResults,
                                     ),
                               icon: Icon(
-                                _isDownloadingResults ||
-                                        _downloadingResultPackageId.isNotEmpty
+                                _isAnyManagementDownloadActive
                                     ? Icons.hourglass_top_rounded
                                     : Icons.download_rounded,
                               ),
                               label: Text(
-                                _isDownloadingResults ||
-                                        _downloadingResultPackageId.isNotEmpty
+                                _isAnyManagementDownloadActive
                                     ? 'Preparing download...'
                                     : 'Download filtered results',
                               ),
@@ -1468,13 +1471,22 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             ),
                             child: _ManagementResultCard(
                               mission: mission,
+                              downloadsLocked: _isAnyManagementDownloadActive,
                               isDownloading:
                                   _downloadingResultPackageId ==
                                   mission.latestResultPackageId.trim(),
+                              isDownloadingTeacherCopy:
+                                  _downloadingTeacherCopyMissionId ==
+                                  mission.id.trim(),
                               onDownload: () => _downloadMissionResult(
                                 student: workspace.selectedStudent,
                                 mission: mission,
                               ),
+                              onDownloadTeacherCopy: () =>
+                                  _downloadMissionTeacherCopy(
+                                    student: workspace.selectedStudent,
+                                    mission: mission,
+                                  ),
                               onView: () => _openResultReport(
                                 mission: mission,
                                 student: workspace.selectedStudent,
@@ -1810,9 +1822,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     required StudentSummary student,
     required List<MissionPayload> missions,
   }) async {
-    if (_isDownloadingResults ||
-        _downloadingResultPackageId.isNotEmpty ||
-        missions.isEmpty) {
+    if (_isAnyManagementDownloadActive || missions.isEmpty) {
       return;
     }
 
@@ -1869,9 +1879,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     required MissionPayload mission,
   }) async {
     final resultPackageId = mission.latestResultPackageId.trim();
-    if (_isDownloadingResults ||
-        _downloadingResultPackageId.isNotEmpty ||
-        resultPackageId.isEmpty) {
+    if (_isAnyManagementDownloadActive || resultPackageId.isEmpty) {
       return;
     }
 
@@ -1920,6 +1928,59 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     }
   }
 
+  Future<void> _downloadMissionTeacherCopy({
+    required StudentSummary student,
+    required MissionPayload mission,
+  }) async {
+    final missionId = mission.id.trim();
+    if (_isAnyManagementDownloadActive || missionId.isEmpty) {
+      return;
+    }
+
+    setState(() => _downloadingTeacherCopyMissionId = missionId);
+    try {
+      final downloaded = await downloadTextFile(
+        fileName: _buildManagementTeacherCopyFileName(
+          student: student,
+          mission: mission,
+        ),
+        content: _buildManagementTeacherCopyHtml(
+          student: student,
+          mission: mission,
+        ),
+        mimeType: 'text/html;charset=utf-8',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final missionTitle = mission.title.trim().isEmpty
+          ? 'mission'
+          : mission.title.trim();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            downloaded
+                ? 'Downloaded $missionTitle teacher copy.'
+                : 'Download is not available on this device yet.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingTeacherCopyMissionId = '');
+      }
+    }
+  }
+
   Future<_ManagementResultExportRow> _loadResultExportRowForMission(
     MissionPayload mission,
   ) async {
@@ -1961,6 +2022,21 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       _resultDateKeyForMission(mission),
     );
     return '${studentSlug}_${dateSlug}_${missionSlug}_result.html';
+  }
+
+  String _buildManagementTeacherCopyFileName({
+    required StudentSummary student,
+    required MissionPayload mission,
+  }) {
+    final studentSlug = _sanitizeManagementFileName(student.name);
+    final missionSlug = _sanitizeManagementFileName(mission.title);
+    final subjectSlug = _sanitizeManagementFileName(
+      (mission.subject?.name ?? 'subject').trim(),
+    );
+    final dateSlug = _sanitizeManagementFileName(
+      _resultDateKeyForMission(mission),
+    );
+    return '${studentSlug}_${subjectSlug}_${dateSlug}_${missionSlug}_teacher-copy.html';
   }
 
   String _buildManagementResultsHtml({
@@ -2085,6 +2161,351 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return buffer.toString();
   }
 
+  String _buildManagementTeacherCopyHtml({
+    required StudentSummary student,
+    required MissionPayload mission,
+  }) {
+    final subjectName = (mission.subject?.name ?? 'No subject').trim();
+    final taskFocusText = mission.taskCodes.isEmpty
+        ? 'None selected'
+        : mission.taskCodes.join(', ');
+    final sourceGuidance = mission.sourceUnitText.trim().isNotEmpty
+        ? mission.sourceUnitText.trim()
+        : mission.sourceRawText.trim();
+
+    final buffer = StringBuffer()
+      ..writeln('<!DOCTYPE html>')
+      ..writeln('<html lang="en">')
+      ..writeln('<head>')
+      ..writeln('<meta charset="utf-8" />')
+      ..writeln(
+        '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+      )
+      ..writeln(
+        '<title>${_escapeManagementHtml('${mission.title} · Teacher Copy')}</title>',
+      )
+      ..writeln('<style>${_buildManagementTeacherCopyStyles()}</style>')
+      ..writeln('</head>')
+      ..writeln('<body>')
+      ..writeln('<main class="page">')
+      ..writeln('<section class="hero">')
+      ..writeln('<div class="hero-copy">')
+      ..writeln('<span class="copy-chip">Teacher Copy</span>')
+      ..writeln('<h1>${_escapeManagementHtml(mission.title)}</h1>')
+      ..writeln(
+        '<p class="hero-summary">Teacher-ready mission copy with full question content, all options, answer keys, and guidance.</p>',
+      )
+      ..writeln('</div>')
+      ..writeln('<div class="meta-grid">')
+      ..writeln(
+        _buildManagementMetaCardHtml(label: 'Student', value: student.name),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(label: 'Subject', value: subjectName),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Session',
+          value: mission.sessionType.toUpperCase(),
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Mission Date',
+          value: _resultDateKeyForMission(mission),
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Format',
+          value: _managementFormatLabel(mission),
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Difficulty',
+          value: mission.difficulty.toUpperCase(),
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'XP Reward',
+          value: '${mission.xpReward} XP',
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(label: 'Task Focus', value: taskFocusText),
+      )
+      ..writeln('</div>')
+      ..writeln('</section>')
+      ..writeln('<section class="section-card notice-card teacher-note">')
+      ..writeln('<h2>Teacher Copy</h2>')
+      ..writeln(
+        '<p>Use this copy for review, oversight, and answer checking. All options and teacher guidance are included.</p>',
+      )
+      ..writeln('</section>');
+
+    if (mission.teacherNote.trim().isNotEmpty) {
+      buffer
+        ..writeln('<section class="section-card">')
+        ..writeln('<h2>Teacher Note</h2>')
+        ..writeln(_buildManagementRichTextHtml(mission.teacherNote))
+        ..writeln('</section>');
+    }
+
+    if (sourceGuidance.isNotEmpty) {
+      buffer
+        ..writeln('<section class="section-card">')
+        ..writeln('<h2>Source Guidance</h2>')
+        ..writeln(
+          '<p class="section-kicker">Reference text used when this mission was prepared.</p>',
+        )
+        ..writeln(_buildManagementRichTextHtml(sourceGuidance))
+        ..writeln('</section>');
+    }
+
+    buffer.writeln(
+      mission.draftFormat == 'ESSAY_BUILDER'
+          ? _buildManagementTeacherCopyEssayHtml(mission)
+          : _buildManagementTeacherCopyQuestionHtml(mission),
+    );
+
+    if (mission.sourceFileName.trim().isNotEmpty ||
+        mission.sourceFileType.trim().isNotEmpty ||
+        (mission.aiModel ?? '').trim().isNotEmpty) {
+      buffer
+        ..writeln('<section class="section-card footer-card">')
+        ..writeln('<h2>Draft Source</h2>')
+        ..writeln('<div class="meta-grid">');
+      if (mission.sourceFileName.trim().isNotEmpty) {
+        buffer.writeln(
+          _buildManagementMetaCardHtml(
+            label: 'Source File',
+            value: mission.sourceFileName.trim(),
+          ),
+        );
+      }
+      if (mission.sourceFileType.trim().isNotEmpty) {
+        buffer.writeln(
+          _buildManagementMetaCardHtml(
+            label: 'Source Type',
+            value: mission.sourceFileType.trim(),
+          ),
+        );
+      }
+      if ((mission.aiModel ?? '').trim().isNotEmpty) {
+        buffer.writeln(
+          _buildManagementMetaCardHtml(
+            label: 'AI Model',
+            value: mission.aiModel!.trim(),
+          ),
+        );
+      }
+      buffer
+        ..writeln('</div>')
+        ..writeln('</section>');
+    }
+
+    buffer
+      ..writeln('</main>')
+      ..writeln('</body>')
+      ..writeln('</html>');
+    return buffer.toString();
+  }
+
+  String _buildManagementTeacherCopyQuestionHtml(MissionPayload mission) {
+    final questions = mission.questions;
+    if (questions.isEmpty) {
+      return '<section class="section-card"><h2>Questions</h2><p class="section-kicker">No question content was saved for this mission.</p></section>';
+    }
+
+    const optionLabels = ['A', 'B', 'C', 'D'];
+    final buffer = StringBuffer()
+      ..writeln('<section class="section-card">')
+      ..writeln(
+        '<h2>${_escapeManagementHtml(mission.draftFormat == 'THEORY' ? 'Theory Questions' : 'Questions')}</h2>',
+      )
+      ..writeln(
+        '<p class="section-kicker">${_escapeManagementHtml(mission.draftFormat == 'THEORY' ? 'Teacher-ready theory prompts with expected responses and guidance.' : 'Teacher-ready question set with every option and answer key shown.')}</p>',
+      );
+
+    for (final entry in questions.asMap().entries) {
+      final question = entry.value;
+      buffer
+        ..writeln('<article class="question-card">')
+        ..writeln('<div class="question-top">')
+        ..writeln(
+          '<span class="question-pill">Question ${entry.key + 1}</span><span class="copy-pill">Teacher Copy</span>',
+        )
+        ..writeln('</div>');
+
+      if (question.learningText.trim().isNotEmpty) {
+        buffer
+          ..writeln('<div class="field-label">Learn First</div>')
+          ..writeln(_buildManagementRichTextHtml(question.learningText));
+      }
+
+      buffer
+        ..writeln('<div class="field-label">Prompt</div>')
+        ..writeln(_buildManagementRichTextHtml(question.prompt));
+
+      if (mission.draftFormat == 'THEORY') {
+        buffer.writeln(
+          '<div class="pill-row"><span class="soft-pill">Minimum Words: ${_escapeManagementHtml('${question.minWordCount > 0 ? question.minWordCount : 1}')}</span></div>',
+        );
+        buffer
+          ..writeln('<div class="answer-card">')
+          ..writeln('<div class="field-label">Expected Answer</div>')
+          ..writeln(
+            _buildManagementRichTextHtml(
+              question.expectedAnswer.trim().isEmpty
+                  ? question.explanation
+                  : question.expectedAnswer,
+            ),
+          );
+        if (question.explanation.trim().isNotEmpty) {
+          buffer
+            ..writeln('<div class="field-label">Teacher Guidance</div>')
+            ..writeln(_buildManagementRichTextHtml(question.explanation));
+        }
+        buffer.writeln('</div>');
+        buffer.writeln('</article>');
+        continue;
+      }
+
+      buffer
+        ..writeln('<div class="field-label">Options</div>')
+        ..writeln('<ul class="option-list">');
+      for (final optionEntry in question.options.asMap().entries) {
+        final optionIndex = optionEntry.key;
+        final optionLabel = optionLabels[optionIndex];
+        final isCorrect = question.correctIndex == optionIndex;
+        buffer.writeln(
+          '<li class="option-row ${isCorrect ? 'correct-option' : ''}"><span class="option-badge">$optionLabel</span><span>${_escapeManagementHtml(optionEntry.value)}</span></li>',
+        );
+      }
+      buffer.writeln('</ul>');
+
+      final normalizedCorrectIndex = question.correctIndex.clamp(0, 3);
+      final correctLabel = optionLabels[normalizedCorrectIndex];
+      final correctAnswer = question.options.length > normalizedCorrectIndex
+          ? question.options[normalizedCorrectIndex]
+          : '';
+      buffer
+        ..writeln('<div class="answer-card">')
+        ..writeln(
+          '<p class="answer-inline"><strong>Correct Answer:</strong> ${_escapeManagementHtml('$correctLabel) $correctAnswer')}</p>',
+        );
+      if (question.explanation.trim().isNotEmpty) {
+        buffer
+          ..writeln('<div class="field-label">Explanation</div>')
+          ..writeln(_buildManagementRichTextHtml(question.explanation));
+      }
+      buffer.writeln('</div>');
+      buffer.writeln('</article>');
+    }
+
+    buffer.writeln('</section>');
+    return buffer.toString();
+  }
+
+  String _buildManagementTeacherCopyEssayHtml(MissionPayload mission) {
+    final draft = mission.essayBuilderDraft;
+    if (draft == null) {
+      return '<section class="section-card"><h2>Essay Builder</h2><p class="section-kicker">Essay builder draft is missing for this mission.</p></section>';
+    }
+
+    final buffer = StringBuffer()
+      ..writeln('<section class="section-card">')
+      ..writeln('<h2>Essay Builder</h2>')
+      ..writeln(
+        '<p class="section-kicker">Teacher-ready essay builder copy with full blank options and answer keys.</p>',
+      )
+      ..writeln('<div class="pill-row">')
+      ..writeln(
+        '<span class="soft-pill">Mode: ${_escapeManagementHtml(draft.mode)}</span>',
+      )
+      ..writeln(
+        '<span class="soft-pill">Target Words: ${_escapeManagementHtml('${draft.targets.targetWordMin}-${draft.targets.targetWordMax}')}</span>',
+      )
+      ..writeln(
+        '<span class="soft-pill">Target Sentences: ${_escapeManagementHtml('${draft.targets.targetSentenceCount}')}</span>',
+      )
+      ..writeln(
+        '<span class="soft-pill">Target Blanks: ${_escapeManagementHtml('${draft.targets.targetBlankCount}')}</span>',
+      )
+      ..writeln('</div>');
+
+    for (final entry in draft.sentences.asMap().entries) {
+      final sentence = entry.value;
+      final blankParts = sentence.parts
+          .where((part) => part.isBlank)
+          .toList(growable: false);
+      buffer
+        ..writeln('<article class="question-card">')
+        ..writeln('<div class="question-top">')
+        ..writeln(
+          '<span class="question-pill">Sentence ${entry.key + 1}</span><span class="copy-pill">Teacher Copy</span>',
+        )
+        ..writeln('</div>')
+        ..writeln(
+          '<h3 class="sentence-role">${_escapeManagementHtml(sentence.role)}</h3>',
+        );
+
+      if (sentence.learnFirst.bullets.isNotEmpty) {
+        buffer
+          ..writeln('<div class="field-label">Learn First</div>')
+          ..writeln('<ul class="bullet-list">');
+        for (final bullet in sentence.learnFirst.bullets) {
+          final trimmedBullet = bullet.trim();
+          if (trimmedBullet.isEmpty) {
+            continue;
+          }
+          buffer.writeln('<li>${_escapeManagementHtml(trimmedBullet)}</li>');
+        }
+        buffer.writeln('</ul>');
+      }
+
+      buffer
+        ..writeln('<div class="field-label">Sentence Preview</div>')
+        ..writeln(
+          '<p class="sentence-preview">${_escapeManagementHtml(_managementSentencePreviewText(sentence))}</p>',
+        );
+
+      for (final blankEntry in blankParts.asMap().entries) {
+        final blank = blankEntry.value;
+        buffer
+          ..writeln('<div class="blank-card">')
+          ..writeln(
+            '<div class="blank-head">Blank ${blankEntry.key + 1}</div>',
+          );
+        if (blank.hint.trim().isNotEmpty) {
+          buffer.writeln(
+            '<p class="blank-hint">${_escapeManagementHtml(blank.hint.trim())}</p>',
+          );
+        }
+        buffer.writeln('<ul class="option-list">');
+        for (final label in const ['A', 'B', 'C', 'D']) {
+          final isCorrect = blank.correctOption == label;
+          buffer.writeln(
+            '<li class="option-row ${isCorrect ? 'correct-option' : ''}"><span class="option-badge">$label</span><span>${_escapeManagementHtml(blank.options[label] ?? '')}</span></li>',
+          );
+        }
+        buffer
+          ..writeln('</ul>')
+          ..writeln(
+            '<p class="answer-inline"><strong>Correct Answer:</strong> ${_escapeManagementHtml('${blank.correctOption}) ${blank.options[blank.correctOption] ?? ''}')}</p>',
+          )
+          ..writeln('</div>');
+      }
+
+      buffer.writeln('</article>');
+    }
+
+    buffer.writeln('</section>');
+    return buffer.toString();
+  }
+
   String _buildManagementResultCardHtml(_ManagementResultExportRow row) {
     final mission = row.mission;
     final resultPackage = row.resultPackage;
@@ -2176,12 +2597,22 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           .toString()
           .trim();
       final correctAnswer = (question['correctAnswer'] ?? '').toString().trim();
+      final options =
+          (question['options'] as Map<dynamic, dynamic>? ?? const {})
+              .cast<dynamic, dynamic>();
       buffer
         ..writeln(
           '<div class="question-card ${correct ? 'success' : 'support'}">',
         )
         ..writeln('<h6>Question ${entry.key + 1}</h6>')
         ..writeln('<p>${_escapeManagementHtml(prompt)}</p>')
+        ..writeln(
+          _buildManagementQuestionOptionsHtml(
+            options: options,
+            selectedLetter: selectedLetter,
+            correctLetter: correctLetter,
+          ),
+        )
         ..writeln(
           '<p><strong>Selected:</strong> ${_escapeManagementHtml('${selectedLetter.isEmpty ? '' : '$selectedLetter) '}${selectedAnswer.isEmpty ? 'No selection recorded' : selectedAnswer}')}</p>',
         )
@@ -2302,6 +2733,87 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     }
     buffer.writeln('</section>');
     return buffer.toString();
+  }
+
+  String _buildManagementQuestionOptionsHtml({
+    required Map<dynamic, dynamic> options,
+    required String selectedLetter,
+    required String correctLetter,
+  }) {
+    if (options.isEmpty) {
+      return '<p class="empty-copy">No option set was saved for this question.</p>';
+    }
+
+    final orderedEntries = options.entries.toList(growable: false)
+      ..sort(
+        (left, right) => left.key.toString().compareTo(right.key.toString()),
+      );
+
+    final buffer = StringBuffer()..writeln('<ul class="option-list">');
+    for (final entry in orderedEntries) {
+      final label = entry.key.toString().trim().toUpperCase();
+      final value = entry.value.toString().trim();
+      final isSelected = label == selectedLetter;
+      final isCorrect = label == correctLetter;
+      final classNames = [
+        'option-row',
+        if (isSelected) 'selected-option',
+        if (isCorrect) 'correct-option',
+      ].join(' ');
+
+      buffer
+        ..writeln('<li class="$classNames">')
+        ..writeln(
+          '<span class="option-badge">${_escapeManagementHtml(label)}</span>',
+        )
+        ..writeln(
+          '<div class="option-copy"><span>${_escapeManagementHtml(value.isEmpty ? 'No option text saved.' : value)}</span>',
+        );
+      if (isSelected || isCorrect) {
+        buffer.writeln('<div class="option-tags">');
+        if (isSelected) {
+          buffer.writeln('<span class="option-tag">Selected</span>');
+        }
+        if (isCorrect) {
+          buffer.writeln('<span class="option-tag success">Correct</span>');
+        }
+        buffer.writeln('</div>');
+      }
+      buffer
+        ..writeln('</div>')
+        ..writeln('</li>');
+    }
+    buffer.writeln('</ul>');
+    return buffer.toString();
+  }
+
+  String _buildManagementRichTextHtml(String value) {
+    final normalized = value.trim();
+    if (normalized.isEmpty) {
+      return '<p class="empty-copy">No additional guidance saved.</p>';
+    }
+
+    final paragraphs = normalized
+        .split(RegExp(r'\n\s*\n'))
+        .map((paragraph) => paragraph.trim())
+        .where((paragraph) => paragraph.isNotEmpty)
+        .toList(growable: false);
+    if (paragraphs.isEmpty) {
+      return '<p class="empty-copy">No additional guidance saved.</p>';
+    }
+
+    return paragraphs
+        .map(
+          (paragraph) =>
+              '<p>${_escapeManagementHtml(paragraph).replaceAll('\n', '<br />')}</p>',
+        )
+        .join();
+  }
+
+  String _managementSentencePreviewText(EssayBuilderSentence sentence) {
+    return sentence.parts
+        .map((part) => part.isBlank ? '____' : part.value)
+        .join();
   }
 
   String _resultDateForExport(_ManagementResultExportRow row) {
@@ -2451,6 +2963,69 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         padding: 14px;
         margin-top: 12px;
       }
+      .option-list,
+      .bullet-list {
+        list-style: none;
+        padding: 0;
+        margin: 12px 0;
+      }
+      .option-row,
+      .blank-card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fffdfa;
+      }
+      .option-row {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+      }
+      .option-row.selected-option {
+        border-color: #9cbcff;
+        box-shadow: 0 0 0 1px rgba(72, 125, 224, 0.15);
+      }
+      .option-row.correct-option {
+        background: var(--mint);
+        border-color: #cde3d4;
+      }
+      .option-badge,
+      .option-tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .option-badge {
+        min-width: 28px;
+        padding: 6px 9px;
+        background: #e6eefc;
+        color: #32558f;
+      }
+      .option-copy {
+        display: flex;
+        flex: 1;
+        gap: 8px;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+      .option-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .option-tag {
+        padding: 5px 9px;
+        background: #eef4ff;
+        color: #315489;
+      }
+      .option-tag.success {
+        background: #dff4e7;
+        color: #2d7250;
+      }
       .question-card.success { background: var(--mint); }
       .question-card.support { background: #fff8ec; }
       .question-card.theory { background: #f8fbff; }
@@ -2470,6 +3045,212 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         .page { width: calc(100% - 20px); }
         .hero, .date-group, .subject-group, .result-card { padding: 16px; }
         .result-header { flex-direction: column; }
+      }
+    ''';
+  }
+
+  String _buildManagementTeacherCopyStyles() {
+    return '''
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+        background: linear-gradient(180deg, #f6fbff 0%, #eef4ff 52%, #f9f4ea 100%);
+        color: #263854;
+      }
+      .page {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+      .hero,
+      .section-card {
+        background: rgba(255, 252, 246, 0.94);
+        border: 1px solid #e8decb;
+        border-radius: 28px;
+        box-shadow: 0 18px 40px rgba(83, 108, 152, 0.12);
+      }
+      .hero {
+        padding: 30px;
+        margin-bottom: 18px;
+      }
+      .hero h1,
+      .section-card h2,
+      .section-card h3,
+      .section-card h4 {
+        margin: 0;
+        color: #23334d;
+      }
+      .hero-summary,
+      .section-kicker,
+      .meta-label,
+      .blank-hint,
+      .empty-copy {
+        color: #6b7691;
+      }
+      .hero-summary,
+      .section-kicker,
+      .answer-inline,
+      .sentence-preview,
+      p,
+      li {
+        font-size: 16px;
+        line-height: 1.65;
+      }
+      .copy-chip,
+      .question-pill,
+      .copy-pill,
+      .soft-pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        font-weight: 700;
+      }
+      .copy-chip {
+        padding: 8px 14px;
+        background: linear-gradient(135deg, #7fddeb, #6b8cff);
+        color: white;
+        margin-bottom: 14px;
+      }
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-top: 22px;
+      }
+      .meta-card {
+        background: #fffdfa;
+        border: 1px solid #ece2d2;
+        border-radius: 18px;
+        padding: 14px 16px;
+      }
+      .meta-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+      .meta-value {
+        font-size: 17px;
+        color: #243650;
+      }
+      .section-card {
+        padding: 24px;
+        margin-bottom: 18px;
+      }
+      .notice-card.teacher-note {
+        background: linear-gradient(135deg, #eef5ff, #f5fbff);
+      }
+      .question-card {
+        background: #fffefb;
+        border: 1px solid #ede3d1;
+        border-radius: 22px;
+        padding: 22px;
+        margin-top: 16px;
+      }
+      .question-top,
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      .question-pill {
+        padding: 7px 12px;
+        background: #eaf3ff;
+        color: #36507d;
+      }
+      .copy-pill {
+        padding: 7px 12px;
+        background: #fff4d5;
+        color: #8d6418;
+      }
+      .soft-pill {
+        padding: 7px 12px;
+        background: #eef3ff;
+        color: #425a8e;
+      }
+      .field-label {
+        margin-top: 18px;
+        margin-bottom: 10px;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #6a7287;
+      }
+      .option-list,
+      .bullet-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .bullet-list li {
+        position: relative;
+        padding-left: 20px;
+        margin-bottom: 10px;
+      }
+      .bullet-list li::before {
+        content: "•";
+        position: absolute;
+        left: 0;
+        color: #5b7fd8;
+      }
+      .option-row,
+      .blank-card {
+        border: 1px solid #ece3d2;
+        border-radius: 16px;
+        background: #fffdfa;
+      }
+      .option-row {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 12px 14px;
+        margin-bottom: 10px;
+      }
+      .option-row.correct-option {
+        background: #ecf8ef;
+        border-color: #d5ead8;
+      }
+      .option-badge {
+        width: 30px;
+        min-width: 30px;
+        height: 30px;
+        justify-content: center;
+        background: #e6eefc;
+        color: #355487;
+      }
+      .answer-card,
+      .blank-card {
+        margin-top: 14px;
+        padding: 16px;
+        background: #f7fbff;
+      }
+      .blank-head,
+      .sentence-role {
+        font-weight: 800;
+        color: #253753;
+      }
+      .footer-card {
+        margin-bottom: 0;
+      }
+      @media (max-width: 720px) {
+        .page {
+          padding: 20px 14px 32px;
+        }
+        .hero,
+        .section-card,
+        .question-card {
+          padding: 18px;
+        }
       }
     ''';
   }
@@ -3453,15 +4234,21 @@ class _TimetableRoomSelection {
 class _ManagementResultCard extends StatelessWidget {
   const _ManagementResultCard({
     required this.mission,
+    required this.downloadsLocked,
     required this.onDownload,
+    required this.onDownloadTeacherCopy,
     required this.onView,
     this.isDownloading = false,
+    this.isDownloadingTeacherCopy = false,
   });
 
   final MissionPayload mission;
+  final bool downloadsLocked;
   final VoidCallback onDownload;
+  final VoidCallback onDownloadTeacherCopy;
   final VoidCallback onView;
   final bool isDownloading;
+  final bool isDownloadingTeacherCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -3552,7 +4339,7 @@ class _ManagementResultCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.compact),
           LayoutBuilder(
             builder: (context, constraints) {
-              final stackButtons = constraints.maxWidth < 520;
+              final stackButtons = constraints.maxWidth < 720;
               final viewButton = stackButtons
                   ? SizedBox(
                       width: double.infinity,
@@ -3573,7 +4360,9 @@ class _ManagementResultCard extends StatelessWidget {
                   ? SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: hasResultPackage ? onDownload : null,
+                        onPressed: hasResultPackage && !downloadsLocked
+                            ? onDownload
+                            : null,
                         icon: Icon(
                           isDownloading
                               ? Icons.hourglass_top_rounded
@@ -3586,7 +4375,9 @@ class _ManagementResultCard extends StatelessWidget {
                     )
                   : Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: hasResultPackage ? onDownload : null,
+                        onPressed: hasResultPackage && !downloadsLocked
+                            ? onDownload
+                            : null,
                         icon: Icon(
                           isDownloading
                               ? Icons.hourglass_top_rounded
@@ -3597,6 +4388,42 @@ class _ManagementResultCard extends StatelessWidget {
                         ),
                       ),
                     );
+              final teacherCopyButton = stackButtons
+                  ? SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: downloadsLocked
+                            ? null
+                            : onDownloadTeacherCopy,
+                        icon: Icon(
+                          isDownloadingTeacherCopy
+                              ? Icons.hourglass_top_rounded
+                              : Icons.description_rounded,
+                        ),
+                        label: Text(
+                          isDownloadingTeacherCopy
+                              ? 'Preparing...'
+                              : 'Teacher Copy',
+                        ),
+                      ),
+                    )
+                  : Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: downloadsLocked
+                            ? null
+                            : onDownloadTeacherCopy,
+                        icon: Icon(
+                          isDownloadingTeacherCopy
+                              ? Icons.hourglass_top_rounded
+                              : Icons.description_rounded,
+                        ),
+                        label: Text(
+                          isDownloadingTeacherCopy
+                              ? 'Preparing...'
+                              : 'Teacher Copy',
+                        ),
+                      ),
+                    );
 
               if (stackButtons) {
                 return Column(
@@ -3604,6 +4431,8 @@ class _ManagementResultCard extends StatelessWidget {
                     viewButton,
                     const SizedBox(height: 10),
                     downloadButton,
+                    const SizedBox(height: 10),
+                    teacherCopyButton,
                   ],
                 );
               }
@@ -3613,6 +4442,8 @@ class _ManagementResultCard extends StatelessWidget {
                   viewButton,
                   const SizedBox(width: 12),
                   downloadButton,
+                  const SizedBox(width: 12),
+                  teacherCopyButton,
                 ],
               );
             },
