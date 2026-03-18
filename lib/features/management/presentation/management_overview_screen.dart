@@ -101,6 +101,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   NotificationInboxData? _notificationInbox;
   bool _isCreatingUser = false;
   bool _isDownloadingResults = false;
+  String _downloadingResultPackageId = '';
   bool _isSavingCertification = false;
   bool _isSavingTimetable = false;
   bool _showTimetableEditor = false;
@@ -1334,7 +1335,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Filter by subject and open a full read-only result report for any completed mission.',
+                        'Filter by subject or mission date, download the selected set, or export each completed mission on its own.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppPalette.textMuted,
                         ),
@@ -1383,19 +1384,22 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             child: FilledButton.icon(
                               onPressed:
                                   filteredResults.isEmpty ||
-                                      _isDownloadingResults
+                                      _isDownloadingResults ||
+                                      _downloadingResultPackageId.isNotEmpty
                                   ? null
                                   : () => _downloadFilteredResults(
                                       student: workspace.selectedStudent,
                                       missions: filteredResults,
                                     ),
                               icon: Icon(
-                                _isDownloadingResults
+                                _isDownloadingResults ||
+                                        _downloadingResultPackageId.isNotEmpty
                                     ? Icons.hourglass_top_rounded
                                     : Icons.download_rounded,
                               ),
                               label: Text(
-                                _isDownloadingResults
+                                _isDownloadingResults ||
+                                        _downloadingResultPackageId.isNotEmpty
                                     ? 'Preparing download...'
                                     : 'Download filtered results',
                               ),
@@ -1464,6 +1468,13 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             ),
                             child: _ManagementResultCard(
                               mission: mission,
+                              isDownloading:
+                                  _downloadingResultPackageId ==
+                                  mission.latestResultPackageId.trim(),
+                              onDownload: () => _downloadMissionResult(
+                                student: workspace.selectedStudent,
+                                mission: mission,
+                              ),
                               onView: () => _openResultReport(
                                 mission: mission,
                                 student: workspace.selectedStudent,
@@ -1799,7 +1810,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     required StudentSummary student,
     required List<MissionPayload> missions,
   }) async {
-    if (_isDownloadingResults || missions.isEmpty) {
+    if (_isDownloadingResults ||
+        _downloadingResultPackageId.isNotEmpty ||
+        missions.isEmpty) {
       return;
     }
 
@@ -1808,16 +1821,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       final exportRows = await Future.wait(
         missions
             .where((mission) => mission.latestResultPackageId.trim().isNotEmpty)
-            .map((mission) async {
-              final resultPackage = await _api.getManagementResultPackage(
-                token: _session.token,
-                resultPackageId: mission.latestResultPackageId.trim(),
-              );
-              return _ManagementResultExportRow(
-                mission: mission,
-                resultPackage: resultPackage,
-              );
-            }),
+            .map(_loadResultExportRowForMission),
       );
 
       if (exportRows.isEmpty) {
@@ -1860,6 +1864,82 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     }
   }
 
+  Future<void> _downloadMissionResult({
+    required StudentSummary student,
+    required MissionPayload mission,
+  }) async {
+    final resultPackageId = mission.latestResultPackageId.trim();
+    if (_isDownloadingResults ||
+        _downloadingResultPackageId.isNotEmpty ||
+        resultPackageId.isEmpty) {
+      return;
+    }
+
+    setState(() => _downloadingResultPackageId = resultPackageId);
+    try {
+      final exportRow = await _loadResultExportRowForMission(mission);
+      final downloaded = await downloadTextFile(
+        fileName: _buildManagementMissionResultFileName(
+          student: student,
+          mission: mission,
+        ),
+        content: _buildManagementResultsHtml(
+          student: student,
+          rows: [exportRow],
+        ),
+        mimeType: 'text/html;charset=utf-8',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final missionTitle = mission.title.trim().isEmpty
+          ? 'mission'
+          : mission.title.trim();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            downloaded
+                ? 'Downloaded $missionTitle result.'
+                : 'Download is not available on this device yet.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingResultPackageId = '');
+      }
+    }
+  }
+
+  Future<_ManagementResultExportRow> _loadResultExportRowForMission(
+    MissionPayload mission,
+  ) async {
+    final resultPackageId = mission.latestResultPackageId.trim();
+    if (resultPackageId.isEmpty) {
+      throw Exception('This mission does not have a saved result package yet.');
+    }
+
+    // WHY: Management downloads must use the immutable saved result package so
+    // each export matches the auditable evidence shown in the result report.
+    final resultPackage = await _api.getManagementResultPackage(
+      token: _session.token,
+      resultPackageId: resultPackageId,
+    );
+    return _ManagementResultExportRow(
+      mission: mission,
+      resultPackage: resultPackage,
+    );
+  }
+
   String _buildManagementResultsFileName({required StudentSummary student}) {
     final studentSlug = _sanitizeManagementFileName(student.name);
     final subjectSlug = _selectedSubject == _allSubjectsFilterLabel
@@ -1869,6 +1949,18 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         ? 'all-dates'
         : _sanitizeManagementFileName(_selectedResultDate);
     return '${studentSlug}_results_${dateSlug}_$subjectSlug.html';
+  }
+
+  String _buildManagementMissionResultFileName({
+    required StudentSummary student,
+    required MissionPayload mission,
+  }) {
+    final studentSlug = _sanitizeManagementFileName(student.name);
+    final missionSlug = _sanitizeManagementFileName(mission.title);
+    final dateSlug = _sanitizeManagementFileName(
+      _resultDateKeyForMission(mission),
+    );
+    return '${studentSlug}_${dateSlug}_${missionSlug}_result.html';
   }
 
   String _buildManagementResultsHtml({
@@ -1910,14 +2002,22 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       groupedRows[dateKey]![subjectKey]!.add(row);
     }
 
-    final summaryLabel = [
-      _selectedResultDate == _allResultDatesFilterLabel
-          ? 'All dates'
-          : _selectedResultDate,
-      _selectedSubject == _allSubjectsFilterLabel
-          ? 'All subjects'
-          : _selectedSubject,
-    ].join(' · ');
+    final summaryLabel = rows.length == 1
+        ? '${_resultDateForExport(rows.first)} · ${_subjectNameForExport(rows.first)}'
+        : [
+            _selectedResultDate == _allResultDatesFilterLabel
+                ? 'All dates'
+                : _selectedResultDate,
+            _selectedSubject == _allSubjectsFilterLabel
+                ? 'All subjects'
+                : _selectedSubject,
+          ].join(' · ');
+    final heroTitle = rows.length == 1
+        ? '${rows.first.resultPackage.meta.missionTitle} Result Export'
+        : '${student.name} Result Export';
+    final heroSummary = rows.length == 1
+        ? 'Saved result evidence for one completed mission from the management workspace.'
+        : 'Grouped by mission date and subject using saved result packages from the management workspace.';
 
     final buffer = StringBuffer()
       ..writeln('<!DOCTYPE html>')
@@ -1936,9 +2036,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       ..writeln('<main class="page">')
       ..writeln('<section class="hero">')
       ..writeln('<span class="copy-chip">Management Download</span>')
-      ..writeln('<h1>${_escapeManagementHtml(student.name)} Result Export</h1>')
+      ..writeln('<h1>${_escapeManagementHtml(heroTitle)}</h1>')
       ..writeln(
-        '<p class="hero-summary">Grouped by mission date and subject using saved result packages from the management workspace.</p>',
+        '<p class="hero-summary">${_escapeManagementHtml(heroSummary)}</p>',
       )
       ..writeln('<div class="meta-grid">')
       ..writeln(
@@ -3351,10 +3451,17 @@ class _TimetableRoomSelection {
 }
 
 class _ManagementResultCard extends StatelessWidget {
-  const _ManagementResultCard({required this.mission, required this.onView});
+  const _ManagementResultCard({
+    required this.mission,
+    required this.onDownload,
+    required this.onView,
+    this.isDownloading = false,
+  });
 
   final MissionPayload mission;
+  final VoidCallback onDownload;
   final VoidCallback onView;
+  final bool isDownloading;
 
   @override
   Widget build(BuildContext context) {
@@ -3443,13 +3550,72 @@ class _ManagementResultCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: AppSpacing.compact),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: onView,
-              icon: const Icon(Icons.visibility_rounded),
-              label: const Text('View Result'),
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stackButtons = constraints.maxWidth < 520;
+              final viewButton = stackButtons
+                  ? SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: onView,
+                        icon: const Icon(Icons.visibility_rounded),
+                        label: const Text('View Result'),
+                      ),
+                    )
+                  : Expanded(
+                      child: FilledButton.icon(
+                        onPressed: onView,
+                        icon: const Icon(Icons.visibility_rounded),
+                        label: const Text('View Result'),
+                      ),
+                    );
+              final downloadButton = stackButtons
+                  ? SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: hasResultPackage ? onDownload : null,
+                        icon: Icon(
+                          isDownloading
+                              ? Icons.hourglass_top_rounded
+                              : Icons.download_rounded,
+                        ),
+                        label: Text(
+                          isDownloading ? 'Preparing...' : 'Download Result',
+                        ),
+                      ),
+                    )
+                  : Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: hasResultPackage ? onDownload : null,
+                        icon: Icon(
+                          isDownloading
+                              ? Icons.hourglass_top_rounded
+                              : Icons.download_rounded,
+                        ),
+                        label: Text(
+                          isDownloading ? 'Preparing...' : 'Download Result',
+                        ),
+                      ),
+                    );
+
+              if (stackButtons) {
+                return Column(
+                  children: [
+                    viewButton,
+                    const SizedBox(height: 10),
+                    downloadButton,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  viewButton,
+                  const SizedBox(width: 12),
+                  downloadButton,
+                ],
+              );
+            },
           ),
         ],
       ),
