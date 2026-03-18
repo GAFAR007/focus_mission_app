@@ -1868,6 +1868,7 @@ class TeacherWorkspaceData {
     required this.criteria,
     required this.draftMissions,
     required this.recentMissions,
+    required this.studentResults,
     required this.notificationInbox,
     required this.targets,
   });
@@ -1881,6 +1882,7 @@ class TeacherWorkspaceData {
   final List<CriterionOverview> criteria;
   final List<MissionPayload> draftMissions;
   final List<MissionPayload> recentMissions;
+  final List<MissionPayload> studentResults;
   final NotificationInboxData notificationInbox;
   final List<TargetSummary> targets;
 }

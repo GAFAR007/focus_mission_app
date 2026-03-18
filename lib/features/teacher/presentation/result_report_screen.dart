@@ -223,6 +223,7 @@ class ResultReportScreen extends StatefulWidget {
     required this.resultPackageId,
     required this.api,
     this.readOnly = false,
+    this.useManagementAccess = false,
   });
 
   final AuthSession session;
@@ -231,6 +232,7 @@ class ResultReportScreen extends StatefulWidget {
   final String resultPackageId;
   final FocusMissionApi api;
   final bool readOnly;
+  final bool useManagementAccess;
 
   @override
   State<ResultReportScreen> createState() => _ResultReportScreenState();
@@ -273,7 +275,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
   }
 
   Future<ResultPackageData> _loadResultPackage() async {
-    if (widget.readOnly) {
+    if (widget.readOnly && widget.useManagementAccess) {
       return widget.api.getManagementResultPackage(
         token: widget.session.token,
         resultPackageId: widget.resultPackageId,

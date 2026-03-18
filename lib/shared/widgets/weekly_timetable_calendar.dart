@@ -116,6 +116,7 @@ class WeeklyTimetableCalendar extends StatefulWidget {
     this.actionLabel,
     this.actionIcon = Icons.add_rounded,
     this.onActionPressed,
+    this.showDateEditIcon = false,
   });
 
   final List<TodaySchedule> entries;
@@ -128,6 +129,7 @@ class WeeklyTimetableCalendar extends StatefulWidget {
   final String? actionLabel;
   final IconData actionIcon;
   final VoidCallback? onActionPressed;
+  final bool showDateEditIcon;
 
   @override
   State<WeeklyTimetableCalendar> createState() =>
@@ -219,6 +221,7 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
                     focusedDate: _focusedDate,
                     entriesByDay: entriesByDay,
                     onSelectDate: _handlePlannerDateTap,
+                    showDateEditIcon: widget.showDateEditIcon,
                   )
                 : _MonthPlanner(
                     key: ValueKey<String>(
@@ -227,6 +230,7 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
                     focusedDate: _focusedDate,
                     entriesByDay: entriesByDay,
                     onSelectDate: _handlePlannerDateTap,
+                    showDateEditIcon: widget.showDateEditIcon,
                   ),
           ),
         ],
@@ -643,11 +647,13 @@ class _WeekPlanner extends StatelessWidget {
     required this.focusedDate,
     required this.entriesByDay,
     required this.onSelectDate,
+    required this.showDateEditIcon,
   });
 
   final DateTime focusedDate;
   final Map<String, TodaySchedule> entriesByDay;
   final ValueChanged<DateTime> onSelectDate;
+  final bool showDateEditIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -679,6 +685,7 @@ class _WeekPlanner extends StatelessWidget {
                     entry: entriesByDay[day],
                     isToday: _isSameDate(datesByDay[day]!, DateTime.now()),
                     isSelected: _isSameDate(datesByDay[day]!, focusedDate),
+                    showEditIcon: showDateEditIcon,
                     onTap: () => onSelectDate(datesByDay[day]!),
                   ),
                 ),
@@ -697,6 +704,7 @@ class _WeekDayCard extends StatelessWidget {
     required this.entry,
     required this.isToday,
     required this.isSelected,
+    required this.showEditIcon,
     required this.onTap,
   });
 
@@ -705,6 +713,7 @@ class _WeekDayCard extends StatelessWidget {
   final TodaySchedule? entry;
   final bool isToday;
   final bool isSelected;
+  final bool showEditIcon;
   final VoidCallback onTap;
 
   @override
@@ -759,7 +768,9 @@ class _WeekDayCard extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
-                  if (isSelected)
+                  if (showEditIcon && !weekend)
+                    const _CardEditBadge()
+                  else if (isSelected)
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -860,11 +871,13 @@ class _MonthPlanner extends StatelessWidget {
     required this.focusedDate,
     required this.entriesByDay,
     required this.onSelectDate,
+    required this.showDateEditIcon,
   });
 
   final DateTime focusedDate;
   final Map<String, TodaySchedule> entriesByDay;
   final ValueChanged<DateTime> onSelectDate;
+  final bool showDateEditIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -928,6 +941,7 @@ class _MonthPlanner extends StatelessWidget {
                       inCurrentMonth: inCurrentMonth,
                       isToday: _isSameDate(date, DateTime.now()),
                       isSelected: _isSameDate(date, focusedDate),
+                      showEditIcon: showDateEditIcon,
                       onTap: () => onSelectDate(date),
                     );
                   },
@@ -948,6 +962,7 @@ class _MonthDayCard extends StatelessWidget {
     required this.inCurrentMonth,
     required this.isToday,
     required this.isSelected,
+    required this.showEditIcon,
     required this.onTap,
   });
 
@@ -956,6 +971,7 @@ class _MonthDayCard extends StatelessWidget {
   final bool inCurrentMonth;
   final bool isToday;
   final bool isSelected;
+  final bool showEditIcon;
   final VoidCallback onTap;
 
   @override
@@ -1029,7 +1045,9 @@ class _MonthDayCard extends StatelessWidget {
                                 ),
                       ),
                       const Spacer(),
-                      if (isSelected)
+                      if (showEditIcon && inCurrentMonth && !weekend)
+                        const _CardEditBadge(compact: true)
+                      else if (isSelected)
                         Icon(
                           Icons.event_available_rounded,
                           size: compact ? 14 : 16,
@@ -1087,6 +1105,32 @@ class _MonthDayCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _CardEditBadge extends StatelessWidget {
+  const _CardEditBadge({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: compact ? 24 : 30,
+      height: compact ? 24 : 30,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: AppPalette.primaryBlue.withValues(alpha: 0.24),
+        ),
+      ),
+      child: Icon(
+        Icons.edit_rounded,
+        size: compact ? 13 : 16,
+        color: AppPalette.navy,
+      ),
     );
   }
 }
