@@ -2271,8 +2271,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     );
 
     if (mission.sourceFileName.trim().isNotEmpty ||
-        mission.sourceFileType.trim().isNotEmpty ||
-        (mission.aiModel ?? '').trim().isNotEmpty) {
+        mission.sourceFileType.trim().isNotEmpty) {
       buffer
         ..writeln('<section class="section-card footer-card">')
         ..writeln('<h2>Draft Source</h2>')
@@ -2290,14 +2289,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           _buildManagementMetaCardHtml(
             label: 'Source Type',
             value: mission.sourceFileType.trim(),
-          ),
-        );
-      }
-      if ((mission.aiModel ?? '').trim().isNotEmpty) {
-        buffer.writeln(
-          _buildManagementMetaCardHtml(
-            label: 'AI Model',
-            value: mission.aiModel!.trim(),
           ),
         );
       }
