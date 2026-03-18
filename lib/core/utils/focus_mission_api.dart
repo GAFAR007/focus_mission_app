@@ -940,10 +940,24 @@ class FocusMissionApi {
       token: session.token,
       studentId: selectedStudent.id,
     );
-    final studentResults = await fetchTeacherStudentResults(
-      token: session.token,
-      studentId: selectedStudent.id,
-    );
+    late final List<MissionPayload> studentResults;
+    try {
+      studentResults = await fetchTeacherStudentResults(
+        token: session.token,
+        studentId: selectedStudent.id,
+      );
+    } on FocusMissionApiException catch (error) {
+      if (!_isMissingTeacherStudentResultsRoute(error)) {
+        rethrow;
+      }
+
+      // WHY: Production may briefly run a newer frontend against an older
+      // backend during deploy rollout. Falling back here keeps teacher login
+      // working until the dedicated result-history endpoint is live.
+      studentResults = recentMissions
+          .where((mission) => mission.latestResultPackageId.trim().isNotEmpty)
+          .toList(growable: false);
+    }
     final mentorOverview = await fetchMentorOverview(
       token: session.token,
       studentId: selectedStudent.id,
@@ -1649,6 +1663,13 @@ class FocusMissionApi {
       return '';
     }
     return '?${Uri(queryParameters: params).query}';
+  }
+
+  bool _isMissingTeacherStudentResultsRoute(FocusMissionApiException error) {
+    final message = error.message;
+    return message.contains('Route not found: GET') &&
+        message.contains('/teacher/students/') &&
+        message.contains('/results');
   }
 
   String _authRoleValue(UserRole role) {
