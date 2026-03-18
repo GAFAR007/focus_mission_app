@@ -1629,6 +1629,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           resultPackageId: resultPackageId,
           api: _api,
           readOnly: true,
+          useManagementAccess: true,
         ),
       ),
     );
