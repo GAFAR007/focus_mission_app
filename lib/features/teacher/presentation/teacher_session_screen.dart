@@ -41,6 +41,8 @@ const List<String> _availableCertificationTaskCodes = <String>[
   'D1',
   'D2',
 ];
+const String _allTeacherResultSubjectsFilterLabel = 'My subjects';
+const String _allTeacherResultDatesFilterLabel = 'All dates';
 const List<String> _teacherTimetableRoomOptions = <String>[
   'Room 1',
   'Room 2',
@@ -51,6 +53,21 @@ const List<String> _teacherTimetableRoomOptions = <String>[
   'Room 7',
   'Room 8',
 ];
+const String _noTeacherStudentsMessage =
+    'No students are assigned to this teacher yet.';
+
+String _formatTeacherMissionDate(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return 'No date';
+  }
+  final parsed = DateTime.tryParse(value)?.toLocal();
+  if (parsed == null) {
+    return value;
+  }
+  final month = parsed.month.toString().padLeft(2, '0');
+  final day = parsed.day.toString().padLeft(2, '0');
+  return '${parsed.year}-$month-$day';
+}
 
 class TeacherSessionScreen extends StatefulWidget {
   const TeacherSessionScreen({super.key, required this.session});
@@ -63,11 +80,18 @@ class TeacherSessionScreen extends StatefulWidget {
 
 class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   final FocusMissionApi _api = FocusMissionApi();
+  final GlobalKey<FormState> _createStudentFormKey = GlobalKey<FormState>();
   final TextEditingController _notesController = TextEditingController();
+  final TextEditingController _studentNameController = TextEditingController();
+  final TextEditingController _studentEmailController = TextEditingController();
+  final TextEditingController _studentPasswordController =
+      TextEditingController();
 
   late AuthSession _session;
   late Future<TeacherWorkspaceData> _future;
   String _selectedStudentId = '';
+  String _selectedResultSubject = _allTeacherResultSubjectsFilterLabel;
+  String _selectedResultDate = _allTeacherResultDatesFilterLabel;
 
   String _selectedLesson = 'Morning';
   String _selectedBehaviour = 'No Issues';
@@ -75,6 +99,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   bool _isSaving = false;
   List<MissionPayload>? _draftMissions;
   List<MissionPayload>? _recentMissions;
+  List<MissionPayload>? _studentResults;
   List<CriterionOverview>? _criteria;
   NotificationInboxData? _notificationInbox;
   List<TargetSummary>? _targets;
@@ -83,11 +108,14 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   bool _isDeletingDraftMissions = false;
   final Set<String> _selectedDraftMissionIds = <String>{};
   final Set<String> _sendingResultMissionIds = <String>{};
+  bool _showCreateStudentPanel = false;
+  bool _isCreatingStudent = false;
   bool _isSavingTeacherTimetable = false;
   bool _showTeacherTimetableEditor = false;
   String _selectedTeacherTimetableSessionType = 'morning';
   String _selectedTeacherTimetableSubjectId = '';
   String _selectedTeacherTimetableRoom = _teacherTimetableRoomOptions.first;
+  AppUser? _lastCreatedStudent;
 
   @override
   void initState() {
@@ -104,15 +132,59 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       selectedStudentId: _selectedStudentId,
     );
     _selectedStudentId = workspace.selectedStudent.id;
+    final resultSubjectFilters = _buildStudentResultSubjectFilters(
+      workspace.studentResults,
+    );
+    if (!resultSubjectFilters.contains(_selectedResultSubject)) {
+      _selectedResultSubject = _allTeacherResultSubjectsFilterLabel;
+    }
+    final resultDateFilters = _buildStudentResultDateFilters(
+      workspace.studentResults,
+    );
+    if (!resultDateFilters.contains(_selectedResultDate)) {
+      _selectedResultDate = _allTeacherResultDatesFilterLabel;
+    }
     _notificationInbox ??= workspace.notificationInbox;
     _targets ??= workspace.targets;
     _syncTeacherTimetableEditor(workspace, _selectedLessonDate);
     return workspace;
   }
 
+  bool _isNoAssignedStudentsError(Object? error) =>
+      error.toString().contains(_noTeacherStudentsMessage);
+
+  String _buildCreateStudentSummary() {
+    if (_lastCreatedStudent != null) {
+      return 'Last created: ${_lastCreatedStudent!.name}';
+    }
+    return 'Create a student account and assign that learner to your teacher workspace immediately.';
+  }
+
+  void _reloadTeacherWorkspaceForStudent(String studentId) {
+    // WHY: Student selection drives every teacher-owned section on this screen,
+    // so switching or creating a student must clear learner-specific caches
+    // before reloading the workspace.
+    _selectedStudentId = studentId;
+    _draftMissions = null;
+    _recentMissions = null;
+    _studentResults = null;
+    _criteria = null;
+    _targets = null;
+    _notificationInbox = null;
+    _selectedResultSubject = _allTeacherResultSubjectsFilterLabel;
+    _selectedResultDate = _allTeacherResultDatesFilterLabel;
+    _isSelectingDraftMissions = false;
+    _isDeletingDraftMissions = false;
+    _selectedDraftMissionIds.clear();
+    _future = _loadWorkspace();
+  }
+
   @override
   void dispose() {
     _notesController.dispose();
+    _studentNameController.dispose();
+    _studentEmailController.dispose();
+    _studentPasswordController.dispose();
     super.dispose();
   }
 
@@ -127,6 +199,48 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           }
 
           if (snapshot.hasError) {
+            if (_isNoAssignedStudentsError(snapshot.error)) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(AppSpacing.screen),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _Header(
+                      onBack: () => Navigator.of(context).pop(),
+                      title: _session.user.name,
+                      user: _session.user,
+                      onProfileTap: _openProfile,
+                    ),
+                    const SizedBox(height: AppSpacing.section),
+                    SoftPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'No Students Yet',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Create the first student account here and that learner will be assigned to you immediately.',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: AppPalette.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.item),
+                    _buildCreateStudentPanel(
+                      title: 'Add Your First Student',
+                      subtitle:
+                          'Create a student account and open that learner in your teacher workspace immediately.',
+                      allowCollapse: false,
+                    ),
+                  ],
+                ),
+              );
+            }
+
             return _ErrorState(
               message: snapshot.error.toString(),
               onBack: () => Navigator.of(context).pop(),
@@ -143,6 +257,18 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
               .where((mission) => !_isAssessmentDraft(mission))
               .toList(growable: false);
           final recentMissions = _recentMissions ?? workspace.recentMissions;
+          final studentResults = _studentResults ?? workspace.studentResults;
+          final resultSubjectFilters = _buildStudentResultSubjectFilters(
+            studentResults,
+          );
+          final resultDateFilters = _buildStudentResultDateFilters(
+            studentResults,
+          );
+          final filteredStudentResults = _filterStudentResults(
+            studentResults,
+            subject: _selectedResultSubject,
+            dateKey: _selectedResultDate,
+          );
           final targets = _targets ?? workspace.targets;
           final studentCertification =
               workspace.selectedDashboard.subjectCertification;
@@ -203,20 +329,55 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 const SizedBox(height: AppSpacing.compact),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _openStudentPicker(workspace),
-                    icon: const Icon(Icons.swap_horiz_rounded),
-                    label: const Text('Switch student'),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () => _openStudentPicker(workspace),
+                        icon: const Icon(Icons.swap_horiz_rounded),
+                        label: const Text('Switch student'),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => setState(
+                          () => _showCreateStudentPanel =
+                              !_showCreateStudentPanel,
+                        ),
+                        icon: Icon(
+                          _showCreateStudentPanel
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.person_add_alt_1_rounded,
+                        ),
+                        label: Text(
+                          _showCreateStudentPanel
+                              ? 'Hide new student'
+                              : 'Add student',
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => _openTeacherAnalytics(workspace),
+                        icon: const Icon(Icons.insights_rounded),
+                        label: const Text('Open analytics'),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.compact),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _openTeacherAnalytics(workspace),
-                    icon: const Icon(Icons.insights_rounded),
-                    label: const Text('Open analytics'),
-                  ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: !_showCreateStudentPanel
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.only(
+                            top: AppSpacing.compact,
+                          ),
+                          child: _buildCreateStudentPanel(
+                            title: 'Add New Student',
+                            subtitle:
+                                'Create a student account and assign that learner to yourself immediately.',
+                          ),
+                        ),
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _TeacherCertificationPanel(
@@ -387,6 +548,22 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       _sendMissionResult(workspace, mission),
                   onViewResult: (mission) =>
                       _openResultReport(workspace, mission),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                _TeacherStudentResultsPanel(
+                  studentName: workspace.selectedStudent.name,
+                  subjectFilters: resultSubjectFilters,
+                  selectedSubject: _selectedResultSubject,
+                  dateFilters: resultDateFilters,
+                  selectedDate: _selectedResultDate,
+                  filteredResults: filteredStudentResults,
+                  allResults: studentResults,
+                  onSelectSubject: (value) =>
+                      setState(() => _selectedResultSubject = value),
+                  onSelectDate: (value) =>
+                      setState(() => _selectedResultDate = value),
+                  onOpenResult: (mission) =>
+                      _openStudentResultHistory(workspace, mission),
                 ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
@@ -600,6 +777,148 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     );
   }
 
+  Widget _buildCreateStudentPanel({
+    required String title,
+    required String subtitle,
+    bool allowCollapse = true,
+  }) {
+    return SoftPanel(
+      colors: const [Color(0xFFFFFCF6), Color(0xFFFFF3E4)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        _buildCreateStudentSummary(),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.navy,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (allowCollapse)
+                TextButton.icon(
+                  onPressed: () => setState(
+                    () => _showCreateStudentPanel = !_showCreateStudentPanel,
+                  ),
+                  icon: Icon(
+                    _showCreateStudentPanel
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                  ),
+                  label: Text(_showCreateStudentPanel ? 'Hide' : 'Show'),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Form(
+            key: _createStudentFormKey,
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _studentNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Full name',
+                    hintText: 'Enter full name',
+                  ),
+                  validator: (value) {
+                    if ((value ?? '').trim().isEmpty) {
+                      return 'Enter a name.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _studentEmailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'name@school.org',
+                  ),
+                  validator: (value) {
+                    final email = (value ?? '').trim();
+                    if (email.isEmpty || !email.contains('@')) {
+                      return 'Enter a valid email.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _studentPasswordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    hintText: 'At least 8 characters',
+                  ),
+                  validator: (value) {
+                    if ((value ?? '').length < 8) {
+                      return 'Use at least 8 characters.';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _isCreatingStudent ? null : _createTeacherStudent,
+              icon: const Icon(Icons.person_add_alt_1_rounded),
+              label: Text(
+                _isCreatingStudent ? 'Creating student...' : 'Create Student',
+              ),
+            ),
+          ),
+          if (_lastCreatedStudent != null) ...[
+            const SizedBox(height: AppSpacing.compact),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.item),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              child: Text(
+                'Created: ${_lastCreatedStudent!.name} · ${_lastCreatedStudent!.email ?? ''}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Future<void> _saveSession(
     TeacherWorkspaceData workspace,
     SubjectSummary selectedSubject,
@@ -627,12 +946,27 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         notes: _notesController.text.trim(),
         xpAwarded: xpReward,
       );
+      final refreshedRecentMissions = await _api.fetchTeacherRecentMissions(
+        token: workspace.session.token,
+        studentId: workspace.selectedStudent.id,
+      );
+      final refreshedStudentResults = await _api.fetchTeacherStudentResults(
+        token: workspace.session.token,
+        studentId: workspace.selectedStudent.id,
+      );
 
       _notesController.clear();
 
       if (!mounted) {
         return;
       }
+
+      setState(() {
+        // WHY: Saving a completed session can create fresh result evidence, so
+        // the teacher workspace refreshes both mission and result history cards immediately.
+        _recentMissions = refreshedRecentMissions;
+        _studentResults = refreshedStudentResults;
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -889,6 +1223,59 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     });
   }
 
+  Future<void> _createTeacherStudent() async {
+    if (!_createStudentFormKey.currentState!.validate() || _isCreatingStudent) {
+      return;
+    }
+
+    setState(() => _isCreatingStudent = true);
+    try {
+      final createdUser = await _api.createTeacherStudent(
+        token: _session.token,
+        name: _studentNameController.text.trim(),
+        email: _studentEmailController.text.trim(),
+        password: _studentPasswordController.text,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _lastCreatedStudent = createdUser;
+        _showCreateStudentPanel = false;
+        _studentNameController.clear();
+        _studentEmailController.clear();
+        _studentPasswordController.clear();
+        _session = _session.copyWith(
+          user: _session.user.copyWith(
+            assignedStudents: {
+              ..._session.user.assignedStudents,
+              createdUser.id,
+            }.toList(growable: false),
+          ),
+        );
+        _reloadTeacherWorkspaceForStudent(createdUser.id);
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Student account created.')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isCreatingStudent = false);
+      }
+    }
+  }
+
   Future<void> _openStudentPicker(TeacherWorkspaceData workspace) async {
     final selectedStudentId = await showModalBottomSheet<String>(
       context: context,
@@ -906,18 +1293,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     }
 
     setState(() {
-      // WHY: Student switching must refresh all learner-specific sections so
-      // mission assignment and session saving always target the chosen student.
-      _selectedStudentId = selectedStudentId;
-      _draftMissions = null;
-      _recentMissions = null;
-      _criteria = null;
-      _targets = null;
-      _notificationInbox = null;
-      _isSelectingDraftMissions = false;
-      _isDeletingDraftMissions = false;
-      _selectedDraftMissionIds.clear();
-      _future = _loadWorkspace();
+      _reloadTeacherWorkspaceForStudent(selectedStudentId);
     });
   }
 
@@ -1044,6 +1420,36 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           student: workspace.selectedStudent,
           resultPackageId: resultPackageId,
           api: _api,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openStudentResultHistory(
+    TeacherWorkspaceData workspace,
+    MissionPayload mission,
+  ) async {
+    final resultPackageId = mission.latestResultPackageId.trim();
+    if (resultPackageId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No saved result package is available for this mission.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ResultReportScreen(
+          session: _session,
+          mission: mission,
+          student: workspace.selectedStudent,
+          resultPackageId: resultPackageId,
+          api: _api,
+          readOnly: true,
         ),
       ),
     );
@@ -1559,6 +1965,63 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       unreadCount: unreadCount,
       notifications: updatedNotifications,
     );
+  }
+
+  List<String> _buildStudentResultSubjectFilters(
+    List<MissionPayload> missions,
+  ) {
+    final labels = <String>{_allTeacherResultSubjectsFilterLabel};
+
+    for (final mission in missions) {
+      final subjectName = (mission.subject?.name ?? '').trim();
+      if (subjectName.isNotEmpty) {
+        labels.add(subjectName);
+      }
+    }
+
+    return labels.toList(growable: false);
+  }
+
+  List<String> _buildStudentResultDateFilters(List<MissionPayload> missions) {
+    final dates = <String>{};
+
+    for (final mission in missions) {
+      final dateKey = _studentResultDateKeyForMission(mission);
+      if (dateKey != 'No date') {
+        dates.add(dateKey);
+      }
+    }
+
+    final sortedDates = dates.toList(growable: false)
+      ..sort((left, right) => right.compareTo(left));
+    return <String>[_allTeacherResultDatesFilterLabel, ...sortedDates];
+  }
+
+  List<MissionPayload> _filterStudentResults(
+    List<MissionPayload> missions, {
+    required String subject,
+    required String dateKey,
+  }) {
+    return missions
+        .where((mission) {
+          final matchesSubject =
+              subject == _allTeacherResultSubjectsFilterLabel ||
+              (mission.subject?.name ?? '').trim() == subject;
+          final matchesDate =
+              dateKey == _allTeacherResultDatesFilterLabel ||
+              _studentResultDateKeyForMission(mission) == dateKey;
+          return matchesSubject && matchesDate;
+        })
+        .toList(growable: false);
+  }
+
+  String _studentResultDateKeyForMission(MissionPayload mission) {
+    final scheduledDate = (mission.availableOnDate ?? '').trim();
+    if (scheduledDate.isNotEmpty) {
+      return _formatTeacherMissionDate(scheduledDate);
+    }
+
+    return _formatTeacherMissionDate(mission.publishedAt ?? mission.createdAt);
   }
 
   MissionPayload? _publishedMissionForLesson(
@@ -3228,6 +3691,298 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
     ];
 
     return labels[month - 1];
+  }
+}
+
+class _TeacherStudentResultsPanel extends StatelessWidget {
+  const _TeacherStudentResultsPanel({
+    required this.studentName,
+    required this.subjectFilters,
+    required this.selectedSubject,
+    required this.dateFilters,
+    required this.selectedDate,
+    required this.filteredResults,
+    required this.allResults,
+    required this.onSelectSubject,
+    required this.onSelectDate,
+    required this.onOpenResult,
+  });
+
+  final String studentName;
+  final List<String> subjectFilters;
+  final String selectedSubject;
+  final List<String> dateFilters;
+  final String selectedDate;
+  final List<MissionPayload> filteredResults;
+  final List<MissionPayload> allResults;
+  final ValueChanged<String> onSelectSubject;
+  final ValueChanged<String> onSelectDate;
+  final ValueChanged<MissionPayload> onOpenResult;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftPanel(
+      colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Student Results',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Saved result history for $studentName in the subjects you teach.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: subjectFilters
+                .map(
+                  (subject) => _TeacherResultFilterChip(
+                    label: subject,
+                    selected: selectedSubject == subject,
+                    onTap: () => onSelectSubject(subject),
+                  ),
+                )
+                .toList(growable: false),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 720;
+              final dateFilter = DropdownButtonFormField<String>(
+                initialValue: selectedDate,
+                decoration: const InputDecoration(labelText: 'Mission date'),
+                items: dateFilters
+                    .map(
+                      (dateLabel) => DropdownMenuItem<String>(
+                        value: dateLabel,
+                        child: Text(dateLabel),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+                  onSelectDate(value);
+                },
+              );
+              final resultCount = Text(
+                '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppPalette.textMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              );
+
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    dateFilter,
+                    const SizedBox(height: 10),
+                    resultCount,
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(child: dateFilter),
+                  const SizedBox(width: 12),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: resultCount,
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: AppSpacing.item),
+          if (filteredResults.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.item),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              child: Text(
+                allResults.isEmpty
+                    ? 'No saved results are available yet for this student in your subjects.'
+                    : 'No results match the selected filters.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            )
+          else
+            ...filteredResults.map(
+              (mission) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+                child: _TeacherStudentResultCard(
+                  mission: mission,
+                  onView: () => onOpenResult(mission),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeacherResultFilterChip extends StatelessWidget {
+  const _TeacherResultFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppPalette.primaryBlue
+              : Colors.white.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? AppPalette.primaryBlue
+                : AppPalette.primaryBlue.withValues(alpha: 0.18),
+          ),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: selected ? Colors.white : AppPalette.navy,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TeacherStudentResultCard extends StatelessWidget {
+  const _TeacherStudentResultCard({
+    required this.mission,
+    required this.onView,
+  });
+
+  final MissionPayload mission;
+  final VoidCallback onView;
+
+  @override
+  Widget build(BuildContext context) {
+    final subjectName = (mission.subject?.name ?? '').trim().isEmpty
+        ? 'No subject'
+        : mission.subject!.name.trim();
+    final scoreTotal = mission.scoreTotal > 0
+        ? mission.scoreTotal
+        : mission.questionCount;
+    final earnedXp = mission.xpEarned < 0
+        ? 0
+        : (mission.xpEarned > mission.xpReward
+              ? mission.xpReward
+              : mission.xpEarned);
+    final scoreLabel =
+        '${mission.scoreCorrect}/$scoreTotal (${mission.scorePercent}%)';
+    final theorySummary = mission.draftFormat == 'THEORY'
+        ? mission.scoreTotal <= 0 && earnedXp == 0
+              ? 'Pending review · XP pending'
+              : '${mission.scorePercent}% scored · $earnedXp/${mission.xpReward} XP'
+        : '$scoreLabel score · $earnedXp/${mission.xpReward} XP';
+    final dateLabel = _formatTeacherMissionDate(
+      mission.availableOnDate ?? mission.publishedAt ?? mission.createdAt,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  mission.title,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppPalette.sky.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  subjectName,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            theorySummary,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${mission.draftFormat == 'ESSAY_BUILDER' ? 'Essay Builder' : '${mission.questionCount} questions'} · ${mission.sessionType} · $dateLabel',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          if (mission.taskCodes.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Tasks: ${mission.taskCodes.join(', ')}',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.compact),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onView,
+              icon: const Icon(Icons.visibility_rounded),
+              label: const Text('View Result'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

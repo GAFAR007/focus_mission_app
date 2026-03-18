@@ -390,6 +390,26 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<List<MissionPayload>> fetchTeacherStudentResults({
+    required String token,
+    required String studentId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/teacher/students/$studentId/results',
+      token: token,
+    );
+    final missions = json['missions'] as List<dynamic>? ?? const [];
+
+    return missions
+        .map(
+          (item) => MissionPayload.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<List<MissionPayload>> fetchManagementStudentResults({
     required String token,
     required String studentId,
@@ -614,6 +634,25 @@ class FocusMissionApi {
         if (subjectSpecialty.trim().isNotEmpty)
           'subjectSpecialty': subjectSpecialty.trim(),
       },
+    );
+
+    return AppUser.fromJson(
+      (json['user'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<AppUser> createTeacherStudent({
+    required String token,
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/students',
+      token: token,
+      body: {'name': name, 'email': email, 'password': password},
     );
 
     return AppUser.fromJson(
@@ -901,6 +940,10 @@ class FocusMissionApi {
       token: session.token,
       studentId: selectedStudent.id,
     );
+    final studentResults = await fetchTeacherStudentResults(
+      token: session.token,
+      studentId: selectedStudent.id,
+    );
     final mentorOverview = await fetchMentorOverview(
       token: session.token,
       studentId: selectedStudent.id,
@@ -916,6 +959,7 @@ class FocusMissionApi {
       criteria: criteria.criteria,
       draftMissions: draftMissions,
       recentMissions: recentMissions,
+      studentResults: studentResults,
       notificationInbox: notificationInbox,
       targets: mentorOverview.targets,
     );
