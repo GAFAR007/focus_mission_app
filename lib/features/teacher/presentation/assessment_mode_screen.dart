@@ -510,6 +510,10 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
         sessionType: _selectedDateOption!.sessionType,
         fileBytes: bytes,
         fileName: selected.name,
+        draftFormat: 'QUESTIONS',
+        difficulty: 'hard',
+        questionCount: 10,
+        taskCodes: _selectedTaskCodes,
       );
 
       if (!mounted) {
@@ -519,6 +523,9 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
       setState(() {
         _uploadedSource = extracted;
         _rawUploadedSourceText = extracted.extractedText.trim();
+        _sourceErrorMessage = extracted.draftReadiness.needsAttention
+            ? extracted.draftReadiness.summary
+            : null;
       });
     } catch (error) {
       if (!mounted) {

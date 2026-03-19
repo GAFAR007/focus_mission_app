@@ -133,6 +133,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   String _selectedSourceFileType = '';
   MissionPayload? _draftMission;
   UploadedSourceDraft? _uploadedSource;
+  MissionSourceReadiness? _sourceUploadReadiness;
   List<_EditableQuestionController> _questionEditors = const [];
   bool _didAutoOpenAssessmentMode = false;
   List<SubjectCertificationSummary> _studentCertification = const [];
@@ -913,8 +914,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         const SizedBox(height: 8),
         Text(
           _isTheoryDraft
-              ? 'Upload a PDF, Word file, text file, or scanned image. The backend scans it into unit text, then Groq drafts a fast-focus theory mission with 2 to 5 questions.'
-              : 'Upload a PDF, Word file, text file, or scanned image. The backend extracts the text, then Groq suggests the unit plan, mission title, questions, and XP.',
+              ? 'Upload a PDF, Word file, text file, or scanned image. If the file includes enough lesson detail, the draft will be populated with Learn First guidance and fast-focus theory questions.'
+              : 'Upload a PDF, Word file, text file, or scanned image. If the file includes enough lesson detail, the draft will be populated with Learn First guidance, questions, and the other draft fields teachers review.',
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
@@ -922,8 +923,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         const SizedBox(height: 12),
         GradientButton(
           label: _isExtractingSource
-              ? 'Reading file and planning unit...'
-              : 'Upload doc or scan',
+              ? 'Reading file and building draft...'
+              : 'Upload PDF or source file',
           colors: AppPalette.teacherGradient,
           onPressed: _isExtractingSource || _isTargetDateInPast
               ? () {}
@@ -953,6 +954,13 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             sourceFileName: _resolvedSourceFileName,
             sourceFileType: _resolvedSourceFileType,
             xpReward: _effectiveXpReward,
+          ),
+        ],
+        if (_sourceUploadReadiness != null) ...[
+          const SizedBox(height: AppSpacing.item),
+          _SourceReadinessCard(
+            readiness: _sourceUploadReadiness!,
+            hasPrefilledMission: _uploadedSource?.prefilledMission != null,
           ),
         ],
         if (_uploadedSource != null) ...[
@@ -3455,14 +3463,24 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       setState(() {
         _isExtractingSource = true;
         _errorMessage = null;
+        _sourceUploadReadiness = null;
       });
 
       final extracted = await widget.api.uploadTeacherSourceDraft(
         token: widget.session.token,
         subjectId: widget.subject.id,
+        studentId: widget.student.id,
         sessionType: _selectedSessionType,
+        targetDate: _dateKey(_resolvedTargetDate),
         fileBytes: bytes,
         fileName: file.name,
+        title: _titleController.text.trim(),
+        draftFormat: _draftFormat,
+        essayMode: _draftFormat == 'ESSAY_BUILDER' ? _essayMode : '',
+        difficulty: _effectiveDifficulty,
+        questionCount: _questionCount,
+        taskCodes: _selectedTaskCodes,
+        missionDraftId: _draftMission?.id ?? '',
       );
 
       if (!mounted) {
@@ -3471,33 +3489,81 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
       setState(() {
         _uploadedSource = extracted;
+        _sourceUploadReadiness = extracted.draftReadiness;
         _selectedSourceFileName = extracted.fileName;
         _selectedSourceFileType = extracted.mimeType;
         _rawUploadedSourceText = extracted.extractedText;
         final hasAppliedTaskScope = _applyTaskFocusedUnitTextFromSource(
           _selectedTaskCodes,
         );
-        if (!hasAppliedTaskScope) {
-          _unitTextController.text = extracted.extractedText;
+        final uploadedPrefilledMission = extracted.prefilledMission;
+        final prefilledMission =
+            uploadedPrefilledMission != null &&
+                uploadedPrefilledMission.id.isEmpty &&
+                _draftMission != null
+            ? _draftMission!.copyWith(
+                title: uploadedPrefilledMission.title,
+                teacherNote: uploadedPrefilledMission.teacherNote,
+                sourceUnitText: uploadedPrefilledMission.sourceUnitText,
+                sourceRawText: uploadedPrefilledMission.sourceRawText,
+                sourceFileName: uploadedPrefilledMission.sourceFileName,
+                sourceFileType: uploadedPrefilledMission.sourceFileType,
+                draftFormat: uploadedPrefilledMission.draftFormat,
+                essayMode: uploadedPrefilledMission.essayMode,
+                draftJson: uploadedPrefilledMission.draftJson,
+                source: uploadedPrefilledMission.source,
+                status: uploadedPrefilledMission.status,
+                sessionType: uploadedPrefilledMission.sessionType,
+                difficulty: uploadedPrefilledMission.difficulty,
+                taskCodes: uploadedPrefilledMission.taskCodes,
+                xpReward: uploadedPrefilledMission.xpReward,
+                questionCount: uploadedPrefilledMission.questionCount,
+                aiModel: uploadedPrefilledMission.aiModel,
+                availableOnDate: uploadedPrefilledMission.availableOnDate,
+                availableOnDay: uploadedPrefilledMission.availableOnDay,
+                subject: uploadedPrefilledMission.subject,
+                questions: uploadedPrefilledMission.questions,
+              )
+            : uploadedPrefilledMission;
+
+        if (prefilledMission != null) {
+          // WHY: When the uploaded PDF already contains enough source material,
+          // the sheet should drop the teacher straight into review instead of
+          // forcing a second generate click.
+          _applyDraft(prefilledMission);
+          _createdDraftThisSession = true;
+        } else {
+          if (!hasAppliedTaskScope) {
+            _unitTextController.text = extracted.extractedText;
+          }
+
+          // WHY: The upload flow should save the teacher time by prefilling the
+          // draft suggestion fields before any mission is generated.
+          if (!_hasDraft) {
+            _titleController.text = extracted.unitPlan.suggestedMissionTitle;
+            _teacherNoteController.text =
+                extracted.unitPlan.suggestedTeacherNote;
+            _questionCount = _normalizedQuestionCountForDraftFormat(
+              extracted.unitPlan.suggestedQuestionCount,
+            );
+            _applyAssessmentModeDefaultsIfNeeded();
+          }
         }
 
-        // WHY: The upload flow should save the teacher time by prefilling the
-        // draft suggestion fields before any mission is generated.
-        if (!_hasDraft) {
-          _titleController.text = extracted.unitPlan.suggestedMissionTitle;
-          _teacherNoteController.text = extracted.unitPlan.suggestedTeacherNote;
-          _questionCount = _normalizedQuestionCountForDraftFormat(
-            extracted.unitPlan.suggestedQuestionCount,
-          );
-          _applyAssessmentModeDefaultsIfNeeded();
-        }
+        _errorMessage =
+            extracted.draftReadiness.needsAttention && prefilledMission == null
+            ? extracted.draftReadiness.summary
+            : null;
       });
     } catch (error) {
       if (!mounted) {
         return;
       }
 
-      setState(() => _errorMessage = error.toString());
+      setState(() {
+        _sourceUploadReadiness = null;
+        _errorMessage = error.toString();
+      });
     } finally {
       if (mounted) {
         setState(() => _isExtractingSource = false);
@@ -4292,6 +4358,157 @@ class _ScheduleSlotOption {
   final String sessionType;
 
   String get sessionLabel => sessionType == 'morning' ? 'Morning' : 'Afternoon';
+}
+
+class _SourceReadinessCard extends StatelessWidget {
+  const _SourceReadinessCard({
+    required this.readiness,
+    required this.hasPrefilledMission,
+  });
+
+  final MissionSourceReadiness readiness;
+  final bool hasPrefilledMission;
+
+  @override
+  Widget build(BuildContext context) {
+    final needsAttention = readiness.needsAttention;
+
+    return SoftPanel(
+      colors: needsAttention
+          ? const [Color(0xFFFFF7F2), Color(0xFFFFECE1)]
+          : const [Color(0xFFF3FBFF), Color(0xFFE6F4FF)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: needsAttention
+                      ? const Color(0xFFFFE2D5)
+                      : const Color(0xFFDFF2FF),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  needsAttention
+                      ? Icons.rule_folder_outlined
+                      : Icons.verified_outlined,
+                  color: needsAttention
+                      ? const Color(0xFFAF5A2A)
+                      : AppPalette.primaryBlue,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.item),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasPrefilledMission
+                          ? 'Draft populated from upload'
+                          : needsAttention
+                          ? 'Upload needs attention'
+                          : 'Upload is ready',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      readiness.summary,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (hasPrefilledMission || readiness.detectedSignals.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.item),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                if (hasPrefilledMission)
+                  const _InfoPill(label: 'Draft auto-filled'),
+                ...readiness.detectedSignals.map(
+                  (signal) => _InfoPill(label: signal),
+                ),
+              ],
+            ),
+          ],
+          if (readiness.missingRequirements.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.item),
+            Text(
+              'Missing from the upload',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            ...readiness.missingRequirements.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Icon(
+                        Icons.error_outline_rounded,
+                        size: 18,
+                        color: Color(0xFFAF5A2A),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(item)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (readiness.warningNotes.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.item),
+            Text(
+              'Review before publish',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            ...readiness.warningNotes.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Icon(
+                        Icons.info_outline_rounded,
+                        size: 18,
+                        color: AppPalette.primaryBlue,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(item)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (needsAttention) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Upload a fuller PDF or add the missing detail in Unit text, then regenerate the draft.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _SourceSummaryCard extends StatelessWidget {

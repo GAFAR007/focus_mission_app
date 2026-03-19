@@ -1100,6 +1100,15 @@ class FocusMissionApi {
     required String sessionType,
     required List<int> fileBytes,
     required String fileName,
+    String studentId = '',
+    String targetDate = '',
+    String title = '',
+    String draftFormat = 'QUESTIONS',
+    String essayMode = '',
+    String difficulty = 'medium',
+    int? questionCount,
+    List<String> taskCodes = const [],
+    String missionDraftId = '',
   }) async {
     final request = http.MultipartRequest(
       'POST',
@@ -1109,6 +1118,35 @@ class FocusMissionApi {
     request.headers['Authorization'] = 'Bearer $token';
     request.fields['subjectId'] = subjectId;
     request.fields['sessionType'] = sessionType;
+    if (studentId.trim().isNotEmpty) {
+      request.fields['studentId'] = studentId.trim();
+    }
+    if (targetDate.trim().isNotEmpty) {
+      request.fields['targetDate'] = targetDate.trim();
+    }
+    if (title.trim().isNotEmpty) {
+      request.fields['title'] = title.trim();
+    }
+    if (draftFormat.trim().isNotEmpty) {
+      request.fields['draftFormat'] = draftFormat.trim().toUpperCase();
+    }
+    if (essayMode.trim().isNotEmpty) {
+      request.fields['essayMode'] = essayMode.trim().toUpperCase();
+    }
+    if (difficulty.trim().isNotEmpty) {
+      request.fields['difficulty'] = difficulty.trim().toLowerCase();
+    }
+    if (questionCount != null) {
+      request.fields['questionCount'] = questionCount.toString();
+    }
+    if (taskCodes.isNotEmpty) {
+      // WHY: Multipart form fields are strings, so task codes are encoded once
+      // here and decoded by the backend service before draft generation.
+      request.fields['taskCodes'] = jsonEncode(taskCodes);
+    }
+    if (missionDraftId.trim().isNotEmpty) {
+      request.fields['missionDraftId'] = missionDraftId.trim();
+    }
     request.files.add(
       http.MultipartFile.fromBytes('sourceFile', fileBytes, filename: fileName),
     );

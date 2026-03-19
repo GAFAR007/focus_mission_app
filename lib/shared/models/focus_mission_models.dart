@@ -1143,6 +1143,35 @@ class UploadedUnitPlanDraft {
   }
 }
 
+class MissionSourceReadiness {
+  const MissionSourceReadiness({
+    required this.status,
+    required this.summary,
+    required this.detectedSignals,
+    required this.missingRequirements,
+    required this.warningNotes,
+  });
+
+  final String status;
+  final String summary;
+  final List<String> detectedSignals;
+  final List<String> missingRequirements;
+  final List<String> warningNotes;
+
+  bool get isReady => status == 'ready';
+  bool get needsAttention => status == 'needs_attention';
+
+  factory MissionSourceReadiness.fromJson(Map<String, dynamic> json) {
+    return MissionSourceReadiness(
+      status: (json['status'] ?? '').toString(),
+      summary: (json['summary'] ?? '').toString(),
+      detectedSignals: _asStringList(json['detectedSignals']),
+      missingRequirements: _asStringList(json['missingRequirements']),
+      warningNotes: _asStringList(json['warningNotes']),
+    );
+  }
+}
+
 class UploadedSourceDraft {
   const UploadedSourceDraft({
     required this.fileName,
@@ -1151,6 +1180,8 @@ class UploadedSourceDraft {
     required this.extractedText,
     required this.extractedCharacterCount,
     required this.unitPlan,
+    required this.draftReadiness,
+    this.prefilledMission,
   });
 
   final String fileName;
@@ -1159,6 +1190,8 @@ class UploadedSourceDraft {
   final String extractedText;
   final int extractedCharacterCount;
   final UploadedUnitPlanDraft unitPlan;
+  final MissionSourceReadiness draftReadiness;
+  final MissionPayload? prefilledMission;
 
   factory UploadedSourceDraft.fromJson(Map<String, dynamic> json) {
     return UploadedSourceDraft(
@@ -1168,6 +1201,12 @@ class UploadedSourceDraft {
       extractedText: (json['extractedText'] ?? '').toString(),
       extractedCharacterCount: _asInt(json['extractedCharacterCount']),
       unitPlan: UploadedUnitPlanDraft.fromJson(_asMap(json['unitPlan'])),
+      draftReadiness: MissionSourceReadiness.fromJson(
+        _asMap(json['draftReadiness']),
+      ),
+      prefilledMission: _asNullableMap(json['prefilledMission']) == null
+          ? null
+          : MissionPayload.fromJson(_asMap(json['prefilledMission'])),
     );
   }
 }
