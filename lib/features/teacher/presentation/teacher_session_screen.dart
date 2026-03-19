@@ -1446,14 +1446,6 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     MissionPayload mission,
   ) async {
     final resultPackageId = mission.latestResultPackageId.trim();
-    if (resultPackageId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No result package is available yet for this mission.'),
-        ),
-      );
-      return;
-    }
 
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -1463,9 +1455,16 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           student: workspace.selectedStudent,
           resultPackageId: resultPackageId,
           api: _api,
+          onSwitchStudentRequested: () => _openStudentPicker(workspace),
         ),
       ),
     );
+
+    if (!mounted) {
+      return;
+    }
+
+    _reloadTeacherWorkspaceForStudent(_selectedStudentId);
   }
 
   Future<void> _openStudentResultHistory(

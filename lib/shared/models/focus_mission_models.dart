@@ -1661,6 +1661,7 @@ class ResultScreenshotUploadData {
     required this.id,
     required this.resultPackageId,
     required this.screenshotUrl,
+    required this.fileName,
     required this.uploadedBy,
     required this.uploadedAt,
     required this.byteSize,
@@ -1670,6 +1671,7 @@ class ResultScreenshotUploadData {
   final String id;
   final String resultPackageId;
   final String screenshotUrl;
+  final String fileName;
   final String uploadedBy;
   final String uploadedAt;
   final int byteSize;
@@ -1680,6 +1682,7 @@ class ResultScreenshotUploadData {
       id: (json['id'] ?? '').toString(),
       resultPackageId: (json['resultPackageId'] ?? '').toString(),
       screenshotUrl: (json['screenshotUrl'] ?? '').toString(),
+      fileName: (json['fileName'] ?? '').toString(),
       uploadedBy: (json['uploadedBy'] ?? '').toString(),
       uploadedAt: (json['uploadedAt'] ?? '').toString(),
       byteSize: _asInt(json['byteSize']),

@@ -1496,6 +1496,40 @@ class FocusMissionApi {
     );
   }
 
+  Future<ResultPackageData> createTeacherManualResultPackage({
+    required String token,
+    required String missionId,
+    required List<int> fileBytes,
+    required String fileName,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse(
+        '${ApiConfig.baseUrl}/teacher/missions/$missionId/manual-result',
+      ),
+    );
+
+    request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(
+      http.MultipartFile.fromBytes('resultFile', fileBytes, filename: fileName),
+    );
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode >= 400) {
+      throw FocusMissionApiException(
+        (json['message'] ?? 'Manual result upload failed.').toString(),
+      );
+    }
+
+    return ResultPackageData.fromJson(
+      (json['resultPackage'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
   Future<ResultPackageData> scoreTeacherTheoryResultPackage({
     required String token,
     required String resultPackageId,
@@ -1506,6 +1540,30 @@ class FocusMissionApi {
       '/teacher/results/$resultPackageId/score-theory',
       token: token,
       body: {'questions': questions},
+    );
+
+    return ResultPackageData.fromJson(
+      (json['resultPackage'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<ResultPackageData> scoreTeacherManualResultPackage({
+    required String token,
+    required String resultPackageId,
+    required int scoreCorrect,
+    required int scoreTotal,
+    String teacherFeedback = '',
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/results/$resultPackageId/score-manual',
+      token: token,
+      body: {
+        'scoreCorrect': scoreCorrect,
+        'scoreTotal': scoreTotal,
+        'teacherFeedback': teacherFeedback,
+      },
     );
 
     return ResultPackageData.fromJson(

@@ -1,20 +1,23 @@
 /**
  * WHAT:
- * ResultReportScreen shows one mission Result Package, allows screenshot capture
- * from the evidence view, and sends the package through in-app/email channels.
+ * ResultReportScreen shows one mission Result Package, lets teachers upload
+ * work evidence, apply teacher review scores, and send the package onward.
  * WHY:
- * Teachers need an auditable, single-screen report flow for mission outcomes,
- * including optional screenshot evidence and delivery status visibility.
+ * Teachers need one auditable review screen for mission outcomes, uploaded work
+ * samples, manual scoring, and delivery status visibility.
  * HOW:
  * Fetch the result package by id, render meta + evidence dynamically by format,
- * upload report screenshots, and call send endpoint with chosen channels.
+ * upload report screenshots or work files, save teacher review scores, and
+ * call send endpoint with chosen channels.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
 import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -224,6 +227,7 @@ class ResultReportScreen extends StatefulWidget {
     required this.api,
     this.readOnly = false,
     this.useManagementAccess = false,
+    this.onSwitchStudentRequested,
   });
 
   final AuthSession session;
@@ -233,6 +237,7 @@ class ResultReportScreen extends StatefulWidget {
   final FocusMissionApi api;
   final bool readOnly;
   final bool useManagementAccess;
+  final Future<void> Function()? onSwitchStudentRequested;
 
   @override
   State<ResultReportScreen> createState() => _ResultReportScreenState();
@@ -245,26 +250,38 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
       <int, TextEditingController>{};
   final Map<int, TextEditingController> _theoryFeedbackControllers =
       <int, TextEditingController>{};
+  final TextEditingController _manualFeedbackController =
+      TextEditingController();
 
-  late Future<ResultPackageData> _future;
+  late Future<ResultPackageData?> _future;
+  late String _activeResultPackageId;
   bool _isSending = false;
   bool _isCapturing = false;
   bool _isSavingTheoryScore = false;
+  bool _isSavingManualScore = false;
+  bool _isCreatingManualResult = false;
   bool _sendInApp = true;
   bool _sendEmail = true;
   bool _attachScreenshot = true;
   String _screenshotUrl = '';
+  String _uploadedWorkMimeType = '';
+  String _uploadedWorkFileName = '';
   String _theoryControllerSeed = '';
+  String _manualReviewSeed = '';
+  int _manualScoreTotal = 10;
+  int _manualScoreCorrect = 0;
 
   @override
   void initState() {
     super.initState();
+    _activeResultPackageId = widget.resultPackageId.trim();
     _future = _loadResultPackage();
   }
 
   @override
   void dispose() {
     _recipientsController.dispose();
+    _manualFeedbackController.dispose();
     for (final controller in _theoryScoreControllers.values) {
       controller.dispose();
     }
@@ -274,24 +291,138 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     super.dispose();
   }
 
-  Future<ResultPackageData> _loadResultPackage() async {
-    if (widget.readOnly && widget.useManagementAccess) {
-      return widget.api.getManagementResultPackage(
-        token: widget.session.token,
-        resultPackageId: widget.resultPackageId,
-      );
+  Future<ResultPackageData?> _loadResultPackage() async {
+    if (_activeResultPackageId.trim().isEmpty) {
+      return null;
     }
 
-    return widget.api.getTeacherResultPackage(
-      token: widget.session.token,
-      resultPackageId: widget.resultPackageId,
-    );
+    if (widget.readOnly && widget.useManagementAccess) {
+      try {
+        return await widget.api.getManagementResultPackage(
+          token: widget.session.token,
+          resultPackageId: _activeResultPackageId,
+        );
+      } on FocusMissionApiException catch (error) {
+        if (error.message.toLowerCase().contains('result package not found')) {
+          return null;
+        }
+        rethrow;
+      }
+    }
+
+    try {
+      return await widget.api.getTeacherResultPackage(
+        token: widget.session.token,
+        resultPackageId: _activeResultPackageId,
+      );
+    } on FocusMissionApiException catch (error) {
+      if (error.message.toLowerCase().contains('result package not found')) {
+        return null;
+      }
+      rethrow;
+    }
   }
 
   Future<void> _refreshResultPackage() async {
     setState(() {
       _future = _loadResultPackage();
     });
+  }
+
+  Future<void> _refreshNoResultState() async {
+    if (widget.readOnly || widget.useManagementAccess) {
+      await _refreshResultPackage();
+      return;
+    }
+
+    setState(() {
+      _future = () async {
+        final recentMissions = await widget.api.fetchTeacherRecentMissions(
+          token: widget.session.token,
+          studentId: widget.student.id,
+        );
+        MissionPayload? latestMission;
+        for (final mission in recentMissions) {
+          if (mission.id == widget.mission.id) {
+            latestMission = mission;
+            break;
+          }
+        }
+        final refreshedResultPackageId =
+            latestMission?.latestResultPackageId.trim() ?? '';
+        if (refreshedResultPackageId.isNotEmpty) {
+          _activeResultPackageId = refreshedResultPackageId;
+        }
+        return _loadResultPackage();
+      }();
+    });
+  }
+
+  Future<void> _createManualResultFromUpload() async {
+    if (_isCreatingManualResult ||
+        widget.readOnly ||
+        widget.useManagementAccess) {
+      return;
+    }
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        withData: true,
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp'],
+      );
+
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+
+      final file = result.files.single;
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw const FocusMissionApiException(
+          'The selected file could not be read. Try again.',
+        );
+      }
+
+      setState(() => _isCreatingManualResult = true);
+
+      final resultPackage = await widget.api.createTeacherManualResultPackage(
+        token: widget.session.token,
+        missionId: widget.mission.id,
+        fileBytes: bytes,
+        fileName: file.name,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      _activeResultPackageId = resultPackage.id;
+      _theoryControllerSeed = '';
+      _manualReviewSeed = '';
+      _screenshotUrl = '';
+      _uploadedWorkMimeType = '';
+      _uploadedWorkFileName = '';
+      setState(() {
+        _future = Future<ResultPackageData?>.value(resultPackage);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Manual result created. Review and score it below.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isCreatingManualResult = false);
+      }
+    }
   }
 
   List<Map<String, dynamic>> _theoryQuestions(ResultPackageData resultPackage) {
@@ -335,6 +466,67 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     }
 
     _theoryControllerSeed = nextSeed;
+  }
+
+  Map<String, dynamic>? _latestTeacherUpload(ResultPackageData resultPackage) {
+    final uploads =
+        resultPackage.evidence['teacherUploads'] as List<dynamic>? ?? const [];
+    for (final item in uploads) {
+      if (item is Map<dynamic, dynamic>) {
+        return item.cast<String, dynamic>();
+      }
+    }
+
+    final latestUrl = (resultPackage.evidence['latestTeacherUploadUrl'] ?? '')
+        .toString()
+        .trim();
+    if (latestUrl.isEmpty) {
+      return null;
+    }
+
+    return <String, dynamic>{
+      'url': latestUrl,
+      'mimeType': (resultPackage.evidence['latestTeacherUploadMimeType'] ?? '')
+          .toString(),
+      'fileName': (resultPackage.evidence['latestTeacherUploadFileName'] ?? '')
+          .toString(),
+      'uploadedAt': (resultPackage.evidence['latestTeacherUploadAt'] ?? '')
+          .toString(),
+    };
+  }
+
+  void _syncManualReviewState(ResultPackageData resultPackage) {
+    if (resultPackage.missionType == 'THEORY') {
+      return;
+    }
+
+    final teacherReview =
+        resultPackage.evidence['teacherReview'] is Map<dynamic, dynamic>
+        ? (resultPackage.evidence['teacherReview'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>()
+        : const <String, dynamic>{};
+    final nextSeed =
+        '${resultPackage.id}:${resultPackage.updatedAt ?? ''}:${teacherReview['scoredAt'] ?? ''}:${teacherReview['scoreCorrect'] ?? ''}:${teacherReview['scoreTotal'] ?? ''}';
+    if (_manualReviewSeed == nextSeed) {
+      return;
+    }
+
+    final savedTotal = _asIntValue(teacherReview['scoreTotal']);
+    final initialTotal = [10, 30, 50, 100].contains(savedTotal)
+        ? savedTotal
+        : ([10, 30, 50, 100].contains(resultPackage.meta.scoreTotal)
+              ? resultPackage.meta.scoreTotal
+              : 10);
+    final savedCorrect = _asIntValue(teacherReview['scoreCorrect']);
+    final derivedCorrect = savedCorrect > 0
+        ? savedCorrect
+        : ((resultPackage.meta.scorePercent / 100) * initialTotal).round();
+
+    _manualScoreTotal = initialTotal;
+    _manualScoreCorrect = derivedCorrect.clamp(0, initialTotal);
+    _manualFeedbackController.text = (teacherReview['teacherFeedback'] ?? '')
+        .toString();
+    _manualReviewSeed = nextSeed;
   }
 
   int? _parseTheoryScore(String raw) {
@@ -497,7 +689,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
       final updatedResultPackage = await widget.api
           .scoreTeacherTheoryResultPackage(
             token: widget.session.token,
-            resultPackageId: widget.resultPackageId,
+            resultPackageId: _activeResultPackageId,
             questions: payload,
           );
 
@@ -525,6 +717,47 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     } finally {
       if (mounted) {
         setState(() => _isSavingTheoryScore = false);
+      }
+    }
+  }
+
+  Future<void> _saveManualScore(ResultPackageData resultPackage) async {
+    if (_isSavingManualScore) {
+      return;
+    }
+
+    setState(() => _isSavingManualScore = true);
+    try {
+      final updatedResultPackage = await widget.api
+          .scoreTeacherManualResultPackage(
+            token: widget.session.token,
+            resultPackageId: _activeResultPackageId,
+            scoreCorrect: _manualScoreCorrect,
+            scoreTotal: _manualScoreTotal,
+            teacherFeedback: _manualFeedbackController.text.trim(),
+          );
+
+      if (!mounted) {
+        return;
+      }
+
+      _manualReviewSeed = '';
+      setState(() {
+        _future = Future<ResultPackageData>.value(updatedResultPackage);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Teacher score saved.')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingManualScore = false);
       }
     }
   }
@@ -985,10 +1218,314 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     );
   }
 
+  Widget _buildManualReviewPanel(ResultPackageData resultPackage) {
+    final xpMax = widget.mission.xpReward <= 0 ? 50 : widget.mission.xpReward;
+    final projectedPercent = _manualScoreTotal <= 0
+        ? 0
+        : ((_manualScoreCorrect / _manualScoreTotal) * 100).round();
+    final projectedXp = ((projectedPercent / 100) * xpMax).round();
+    final teacherReview =
+        resultPackage.evidence['teacherReview'] is Map<dynamic, dynamic>
+        ? (resultPackage.evidence['teacherReview'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>()
+        : const <String, dynamic>{};
+    final savedAt = (teacherReview['scoredAt'] ?? '').toString().trim();
+
+    return SoftPanel(
+      colors: const [Color(0xFFFFFBF1), Color(0xFFEAF4FF)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Teacher Review Score',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Upload the student work if needed, then score it out of 10, 30, 50, or 100. XP updates from the final percentage.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _Pill(
+                label: 'Current score: $_manualScoreCorrect/$_manualScoreTotal',
+              ),
+              _Pill(label: 'Percent: $projectedPercent%'),
+              _Pill(label: 'Projected XP: $projectedXp/$xpMax'),
+              if (savedAt.isNotEmpty)
+                _Pill(label: 'Saved: ${_formatReportDateTime(savedAt)}'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Text('Score total', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [10, 30, 50, 100]
+                .map((total) {
+                  final selected = _manualScoreTotal == total;
+                  return InkWell(
+                    onTap: () {
+                      setState(() {
+                        _manualScoreTotal = total;
+                        if (_manualScoreCorrect > total) {
+                          _manualScoreCorrect = total;
+                        }
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(999),
+                    child: Ink(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppPalette.primaryBlue.withValues(alpha: 0.14)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: selected
+                              ? AppPalette.primaryBlue
+                              : const Color(0xFFD9E7FF),
+                        ),
+                      ),
+                      child: Text(
+                        '/$total',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: selected
+                              ? AppPalette.primaryBlue
+                              : AppPalette.navy,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  );
+                })
+                .toList(growable: false),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FBFF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFD9E7FF)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: () {
+                        setState(() {
+                          _manualScoreCorrect = (_manualScoreCorrect - 1).clamp(
+                            0,
+                            _manualScoreTotal,
+                          );
+                        });
+                      },
+                      icon: const Icon(Icons.remove_rounded),
+                      label: const Text('1'),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Text(
+                            '$_manualScoreCorrect / $_manualScoreTotal',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: AppPalette.navy,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$projectedPercent%',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AppPalette.textMuted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    FilledButton.tonalIcon(
+                      onPressed: () {
+                        setState(() {
+                          _manualScoreCorrect = (_manualScoreCorrect + 1).clamp(
+                            0,
+                            _manualScoreTotal,
+                          );
+                        });
+                      },
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('1'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: AppPalette.primaryBlue,
+                    inactiveTrackColor: Colors.white.withValues(alpha: 0.82),
+                    thumbColor: AppPalette.aqua,
+                    overlayColor: AppPalette.primaryBlue.withValues(
+                      alpha: 0.12,
+                    ),
+                    valueIndicatorColor: AppPalette.primaryBlue,
+                  ),
+                  child: Slider(
+                    min: 0,
+                    max: _manualScoreTotal.toDouble(),
+                    divisions: _manualScoreTotal,
+                    value: _manualScoreCorrect.toDouble().clamp(
+                      0,
+                      _manualScoreTotal.toDouble(),
+                    ),
+                    label: '$_manualScoreCorrect',
+                    onChanged: (value) {
+                      setState(() {
+                        _manualScoreCorrect = value.round().clamp(
+                          0,
+                          _manualScoreTotal,
+                        );
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _manualFeedbackController,
+            minLines: 2,
+            maxLines: 4,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              labelText: 'Teacher feedback (optional)',
+              hintText: 'Add short, concrete feedback for the uploaded work.',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          GradientButton(
+            label: _isSavingManualScore
+                ? 'Saving teacher score...'
+                : 'Save Teacher Score',
+            colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+            onPressed: _isSavingManualScore
+                ? () {}
+                : () => _saveManualScore(resultPackage),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoResultState() {
+    final isTeacherEditable = !widget.readOnly && !widget.useManagementAccess;
+    final formatLabel = widget.mission.draftFormat == 'THEORY'
+        ? 'Upload the student work first, then score each theory answer on the next screen.'
+        : 'Upload the student work first, then save the teacher review score out of 10, 30, 50, or 100.';
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.screen),
+        child: SoftPanel(
+          colors: const [Color(0xFFF7FBFF), Color(0xFFFFFBF3)],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'No result available yet',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This mission does not have a saved result package yet for ${widget.student.name}.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+              ),
+              if (isTeacherEditable) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(AppSpacing.item),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.88),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  ),
+                  child: Text(
+                    formatLabel,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.section),
+              if (isTeacherEditable)
+                GradientButton(
+                  label: _isCreatingManualResult
+                      ? 'Uploading result...'
+                      : 'Upload Result',
+                  colors: const [AppPalette.sun, AppPalette.orange],
+                  onPressed: _isCreatingManualResult
+                      ? () {}
+                      : _createManualResultFromUpload,
+                ),
+              const SizedBox(height: AppSpacing.compact),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  TextButton.icon(
+                    onPressed: _refreshNoResultState,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Refresh'),
+                  ),
+                  if (isTeacherEditable &&
+                      widget.onSwitchStudentRequested != null)
+                    TextButton.icon(
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        await widget.onSwitchStudentRequested!.call();
+                      },
+                      icon: const Icon(Icons.swap_horiz_rounded),
+                      label: const Text('Switch student'),
+                    ),
+                  TextButton.icon(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    label: const Text('Back'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FocusScaffold(
-      child: FutureBuilder<ResultPackageData>(
+      child: FutureBuilder<ResultPackageData?>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -1026,11 +1563,43 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
             );
           }
 
-          final resultPackage = snapshot.data!;
+          final resultPackage = snapshot.data;
+          if (resultPackage == null) {
+            return _buildNoResultState();
+          }
           _syncTheoryReviewControllers(resultPackage);
+          _syncManualReviewState(resultPackage);
+          final latestTeacherUpload = _latestTeacherUpload(resultPackage);
           final effectiveScreenshotUrl = _screenshotUrl.trim().isNotEmpty
               ? _screenshotUrl.trim()
-              : _latestScreenshotFromLogs(resultPackage.sendLogs);
+              : ((latestTeacherUpload?['url'] ?? '')
+                        .toString()
+                        .trim()
+                        .isNotEmpty
+                    ? (latestTeacherUpload?['url'] ?? '').toString().trim()
+                    : _latestScreenshotFromLogs(resultPackage.sendLogs));
+          final effectiveUploadMimeType =
+              _uploadedWorkMimeType.trim().isNotEmpty
+              ? _uploadedWorkMimeType.trim()
+              : ((latestTeacherUpload?['mimeType'] ?? '')
+                        .toString()
+                        .trim()
+                        .isNotEmpty
+                    ? (latestTeacherUpload?['mimeType'] ?? '').toString().trim()
+                    : (effectiveScreenshotUrl.trim().isNotEmpty
+                          ? 'image/png'
+                          : ''));
+          final effectiveUploadFileName =
+              _uploadedWorkFileName.trim().isNotEmpty
+              ? _uploadedWorkFileName.trim()
+              : ((latestTeacherUpload?['fileName'] ?? '')
+                        .toString()
+                        .trim()
+                        .isNotEmpty
+                    ? (latestTeacherUpload?['fileName'] ?? '').toString().trim()
+                    : (effectiveScreenshotUrl.trim().isNotEmpty
+                          ? 'Captured report view'
+                          : ''));
           final absoluteScreenshotUrl = widget.api.resolveApiUrl(
             effectiveScreenshotUrl,
           );
@@ -1074,6 +1643,11 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                   const SizedBox(height: AppSpacing.item),
                   _buildTheoryReviewPanel(resultPackage),
                 ],
+                if (!widget.readOnly &&
+                    resultPackage.missionType != 'THEORY') ...[
+                  const SizedBox(height: AppSpacing.item),
+                  _buildManualReviewPanel(resultPackage),
+                ],
                 const SizedBox(height: AppSpacing.item),
                 RepaintBoundary(
                   key: _reportBoundaryKey,
@@ -1100,6 +1674,8 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                   _buildScreenshotPanel(
                     absoluteScreenshotUrl: absoluteScreenshotUrl,
                     hasScreenshot: effectiveScreenshotUrl.trim().isNotEmpty,
+                    effectiveUploadMimeType: effectiveUploadMimeType,
+                    effectiveUploadFileName: effectiveUploadFileName,
                   ),
                   const SizedBox(height: AppSpacing.item),
                   _buildSendPanel(resultPackage),
@@ -1115,19 +1691,20 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
   Widget _buildScreenshotPanel({
     required String absoluteScreenshotUrl,
     required bool hasScreenshot,
+    required String effectiveUploadMimeType,
+    required String effectiveUploadFileName,
   }) {
+    final isImageUpload = effectiveUploadMimeType.startsWith('image/');
+
     return SoftPanel(
       colors: const [Color(0xFFF7FBFF), Color(0xFFE8F2FF)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Screenshot Evidence',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('Work Evidence', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           Text(
-            'Capture this report view and optionally attach it when sending results.',
+            'Capture this report view or upload a PDF/image of the student work, then optionally attach it when sending results.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -1138,10 +1715,20 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
               Expanded(
                 child: GradientButton(
                   label: _isCapturing
-                      ? 'Capturing screenshot...'
-                      : 'Capture Screenshot',
+                      ? 'Capturing report view...'
+                      : 'Capture Report View',
                   colors: const [AppPalette.primaryBlue, AppPalette.aqua],
                   onPressed: _isCapturing ? () {} : _captureAndUploadScreenshot,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GradientButton(
+                  label: _isCapturing
+                      ? 'Uploading file...'
+                      : 'Upload PDF/Image',
+                  colors: const [AppPalette.sun, AppPalette.orange],
+                  onPressed: _isCapturing ? () {} : _pickAndUploadWorkEvidence,
                 ),
               ),
             ],
@@ -1150,27 +1737,101 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
             const SizedBox(height: AppSpacing.compact),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Attach screenshot on send'),
+              title: const Text('Attach work evidence on send'),
               value: _attachScreenshot,
               onChanged: (value) => setState(() => _attachScreenshot = value),
             ),
             const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              child: Image.network(
-                absoluteScreenshotUrl,
-                headers: {'Authorization': 'Bearer ${widget.session.token}'},
-                fit: BoxFit.cover,
-                height: 220,
-                width: double.infinity,
-                errorBuilder: (_, _, _) {
-                  return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(AppSpacing.item),
-                    color: Colors.white,
-                    child: const Text('Screenshot preview unavailable.'),
-                  );
-                },
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.item),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    effectiveUploadFileName.isEmpty
+                        ? 'Uploaded work file'
+                        : effectiveUploadFileName,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    effectiveUploadMimeType.isEmpty
+                        ? 'Stored report evidence'
+                        : effectiveUploadMimeType,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (isImageUpload)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      child: Image.network(
+                        absoluteScreenshotUrl,
+                        headers: {
+                          'Authorization': 'Bearer ${widget.session.token}',
+                        },
+                        fit: BoxFit.cover,
+                        height: 220,
+                        width: double.infinity,
+                        errorBuilder: (_, _, _) {
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(AppSpacing.item),
+                            color: Colors.white,
+                            child: const Text('Image preview unavailable.'),
+                          );
+                        },
+                      ),
+                    )
+                  else
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppSpacing.item),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FBFF),
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusMd,
+                        ),
+                        border: Border.all(
+                          color: AppPalette.primaryBlue.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.picture_as_pdf_rounded),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'File stored and ready to attach to the result send flow.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        ClipboardData(text: absoluteScreenshotUrl),
+                      );
+                      if (!mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Evidence link copied.')),
+                      );
+                    },
+                    icon: const Icon(Icons.link_rounded),
+                    label: const Text('Copy evidence link'),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1267,7 +1928,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
 
       final uploaded = await widget.api.uploadTeacherResultScreenshot(
         token: widget.session.token,
-        resultPackageId: widget.resultPackageId,
+        resultPackageId: _activeResultPackageId,
         fileBytes: bytes,
       );
 
@@ -1277,11 +1938,73 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
 
       setState(() {
         _screenshotUrl = uploaded.screenshotUrl;
+        _uploadedWorkMimeType = uploaded.mimeType;
+        _uploadedWorkFileName = uploaded.fileName;
         _attachScreenshot = true;
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Screenshot uploaded.')));
+      ).showSnackBar(const SnackBar(content: Text('Report view uploaded.')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isCapturing = false);
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadWorkEvidence() async {
+    if (_isCapturing) {
+      return;
+    }
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        withData: true,
+        type: FileType.custom,
+        allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'bmp'],
+      );
+
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+
+      final file = result.files.single;
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw const FocusMissionApiException(
+          'The selected file could not be read. Try again.',
+        );
+      }
+
+      setState(() => _isCapturing = true);
+
+      final uploaded = await widget.api.uploadTeacherResultScreenshot(
+        token: widget.session.token,
+        resultPackageId: _activeResultPackageId,
+        fileBytes: bytes,
+        fileName: file.name,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _screenshotUrl = uploaded.screenshotUrl;
+        _uploadedWorkMimeType = uploaded.mimeType;
+        _uploadedWorkFileName = uploaded.fileName;
+        _attachScreenshot = true;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Work evidence uploaded.')));
     } catch (error) {
       if (!mounted) {
         return;
@@ -1309,17 +2032,23 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     }
 
     final recipients = _parseRecipients(_recipientsController.text);
+    final latestTeacherUpload = _latestTeacherUpload(resultPackage);
     final screenshotToSend = _attachScreenshot
         ? (_screenshotUrl.trim().isNotEmpty
               ? _screenshotUrl.trim()
-              : _latestScreenshotFromLogs(resultPackage.sendLogs))
+              : ((latestTeacherUpload?['url'] ?? '')
+                        .toString()
+                        .trim()
+                        .isNotEmpty
+                    ? (latestTeacherUpload?['url'] ?? '').toString().trim()
+                    : _latestScreenshotFromLogs(resultPackage.sendLogs)))
         : '';
 
     setState(() => _isSending = true);
     try {
       await widget.api.sendTeacherResultPackage(
         token: widget.session.token,
-        resultPackageId: widget.resultPackageId,
+        resultPackageId: _activeResultPackageId,
         recipients: recipients,
         sendInApp: _sendInApp,
         sendEmail: _sendEmail,
@@ -1373,6 +2102,12 @@ class _StatusPanel extends StatelessWidget {
           resultPackage.evidence['completionAttemptNumber'],
     );
     final isTheory = resultPackage.missionType == 'THEORY';
+    final isManualTeacherResult =
+        resultPackage.evidence['manualTeacherResult'] == true;
+    final teacherReviewStatus =
+        (resultPackage.evidence['teacherReviewStatus'] ?? 'pending')
+            .toString()
+            .trim();
     final reviewStatus =
         (resultPackage.evidence['reviewStatus'] ?? 'pending_review')
             .toString()
@@ -1386,11 +2121,15 @@ class _StatusPanel extends StatelessWidget {
         ? reviewStatus == 'scored'
               ? 'Average: ${_formatOneDecimal(theoryAverage)}%'
               : 'Score: Pending review'
+        : isManualTeacherResult && teacherReviewStatus != 'scored'
+        ? 'Score: Pending review'
         : 'Score: ${resultPackage.meta.scoreCorrect}/${resultPackage.meta.scoreTotal} (${resultPackage.meta.scorePercent}%)';
     final xpLabel = isTheory
         ? reviewStatus == 'scored'
               ? 'XP: ${resultPackage.meta.xpAwarded}/$safeTheoryXpMax'
               : 'XP: Pending'
+        : isManualTeacherResult && teacherReviewStatus != 'scored'
+        ? 'XP: Pending'
         : 'XP: ${resultPackage.meta.xpAwarded}';
     return SoftPanel(
       colors: const [Color(0xFFEFFAF5), Color(0xFFE5F4FF)],
@@ -1403,6 +2142,11 @@ class _StatusPanel extends StatelessWidget {
             _Pill(
               label:
                   'Review: ${reviewStatus == 'scored' ? 'Scored' : 'Pending review'}',
+            ),
+          if (!isTheory && isManualTeacherResult)
+            _Pill(
+              label:
+                  'Review: ${teacherReviewStatus == 'scored' ? 'Scored' : 'Pending review'}',
             ),
           _Pill(label: 'Send: ${resultPackage.latestSendStatus}'),
           _Pill(label: scoreLabel),
@@ -1620,6 +2364,8 @@ class _EvidencePanel extends StatelessWidget {
     final evidence = resultPackage.evidence;
     final format = (evidence['format'] ?? '').toString();
     final legacyReason = (evidence['legacyBackfillReason'] ?? '').toString();
+    final manualReason = (evidence['manualTeacherResultReason'] ?? '')
+        .toString();
 
     return SoftPanel(
       child: Column(
@@ -1627,6 +2373,26 @@ class _EvidencePanel extends StatelessWidget {
         children: [
           Text('Evidence', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppSpacing.compact),
+          if (manualReason.trim().isNotEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.item),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(
+                  color: AppPalette.primaryBlue.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Text(
+                manualReason,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.compact),
+          ],
           if (legacyReason.trim().isNotEmpty) ...[
             Container(
               width: double.infinity,
@@ -1974,6 +2740,13 @@ class _QuestionEvidence extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final questions = evidence['questions'] as List<dynamic>? ?? const [];
+    final isManualTeacherResult = evidence['manualTeacherResult'] == true;
+    final teacherReview = evidence['teacherReview'] is Map<dynamic, dynamic>
+        ? (evidence['teacherReview'] as Map<dynamic, dynamic>)
+              .cast<String, dynamic>()
+        : const <String, dynamic>{};
+    final hasManualTeacherScore =
+        isManualTeacherResult && teacherReview['reviewType'] == 'manual_score';
     final triesToComplete = _asIntValue(
       evidence['triesToComplete'] ?? evidence['completionAttemptNumber'],
     );
@@ -2031,18 +2804,41 @@ class _QuestionEvidence extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               Text(
-                'Points: $totalPointsEarned/$totalPointsPossible',
+                hasManualTeacherScore
+                    ? 'Teacher reviewed score: ${_asIntValue(teacherReview['scoreCorrect'])}/${_asIntValue(teacherReview['scoreTotal'])}'
+                    : 'Points: $totalPointsEarned/$totalPointsPossible',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
           ),
         ),
+        if (isManualTeacherResult) ...[
+          const SizedBox(height: AppSpacing.compact),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.item),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              border: Border.all(
+                color: AppPalette.primaryBlue.withValues(alpha: 0.24),
+              ),
+            ),
+            child: Text(
+              'This result was created from uploaded offline work. Digital option-by-option selections were not recorded for the student.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+            ),
+          ),
+        ],
         const SizedBox(height: AppSpacing.compact),
         ...questions.asMap().entries.map((entry) {
           final index = entry.key;
           final question = (entry.value as Map<dynamic, dynamic>)
               .cast<String, dynamic>();
-          final correctness = question['correctness'] == true;
+          final correctness =
+              !isManualTeacherResult && question['correctness'] == true;
           final selectedOptionLetter = (question['selectedOptionLetter'] ?? '')
               .toString()
               .trim()
@@ -2074,12 +2870,16 @@ class _QuestionEvidence extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.item),
               decoration: BoxDecoration(
-                color: correctness
+                color: isManualTeacherResult
+                    ? const Color(0xFFF8FBFF)
+                    : correctness
                     ? const Color(0xFFF1FBF4)
                     : const Color(0xFFFFF7EF),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                 border: Border.all(
-                  color: correctness
+                  color: isManualTeacherResult
+                      ? AppPalette.sky.withValues(alpha: 0.5)
+                      : correctness
                       ? AppPalette.mint.withValues(alpha: 0.75)
                       : AppPalette.orange.withValues(alpha: 0.55),
                 ),
@@ -2106,7 +2906,11 @@ class _QuestionEvidence extends StatelessWidget {
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
-                          correctness ? 'Correct' : 'Incorrect',
+                          isManualTeacherResult
+                              ? 'Reference question'
+                              : correctness
+                              ? 'Correct'
+                              : 'Incorrect',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: AppPalette.navy,
@@ -2115,13 +2919,15 @@ class _QuestionEvidence extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      Text(
-                        'Points: $pointsEarned/$maxPoints',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppPalette.textMuted,
-                          fontWeight: FontWeight.w700,
+                      if (!isManualTeacherResult)
+                        Text(
+                          'Points: $pointsEarned/$maxPoints',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppPalette.textMuted,
+                                fontWeight: FontWeight.w700,
+                              ),
                         ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
