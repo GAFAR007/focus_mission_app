@@ -112,6 +112,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   bool _isCreatingStudent = false;
   bool _isSavingTeacherTimetable = false;
   bool _showTeacherTimetableEditor = false;
+  bool _isAssignedMissionsExpanded = false;
+  bool _isStudentResultsExpanded = false;
+  bool _isLessonPanelExpanded = false;
   String _selectedTeacherTimetableSessionType = 'morning';
   String _selectedTeacherTimetableSubjectId = '';
   String _selectedTeacherTimetableRoom = _teacherTimetableRoomOptions.first;
@@ -160,6 +163,30 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     return 'Create a student account and assign that learner to your teacher workspace immediately.';
   }
 
+  void _toggleAssignedMissionsExpanded() {
+    setState(() {
+      // WHY: Large review panels stay collapsed by default so the teacher can
+      // scan the workspace quickly on laptop-height screens.
+      _isAssignedMissionsExpanded = !_isAssignedMissionsExpanded;
+    });
+  }
+
+  void _toggleStudentResultsExpanded() {
+    setState(() {
+      // WHY: Result history grows fast, so opening it on demand prevents it
+      // from pushing the lesson controls too far below the fold.
+      _isStudentResultsExpanded = !_isStudentResultsExpanded;
+    });
+  }
+
+  void _toggleLessonPanelExpanded() {
+    setState(() {
+      // WHY: Lesson notes and target tracking are still needed, but they should
+      // not consume space until the teacher is ready to review them.
+      _isLessonPanelExpanded = !_isLessonPanelExpanded;
+    });
+  }
+
   void _reloadTeacherWorkspaceForStudent(String studentId) {
     // WHY: Student selection drives every teacher-owned section on this screen,
     // so switching or creating a student must clear learner-specific caches
@@ -176,6 +203,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     _isSelectingDraftMissions = false;
     _isDeletingDraftMissions = false;
     _selectedDraftMissionIds.clear();
+    _isAssignedMissionsExpanded = false;
+    _isStudentResultsExpanded = false;
+    _isLessonPanelExpanded = false;
     _future = _loadWorkspace();
   }
 
@@ -305,6 +335,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
             _selectedLessonDate,
             DateTime.now(),
           );
+          final lessonSummaryChips = <String>[
+            activeLesson,
+            selectedSubject?.name ?? 'No subject assigned',
+            '${targets.length} target${targets.length == 1 ? '' : 's'}',
+          ];
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(AppSpacing.screen),
@@ -531,6 +566,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 _LatestAssignedMissionsPanel(
                   missions: recentMissions,
                   sendingResultMissionIds: _sendingResultMissionIds,
+                  isExpanded: _isAssignedMissionsExpanded,
+                  onToggleExpanded: _toggleAssignedMissionsExpanded,
                   onEdit: (mission) => _openMissionBuilder(
                     workspace: workspace,
                     subject: SubjectSummary(
@@ -558,6 +595,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   selectedDate: _selectedResultDate,
                   filteredResults: filteredStudentResults,
                   allResults: studentResults,
+                  isExpanded: _isStudentResultsExpanded,
+                  onToggleExpanded: _toggleStudentResultsExpanded,
                   onSelectSubject: (value) =>
                       setState(() => _selectedResultSubject = value),
                   onSelectDate: (value) =>
@@ -570,179 +609,183 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Lesson',
-                        style: Theme.of(context).textTheme.titleMedium,
+                      _ExpandablePanelHeader(
+                        title: 'Lesson',
+                        subtitle:
+                            '${selectedDateIsToday ? 'Today\'s session' : 'Selected session'} · ${_selectedDateSummary(schedule)}',
+                        summaryChips: lessonSummaryChips,
+                        isExpanded: _isLessonPanelExpanded,
+                        onTap: _toggleLessonPanelExpanded,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${selectedDateIsToday ? 'Today\'s session' : 'Selected session'} · ${_selectedDateSummary(schedule)}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppPalette.textMuted,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.compact),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          _ChoicePill(
-                            label: 'Morning',
-                            selected: activeLesson == 'Morning',
-                            colors: AppPalette.studentGradient,
-                            onTap: () =>
-                                setState(() => _selectedLesson = 'Morning'),
-                          ),
-                          _ChoicePill(
-                            label: 'Afternoon',
-                            selected: activeLesson == 'Afternoon',
-                            colors: const [
-                              AppPalette.primaryBlue,
-                              AppPalette.aqua,
-                            ],
-                            onTap: () =>
-                                setState(() => _selectedLesson = 'Afternoon'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.section),
-                      Text(
-                        'Subject',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: AppPalette.textMuted,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(AppSpacing.item),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.72),
-                          borderRadius: BorderRadius.circular(
-                            AppSpacing.radiusMd,
-                          ),
-                        ),
-                        child: Row(
+                      if (_isLessonPanelExpanded) ...[
+                        const SizedBox(height: AppSpacing.compact),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
                           children: [
-                            Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: AppPalette.teacherGradient,
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Icon(
-                                activeLesson == 'Morning'
-                                    ? Icons.wb_sunny_rounded
-                                    : Icons.nights_stay_rounded,
-                                color: Colors.white,
-                              ),
+                            _ChoicePill(
+                              label: 'Morning',
+                              selected: activeLesson == 'Morning',
+                              colors: AppPalette.studentGradient,
+                              onTap: () =>
+                                  setState(() => _selectedLesson = 'Morning'),
                             ),
-                            const SizedBox(width: 12),
+                            _ChoicePill(
+                              label: 'Afternoon',
+                              selected: activeLesson == 'Afternoon',
+                              colors: const [
+                                AppPalette.primaryBlue,
+                                AppPalette.aqua,
+                              ],
+                              onTap: () =>
+                                  setState(() => _selectedLesson = 'Afternoon'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.section),
+                        Text(
+                          'Subject',
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(AppSpacing.item),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.radiusMd,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: AppPalette.teacherGradient,
+                                  ),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Icon(
+                                  activeLesson == 'Morning'
+                                      ? Icons.wb_sunny_rounded
+                                      : Icons.nights_stay_rounded,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  selectedSubject == null
+                                      ? 'No subject assigned'
+                                      : '${selectedSubject.name} · ${schedule?.room ?? 'Room'} · ${selectedTeacher?.name ?? 'Teacher not set'}',
+                                  style: Theme.of(context).textTheme.bodyLarge
+                                      ?.copyWith(color: AppPalette.navy),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.section),
+                        Text(
+                          'Targets Met',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: AppSpacing.compact),
+                        Row(
+                          children: [
                             Expanded(
                               child: Text(
-                                selectedSubject == null
-                                    ? 'No subject assigned'
-                                    : '${selectedSubject.name} · ${schedule?.room ?? 'Room'} · ${selectedTeacher?.name ?? 'Teacher not set'}',
-                                style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(color: AppPalette.navy),
+                                'Default + custom weekly targets',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: AppPalette.textMuted),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: _isUpdatingTargets
+                                  ? null
+                                  : () => _createTarget(workspace),
+                              icon: const Icon(
+                                Icons.add_circle_outline_rounded,
+                              ),
+                              label: const Text('Create new target'),
+                            ),
+                          ],
+                        ),
+                        if (targets.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(
+                              bottom: AppSpacing.compact,
+                            ),
+                            child: Text('No targets available yet.'),
+                          )
+                        else
+                          ...targets.map(
+                            (target) => Padding(
+                              padding: const EdgeInsets.only(
+                                bottom: AppSpacing.compact,
+                              ),
+                              child: _TargetStarsRow(
+                                target: target,
+                                enabled: !_isUpdatingTargets,
+                                onSetStars: (stars) => _setTargetStars(
+                                  workspace: workspace,
+                                  target: target,
+                                  stars: stars,
+                                ),
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: AppSpacing.compact),
+                        TextField(
+                          controller: _notesController,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            hintText: 'Enter comment...',
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.section),
+                        Text(
+                          'Behaviour',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: AppSpacing.compact),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            _ChoicePill(
+                              label: 'No Issues',
+                              selected: _selectedBehaviour == 'No Issues',
+                              colors: AppPalette.studentGradient,
+                              onTap: () => setState(
+                                () => _selectedBehaviour = 'No Issues',
+                              ),
+                            ),
+                            _ChoicePill(
+                              label: 'Warning',
+                              selected: _selectedBehaviour == 'Warning',
+                              colors: const [AppPalette.sun, AppPalette.orange],
+                              onTap: () => setState(
+                                () => _selectedBehaviour = 'Warning',
+                              ),
+                            ),
+                            _ChoicePill(
+                              label: 'Penalty',
+                              selected: _selectedBehaviour == 'Penalty',
+                              colors: const [
+                                Color(0xFFFF8DA1),
+                                Color(0xFFFFC2A0),
+                              ],
+                              onTap: () => setState(
+                                () => _selectedBehaviour = 'Penalty',
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.section),
-                      Text(
-                        'Targets Met',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: AppSpacing.compact),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Default + custom weekly targets',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: AppPalette.textMuted),
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: _isUpdatingTargets
-                                ? null
-                                : () => _createTarget(workspace),
-                            icon: const Icon(Icons.add_circle_outline_rounded),
-                            label: const Text('Create new target'),
-                          ),
-                        ],
-                      ),
-                      if (targets.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: AppSpacing.compact),
-                          child: Text('No targets available yet.'),
-                        )
-                      else
-                        ...targets.map(
-                          (target) => Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppSpacing.compact,
-                            ),
-                            child: _TargetStarsRow(
-                              target: target,
-                              enabled: !_isUpdatingTargets,
-                              onSetStars: (stars) => _setTargetStars(
-                                workspace: workspace,
-                                target: target,
-                                stars: stars,
-                              ),
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: AppSpacing.compact),
-                      TextField(
-                        controller: _notesController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          hintText: 'Enter comment...',
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.section),
-                      Text(
-                        'Behaviour',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: AppSpacing.compact),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          _ChoicePill(
-                            label: 'No Issues',
-                            selected: _selectedBehaviour == 'No Issues',
-                            colors: AppPalette.studentGradient,
-                            onTap: () => setState(
-                              () => _selectedBehaviour = 'No Issues',
-                            ),
-                          ),
-                          _ChoicePill(
-                            label: 'Warning',
-                            selected: _selectedBehaviour == 'Warning',
-                            colors: const [AppPalette.sun, AppPalette.orange],
-                            onTap: () =>
-                                setState(() => _selectedBehaviour = 'Warning'),
-                          ),
-                          _ChoicePill(
-                            label: 'Penalty',
-                            selected: _selectedBehaviour == 'Penalty',
-                            colors: const [
-                              Color(0xFFFF8DA1),
-                              Color(0xFFFFC2A0),
-                            ],
-                            onTap: () =>
-                                setState(() => _selectedBehaviour = 'Penalty'),
-                          ),
-                        ],
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -3439,6 +3482,8 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
   const _LatestAssignedMissionsPanel({
     required this.missions,
     required this.sendingResultMissionIds,
+    required this.isExpanded,
+    required this.onToggleExpanded,
     required this.onEdit,
     required this.onMoveBackToDraft,
     required this.onSendResult,
@@ -3447,6 +3492,8 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
 
   final List<MissionPayload> missions;
   final Set<String> sendingResultMissionIds;
+  final bool isExpanded;
+  final VoidCallback onToggleExpanded;
   final ValueChanged<MissionPayload> onEdit;
   final ValueChanged<MissionPayload> onMoveBackToDraft;
   final ValueChanged<MissionPayload> onSendResult;
@@ -3468,111 +3515,42 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
     final assignedProgressRatio = totalAssignedXp <= 0
         ? 0.0
         : totalEarnedXp / totalAssignedXp;
+    final summaryChips = <String>[
+      '${missions.length} mission${missions.length == 1 ? '' : 's'}',
+      totalAssignedXp == 0
+          ? 'No assigned XP yet'
+          : '$totalEarnedXp/$totalAssignedXp XP',
+    ];
 
     return SoftPanel(
       colors: const [Color(0xFFFFFCF6), Color(0xFFFFF0D8)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppPalette.sun, AppPalette.orange],
-                  ),
-                  borderRadius: BorderRadius.circular(18),
+          _ExpandablePanelHeader(
+            title: 'Assigned Missions',
+            subtitle:
+                'Published missions become available on their scheduled lesson date.',
+            summaryChips: summaryChips,
+            isExpanded: isExpanded,
+            onTap: onToggleExpanded,
+            leading: Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppPalette.sun, AppPalette.orange],
                 ),
-                child: const Icon(
-                  Icons.library_books_rounded,
-                  color: Colors.white,
-                ),
+                borderRadius: BorderRadius.circular(18),
               ),
-              const SizedBox(width: AppSpacing.item),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Assigned Missions',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Published missions become available on their scheduled lesson date.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
+              child: const Icon(
+                Icons.library_books_rounded,
+                color: Colors.white,
               ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.compact),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.item),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.76),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Assigned mission XP progress',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '$totalEarnedXp / $totalAssignedXp XP filled',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-                ),
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return Stack(
-                        children: [
-                          Container(
-                            height: 12,
-                            width: double.infinity,
-                            color: Colors.white.withValues(alpha: 0.78),
-                          ),
-                          Container(
-                            height: 12,
-                            width: constraints.maxWidth * assignedProgressRatio,
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: AppPalette.progressGradient,
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  totalAssignedXp == 0
-                      ? 'No assigned mission XP yet.'
-                      : 'Total assigned mission XP: $totalAssignedXp',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-                ),
-              ],
             ),
           ),
-          const SizedBox(height: AppSpacing.item),
-          if (missions.isEmpty)
+          if (isExpanded) ...[
+            const SizedBox(height: AppSpacing.compact),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.item),
@@ -3580,81 +3558,146 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.76),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
-              child: Text(
-                'No assigned AI missions yet. Generate one from the panel above.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            )
-          else
-            ...missions.asMap().entries.map((entry) {
-              final mission = entry.value;
-              final scoreTotal = mission.scoreTotal > 0
-                  ? mission.scoreTotal
-                  : mission.questionCount;
-              final scoreCorrect = mission.scoreCorrect < 0
-                  ? 0
-                  : (mission.scoreCorrect > scoreTotal
-                        ? scoreTotal
-                        : mission.scoreCorrect);
-              final scoreRatio = scoreTotal <= 0
-                  ? 0.0
-                  : scoreCorrect / scoreTotal;
-              final rewardXp = mission.xpReward < 0 ? 0 : mission.xpReward;
-              final earnedXp = mission.xpEarned < 0
-                  ? 0
-                  : (mission.xpEarned > rewardXp ? rewardXp : mission.xpEarned);
-              final hasResultPackage = mission.latestResultPackageId
-                  .trim()
-                  .isNotEmpty;
-              final isTheoryPendingReview =
-                  mission.draftFormat == 'THEORY' &&
-                  hasResultPackage &&
-                  earnedXp == 0 &&
-                  mission.scoreTotal <= 0;
-              final topProgressRatio = isTheoryPendingReview
-                  ? 0.0
-                  : mission.draftFormat == 'THEORY' && hasResultPackage
-                  ? (mission.scorePercent.clamp(0, 100) / 100)
-                  : scoreRatio;
-              final topProgressLabel = isTheoryPendingReview
-                  ? 'Pending review · XP pending'
-                  : mission.draftFormat == 'THEORY' && hasResultPackage
-                  ? '${mission.scorePercent}% scored · $earnedXp/$rewardXp XP'
-                  : mission.draftFormat == 'THEORY'
-                  ? 'Awaiting submission · $earnedXp/$rewardXp XP'
-                  : '$scoreCorrect/$scoreTotal score · $earnedXp/$rewardXp XP';
-              final isSendingResult = sendingResultMissionIds.contains(
-                mission.id,
-              );
-              return Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.compact),
-                child: _MissionCard(
-                  mission: mission,
-                  badgeLabel: mission.source == 'groq' ? 'Groq' : 'Bank',
-                  dateLabel: _formatMissionDate(
-                    mission.availableOnDate ??
-                        mission.publishedAt ??
-                        mission.createdAt,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Assigned mission XP progress',
+                    style: Theme.of(context).textTheme.titleSmall,
                   ),
-                  actionLabel: 'Edit mission',
-                  topProgressRatio: topProgressRatio,
-                  topProgressLabel: topProgressLabel,
-                  secondaryActionLabel: isSendingResult
-                      ? 'Sending result...'
-                      : 'Send result',
-                  onSecondaryTap: hasResultPackage && !isSendingResult
-                      ? () => onSendResult(mission)
-                      : null,
-                  tertiaryActionLabel: 'View result',
-                  onTertiaryTap: hasResultPackage
-                      ? () => onViewResult(mission)
-                      : null,
-                  quaternaryActionLabel: 'Move back to draft',
-                  onQuaternaryTap: () => onMoveBackToDraft(mission),
-                  onTap: () => onEdit(mission),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$totalEarnedXp / $totalAssignedXp XP filled',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppPalette.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return Stack(
+                          children: [
+                            Container(
+                              height: 12,
+                              width: double.infinity,
+                              color: Colors.white.withValues(alpha: 0.78),
+                            ),
+                            Container(
+                              height: 12,
+                              width:
+                                  constraints.maxWidth * assignedProgressRatio,
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: AppPalette.progressGradient,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    totalAssignedXp == 0
+                        ? 'No assigned mission XP yet.'
+                        : 'Total assigned mission XP: $totalAssignedXp',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.item),
+            if (missions.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.item),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.76),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                 ),
-              );
-            }),
+                child: Text(
+                  'No assigned AI missions yet. Generate one from the panel above.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              )
+            else
+              ...missions.asMap().entries.map((entry) {
+                final mission = entry.value;
+                final scoreTotal = mission.scoreTotal > 0
+                    ? mission.scoreTotal
+                    : mission.questionCount;
+                final scoreCorrect = mission.scoreCorrect < 0
+                    ? 0
+                    : (mission.scoreCorrect > scoreTotal
+                          ? scoreTotal
+                          : mission.scoreCorrect);
+                final scoreRatio = scoreTotal <= 0
+                    ? 0.0
+                    : scoreCorrect / scoreTotal;
+                final rewardXp = mission.xpReward < 0 ? 0 : mission.xpReward;
+                final earnedXp = mission.xpEarned < 0
+                    ? 0
+                    : (mission.xpEarned > rewardXp
+                          ? rewardXp
+                          : mission.xpEarned);
+                final hasResultPackage = mission.latestResultPackageId
+                    .trim()
+                    .isNotEmpty;
+                final isTheoryPendingReview =
+                    mission.draftFormat == 'THEORY' &&
+                    hasResultPackage &&
+                    earnedXp == 0 &&
+                    mission.scoreTotal <= 0;
+                final topProgressRatio = isTheoryPendingReview
+                    ? 0.0
+                    : mission.draftFormat == 'THEORY' && hasResultPackage
+                    ? (mission.scorePercent.clamp(0, 100) / 100)
+                    : scoreRatio;
+                final topProgressLabel = isTheoryPendingReview
+                    ? 'Pending review · XP pending'
+                    : mission.draftFormat == 'THEORY' && hasResultPackage
+                    ? '${mission.scorePercent}% scored · $earnedXp/$rewardXp XP'
+                    : mission.draftFormat == 'THEORY'
+                    ? 'Awaiting submission · $earnedXp/$rewardXp XP'
+                    : '$scoreCorrect/$scoreTotal score · $earnedXp/$rewardXp XP';
+                final isSendingResult = sendingResultMissionIds.contains(
+                  mission.id,
+                );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+                  child: _MissionCard(
+                    mission: mission,
+                    badgeLabel: mission.source == 'groq' ? 'Groq' : 'Bank',
+                    dateLabel: _formatMissionDate(
+                      mission.availableOnDate ??
+                          mission.publishedAt ??
+                          mission.createdAt,
+                    ),
+                    actionLabel: 'Edit mission',
+                    topProgressRatio: topProgressRatio,
+                    topProgressLabel: topProgressLabel,
+                    secondaryActionLabel: isSendingResult
+                        ? 'Sending result...'
+                        : 'Send result',
+                    onSecondaryTap: hasResultPackage && !isSendingResult
+                        ? () => onSendResult(mission)
+                        : null,
+                    tertiaryActionLabel: 'View result',
+                    onTertiaryTap: hasResultPackage
+                        ? () => onViewResult(mission)
+                        : null,
+                    quaternaryActionLabel: 'Move back to draft',
+                    onQuaternaryTap: () => onMoveBackToDraft(mission),
+                    onTap: () => onEdit(mission),
+                  ),
+                );
+              }),
+          ],
         ],
       ),
     );
@@ -3703,6 +3746,8 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
     required this.selectedDate,
     required this.filteredResults,
     required this.allResults,
+    required this.isExpanded,
+    required this.onToggleExpanded,
     required this.onSelectSubject,
     required this.onSelectDate,
     required this.onOpenResult,
@@ -3715,123 +3760,249 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
   final String selectedDate;
   final List<MissionPayload> filteredResults;
   final List<MissionPayload> allResults;
+  final bool isExpanded;
+  final VoidCallback onToggleExpanded;
   final ValueChanged<String> onSelectSubject;
   final ValueChanged<String> onSelectDate;
   final ValueChanged<MissionPayload> onOpenResult;
 
   @override
   Widget build(BuildContext context) {
+    final summaryChips = <String>[
+      '${filteredResults.length} result${filteredResults.length == 1 ? '' : 's'}',
+      selectedSubject,
+      selectedDate == _allTeacherResultDatesFilterLabel
+          ? 'All mission dates'
+          : selectedDate,
+    ];
+
     return SoftPanel(
       colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Student Results',
-            style: Theme.of(context).textTheme.titleMedium,
+          _ExpandablePanelHeader(
+            title: 'Student Results',
+            subtitle:
+                'Saved result history for $studentName in the subjects you teach.',
+            summaryChips: summaryChips,
+            isExpanded: isExpanded,
+            onTap: onToggleExpanded,
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Saved result history for $studentName in the subjects you teach.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-          ),
-          const SizedBox(height: AppSpacing.compact),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: subjectFilters
-                .map(
-                  (subject) => _TeacherResultFilterChip(
-                    label: subject,
-                    selected: selectedSubject == subject,
-                    onTap: () => onSelectSubject(subject),
+          if (isExpanded) ...[
+            const SizedBox(height: AppSpacing.compact),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: subjectFilters
+                  .map(
+                    (subject) => _TeacherResultFilterChip(
+                      label: subject,
+                      selected: selectedSubject == subject,
+                      onTap: () => onSelectSubject(subject),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: AppSpacing.compact),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 720;
+                final dateFilter = DropdownButtonFormField<String>(
+                  initialValue: selectedDate,
+                  decoration: const InputDecoration(labelText: 'Mission date'),
+                  items: dateFilters
+                      .map(
+                        (dateLabel) => DropdownMenuItem<String>(
+                          value: dateLabel,
+                          child: Text(dateLabel),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value == null) {
+                      return;
+                    }
+                    onSelectDate(value);
+                  },
+                );
+                final resultCount = Text(
+                  '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppPalette.textMuted,
+                    fontWeight: FontWeight.w700,
                   ),
-                )
-                .toList(growable: false),
-          ),
-          const SizedBox(height: AppSpacing.compact),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 720;
-              final dateFilter = DropdownButtonFormField<String>(
-                initialValue: selectedDate,
-                decoration: const InputDecoration(labelText: 'Mission date'),
-                items: dateFilters
-                    .map(
-                      (dateLabel) => DropdownMenuItem<String>(
-                        value: dateLabel,
-                        child: Text(dateLabel),
-                      ),
-                    )
-                    .toList(growable: false),
-                onChanged: (value) {
-                  if (value == null) {
-                    return;
-                  }
-                  onSelectDate(value);
-                },
-              );
-              final resultCount = Text(
-                '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppPalette.textMuted,
-                  fontWeight: FontWeight.w700,
-                ),
-              );
+                );
 
-              if (compact) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      dateFilter,
+                      const SizedBox(height: 10),
+                      resultCount,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    dateFilter,
-                    const SizedBox(height: 10),
-                    resultCount,
+                    Expanded(child: dateFilter),
+                    const SizedBox(width: 12),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: resultCount,
+                    ),
                   ],
                 );
-              }
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(child: dateFilter),
-                  const SizedBox(width: 12),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: resultCount,
+              },
+            ),
+            const SizedBox(height: AppSpacing.item),
+            if (filteredResults.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.item),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                ),
+                child: Text(
+                  allResults.isEmpty
+                      ? 'No saved results are available yet for this student in your subjects.'
+                      : 'No results match the selected filters.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              )
+            else
+              ...filteredResults.map(
+                (mission) => Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+                  child: _TeacherStudentResultCard(
+                    mission: mission,
+                    onView: () => onOpenResult(mission),
                   ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: AppSpacing.item),
-          if (filteredResults.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.item),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.78),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              ),
-              child: Text(
-                allResults.isEmpty
-                    ? 'No saved results are available yet for this student in your subjects.'
-                    : 'No results match the selected filters.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            )
-          else
-            ...filteredResults.map(
-              (mission) => Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.compact),
-                child: _TeacherStudentResultCard(
-                  mission: mission,
-                  onView: () => onOpenResult(mission),
                 ),
               ),
-            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _ExpandablePanelHeader extends StatelessWidget {
+  const _ExpandablePanelHeader({
+    required this.title,
+    required this.subtitle,
+    required this.summaryChips,
+    required this.isExpanded,
+    required this.onTap,
+    this.leading,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<String> summaryChips;
+  final bool isExpanded;
+  final VoidCallback onTap;
+  final Widget? leading;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleSummaryChips = summaryChips
+        .map((label) => label.trim())
+        .where((label) => label.isNotEmpty)
+        .toList(growable: false);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (leading != null) ...[
+                leading!,
+                const SizedBox(width: AppSpacing.item),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                    if (visibleSummaryChips.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: visibleSummaryChips
+                            .map((label) => _ExpandablePanelChip(label: label))
+                            .toList(growable: false),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: AppPalette.primaryBlue.withValues(alpha: 0.14),
+                  ),
+                ),
+                child: Center(
+                  child: AnimatedRotation(
+                    turns: isExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: const Icon(Icons.keyboard_arrow_down_rounded),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpandablePanelChip extends StatelessWidget {
+  const _ExpandablePanelChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: AppPalette.primaryBlue.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: AppPalette.navy,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
