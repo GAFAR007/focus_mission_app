@@ -430,6 +430,25 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<List<StudentSummary>> fetchManagementStudents({
+    required String token,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/management/students',
+      token: token,
+    );
+    final students = json['students'] as List<dynamic>? ?? const [];
+
+    return students
+        .map(
+          (item) => StudentSummary.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<List<SubjectCertificationSummary>> fetchTeacherStudentCertification({
     required String token,
     required String studentId,
@@ -983,14 +1002,30 @@ class FocusMissionApi {
     required AuthSession mentorSession,
     String? selectedStudentId,
   }) async {
-    final assignedStudentIds = mentorSession.user.assignedStudents;
+    // WHY: Management can stay logged in while teachers create learners, so
+    // their workspace must fetch the live student list from the backend rather
+    // than relying on the login-time assignedStudents snapshot.
+    final isManagementSession =
+        (mentorSession.user.role ?? '').trim().toLowerCase() == 'management';
+    final students = isManagementSession
+        ? await fetchManagementStudents(token: mentorSession.token)
+        : mentorSession.user.assignedStudents
+              .map(
+                (studentId) =>
+                    StudentSummary(id: studentId, name: '', xp: 0, streak: 0),
+              )
+              .toList(growable: false);
 
-    if (assignedStudentIds.isEmpty) {
+    if (students.isEmpty) {
       throw const FocusMissionApiException(
         'No students are assigned to this mentor yet.',
       );
     }
 
+    final assignedStudentIds = students
+        .map((student) => student.id.trim())
+        .where((studentId) => studentId.isNotEmpty)
+        .toList(growable: false);
     final normalizedSelectedStudentId = (selectedStudentId ?? '').trim();
     final resolvedStudentId =
         assignedStudentIds.contains(normalizedSelectedStudentId)
@@ -1011,7 +1046,7 @@ class FocusMissionApi {
       );
     }
 
-    final students = studentOverviews.values
+    final resolvedStudents = studentOverviews.values
         .map(
           (overview) => StudentSummary(
             id: overview.student.id,
@@ -1021,9 +1056,9 @@ class FocusMissionApi {
           ),
         )
         .toList(growable: false);
-    final selectedStudent = students.firstWhere(
+    final selectedTimetableStudent = resolvedStudents.firstWhere(
       (student) => student.id == resolvedStudentId,
-      orElse: () => students.first,
+      orElse: () => resolvedStudents.first,
     );
     final timetable = await fetchStudentTimetable(
       token: mentorSession.token,
@@ -1035,8 +1070,8 @@ class FocusMissionApi {
 
     return MentorWorkspaceData(
       session: mentorSession,
-      students: students,
-      selectedStudent: selectedStudent,
+      students: resolvedStudents,
+      selectedStudent: selectedTimetableStudent,
       overview: selectedOverview,
       timetable: timetable,
       notificationInbox: notificationInbox,
