@@ -105,6 +105,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   String _downloadingTeacherCopyMissionId = '';
   bool _isSavingCertification = false;
   bool _isSavingTimetable = false;
+  bool _isArchivingStudent = false;
   bool _showTimetableEditor = false;
   bool _showCertificationSetup = false;
   bool _showCreateUserPanel = false;
@@ -838,10 +839,37 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                 const SizedBox(height: AppSpacing.compact),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _openStudentPicker(workspace),
-                    icon: const Icon(Icons.swap_horiz_rounded),
-                    label: const Text('Switch student'),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _isArchivingStudent
+                            ? null
+                            : () => _openStudentPicker(workspace),
+                        icon: const Icon(Icons.swap_horiz_rounded),
+                        label: const Text('Switch student'),
+                      ),
+                      TextButton.icon(
+                        onPressed: _isArchivingStudent
+                            ? null
+                            : () => _archiveSelectedStudent(workspace),
+                        icon: Icon(
+                          _isArchivingStudent
+                              ? Icons.hourglass_top_rounded
+                              : Icons.archive_outlined,
+                        ),
+                        label: Text(
+                          _isArchivingStudent
+                              ? 'Archiving...'
+                              : 'Archive student',
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF9E4053),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: AppSpacing.item),
@@ -1814,6 +1842,88 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       _notificationInbox = null;
       _future = _loadWorkspace();
     });
+  }
+
+  Future<void> _archiveSelectedStudent(MentorWorkspaceData workspace) async {
+    if (_isArchivingStudent) {
+      return;
+    }
+
+    if (workspace.students.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Add another active student before archiving the final learner.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final student = workspace.selectedStudent;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Archive student?'),
+        content: Text(
+          'Archive ${student.name} and hide this learner from teacher switch lists and student quick-fill login chips. Existing evidence stays stored.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _isArchivingStudent = true);
+    try {
+      await _api.archiveManagementStudent(
+        token: _session.token,
+        studentId: student.id,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        // WHY: Archiving removes the current learner from every active picker,
+        // so management must reload against the remaining active roster and
+        // clear student-specific filters tied to the archived record.
+        _selectedStudentId = '';
+        _selectedSubject = _allSubjectsFilterLabel;
+        _selectedResultDate = _allResultDatesFilterLabel;
+        _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
+        _notificationInbox = null;
+        _showTimetableEditor = false;
+        _future = _loadWorkspace();
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${student.name} archived.')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isArchivingStudent = false);
+      }
+    }
   }
 
   Future<void> _openResultReport({

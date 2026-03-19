@@ -449,6 +449,22 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<AppUser> archiveManagementStudent({
+    required String token,
+    required String studentId,
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/management/students/$studentId/archive',
+      token: token,
+    );
+
+    return AppUser.fromJson(
+      (json['student'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
   Future<List<SubjectCertificationSummary>> fetchTeacherStudentCertification({
     required String token,
     required String studentId,
