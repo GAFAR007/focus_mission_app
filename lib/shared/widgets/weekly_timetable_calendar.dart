@@ -109,6 +109,8 @@ class WeeklyTimetableCalendar extends StatefulWidget {
     required this.entries,
     this.title = 'Timetable Planner',
     this.subtitle = 'Switch between a full week and the current month.',
+    this.showHeader = true,
+    this.showPanel = true,
     this.date,
     this.onDateChanged,
     this.onDateTap,
@@ -122,6 +124,8 @@ class WeeklyTimetableCalendar extends StatefulWidget {
   final List<TodaySchedule> entries;
   final String title;
   final String subtitle;
+  final bool showHeader;
+  final bool showPanel;
   final DateTime? date;
   final ValueChanged<DateTime>? onDateChanged;
   final ValueChanged<DateTime>? onDateTap;
@@ -160,11 +164,10 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
     final entriesByDay = <String, TodaySchedule>{
       for (final entry in widget.entries) entry.day: entry,
     };
-
-    return SoftPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    final plannerContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.showHeader) ...[
           _PlannerHeader(
             title: widget.title,
             subtitle: widget.subtitle,
@@ -173,69 +176,75 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
             onActionPressed: widget.onActionPressed,
           ),
           const SizedBox(height: AppSpacing.section),
-          _PlannerModeSwitch(
-            mode: _mode,
-            onChanged: (mode) => setState(() => _mode = mode),
-          ),
-          const SizedBox(height: AppSpacing.item),
-          _PlannerToolbar(
-            mode: _mode,
-            focusedDate: _focusedDate,
-            onPrevious: _moveBackward,
-            onNext: _moveForward,
-            onToday: () => _setFocusedDate(_normalizeDate(DateTime.now())),
-          ),
-          const SizedBox(height: AppSpacing.item),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _InfoPill(
-                icon: Icons.event_note_rounded,
-                label: 'Monday to Sunday view',
-              ),
-              const _InfoPill(
-                icon: Icons.weekend_rounded,
-                label: 'Weekends: No subject',
-              ),
-              _InfoPill(
-                icon: Icons.calendar_view_month_rounded,
-                label: _mode == _PlannerMode.month
-                    ? 'Whole month planner'
-                    : 'Live week planner',
-              ),
-            ],
-          ),
-          if (widget.inlineEditor != null) ...[
-            const SizedBox(height: AppSpacing.section),
-            widget.inlineEditor!,
-          ],
-          const SizedBox(height: AppSpacing.section),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            child: _mode == _PlannerMode.week
-                ? _WeekPlanner(
-                    key: ValueKey<String>(
-                      'week-${_focusedDate.toIso8601String()}',
-                    ),
-                    focusedDate: _focusedDate,
-                    entriesByDay: entriesByDay,
-                    onSelectDate: _handlePlannerDateTap,
-                    showDateEditIcon: widget.showDateEditIcon,
-                  )
-                : _MonthPlanner(
-                    key: ValueKey<String>(
-                      'month-${_focusedDate.toIso8601String()}',
-                    ),
-                    focusedDate: _focusedDate,
-                    entriesByDay: entriesByDay,
-                    onSelectDate: _handlePlannerDateTap,
-                    showDateEditIcon: widget.showDateEditIcon,
-                  ),
-          ),
         ],
-      ),
+        _PlannerModeSwitch(
+          mode: _mode,
+          onChanged: (mode) => setState(() => _mode = mode),
+        ),
+        const SizedBox(height: AppSpacing.item),
+        _PlannerToolbar(
+          mode: _mode,
+          focusedDate: _focusedDate,
+          onPrevious: _moveBackward,
+          onNext: _moveForward,
+          onToday: () => _setFocusedDate(_normalizeDate(DateTime.now())),
+        ),
+        const SizedBox(height: AppSpacing.item),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _InfoPill(
+              icon: Icons.event_note_rounded,
+              label: 'Monday to Sunday view',
+            ),
+            const _InfoPill(
+              icon: Icons.weekend_rounded,
+              label: 'Weekends: No subject',
+            ),
+            _InfoPill(
+              icon: Icons.calendar_view_month_rounded,
+              label: _mode == _PlannerMode.month
+                  ? 'Whole month planner'
+                  : 'Live week planner',
+            ),
+          ],
+        ),
+        if (widget.inlineEditor != null) ...[
+          const SizedBox(height: AppSpacing.section),
+          widget.inlineEditor!,
+        ],
+        const SizedBox(height: AppSpacing.section),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: _mode == _PlannerMode.week
+              ? _WeekPlanner(
+                  key: ValueKey<String>(
+                    'week-${_focusedDate.toIso8601String()}',
+                  ),
+                  focusedDate: _focusedDate,
+                  entriesByDay: entriesByDay,
+                  onSelectDate: _handlePlannerDateTap,
+                  showDateEditIcon: widget.showDateEditIcon,
+                )
+              : _MonthPlanner(
+                  key: ValueKey<String>(
+                    'month-${_focusedDate.toIso8601String()}',
+                  ),
+                  focusedDate: _focusedDate,
+                  entriesByDay: entriesByDay,
+                  onSelectDate: _handlePlannerDateTap,
+                  showDateEditIcon: widget.showDateEditIcon,
+                ),
+        ),
+      ],
     );
+
+    if (!widget.showPanel) {
+      return plannerContent;
+    }
+
+    return SoftPanel(child: plannerContent);
   }
 
   void _moveBackward() {

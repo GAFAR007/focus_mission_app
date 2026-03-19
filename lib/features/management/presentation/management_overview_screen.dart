@@ -108,6 +108,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _showTimetableEditor = false;
   bool _showCertificationSetup = false;
   bool _showCreateUserPanel = false;
+  bool _showCertificationProgressPanel = false;
+  bool _showTimetablePanel = false;
+  bool _showStudentResultsPanel = false;
   bool _certificationEnabled = false;
   AppUser? _lastCreatedUser;
   final Set<String> _selectedCertificationTaskCodes = <String>{};
@@ -664,6 +667,70 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         : 'Teacher account form with subject specialty is ready.';
   }
 
+  String _buildCertificationProgressSummary(
+    List<SubjectCertificationSummary> certifications, {
+    required String selectedSubject,
+  }) {
+    if (certifications.isEmpty) {
+      return 'No certification progress recorded yet.';
+    }
+
+    final totalPassed = certifications.fold<int>(
+      0,
+      (total, item) => total + item.passedTaskCodes.length,
+    );
+    final totalRequired = certifications.fold<int>(
+      0,
+      (total, item) => total + item.requiredTaskCodes.length,
+    );
+    final subjectSummary =
+        selectedSubject == _allCertificationSubjectsFilterLabel
+        ? '${certifications.length} subject${certifications.length == 1 ? '' : 's'}'
+        : selectedSubject;
+
+    return '$subjectSummary · $totalPassed/$totalRequired task focuses passed';
+  }
+
+  String _buildTimetablePanelSummary({
+    required TodaySchedule? selectedEntry,
+    required DateTime selectedDate,
+    required int scheduledDayCount,
+  }) {
+    final scheduledDayLabel =
+        '$scheduledDayCount scheduled day${scheduledDayCount == 1 ? '' : 's'}';
+
+    if (_isWeekendDate(selectedDate)) {
+      return 'Weekend selected · $scheduledDayLabel';
+    }
+
+    final day = _weekdayLabelForDate(selectedDate);
+    if (selectedEntry == null) {
+      return '$day · No lessons assigned · $scheduledDayLabel';
+    }
+
+    final room = selectedEntry.room.trim().isEmpty
+        ? 'Room pending'
+        : selectedEntry.room.trim();
+    return '$day · ${selectedEntry.morningMission.name} / ${selectedEntry.afternoonMission.name} · $room';
+  }
+
+  String _buildStudentResultsSummary({
+    required List<MissionPayload> filteredResults,
+    required String selectedSubject,
+    required String selectedDate,
+  }) {
+    final resultLabel =
+        '${filteredResults.length} result${filteredResults.length == 1 ? '' : 's'}';
+    final subjectLabel = selectedSubject == _allSubjectsFilterLabel
+        ? 'All subjects'
+        : selectedSubject;
+    final dateLabel = selectedDate == _allResultDatesFilterLabel
+        ? 'All dates'
+        : selectedDate;
+
+    return '$resultLabel · $subjectLabel · $dateLabel';
+  }
+
   @override
   Widget build(BuildContext context) {
     return FocusScaffold(
@@ -827,69 +894,97 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Task-focus certification',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Track which required task focuses this student has already passed for each subject.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppPalette.textMuted,
+                      _ManagementExpandableHeader(
+                        title: 'Task-focus certification',
+                        subtitle:
+                            'Track which required task focuses this student has already passed for each subject.',
+                        summary: _buildCertificationProgressSummary(
+                          filteredCertifications,
+                          selectedSubject: selectedCertificationSubject,
+                        ),
+                        isExpanded: _showCertificationProgressPanel,
+                        onToggle: () => setState(
+                          () => _showCertificationProgressPanel =
+                              !_showCertificationProgressPanel,
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.compact),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: certificationFilters
-                            .map(
-                              (subject) => _SubjectFilterChip(
-                                label: subject,
-                                selected:
-                                    subject == selectedCertificationSubject,
-                                onTap: () => setState(
-                                  () => _selectedCertificationSubject = subject,
-                                ),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        child: !_showCertificationProgressPanel
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AppSpacing.compact),
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    children: certificationFilters
+                                        .map(
+                                          (subject) => _SubjectFilterChip(
+                                            label: subject,
+                                            selected:
+                                                subject ==
+                                                selectedCertificationSubject,
+                                            onTap: () => setState(
+                                              () =>
+                                                  _selectedCertificationSubject =
+                                                      subject,
+                                            ),
+                                          ),
+                                        )
+                                        .toList(growable: false),
+                                  ),
+                                  const SizedBox(height: AppSpacing.item),
+                                  if (filteredCertifications.isEmpty)
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.item,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.78,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.radiusMd,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'No certification templates are active for this student yet.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    )
+                                  else
+                                    ...filteredCertifications.map(
+                                      (certification) => Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: AppSpacing.compact,
+                                        ),
+                                        child: _ManagementCertificationCard(
+                                          certification: certification,
+                                          missionByResultPackageId: {
+                                            for (final mission
+                                                in data.recentResults)
+                                              mission.latestResultPackageId
+                                                      .trim():
+                                                  mission,
+                                          },
+                                          onOpenResult: (mission) =>
+                                              _openResultReport(
+                                                mission: mission,
+                                                student:
+                                                    workspace.selectedStudent,
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
-                            )
-                            .toList(growable: false),
                       ),
-                      const SizedBox(height: AppSpacing.item),
-                      if (filteredCertifications.isEmpty)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(AppSpacing.item),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.78),
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.radiusMd,
-                            ),
-                          ),
-                          child: Text(
-                            'No certification templates are active for this student yet.',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        )
-                      else
-                        ...filteredCertifications.map(
-                          (certification) => Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppSpacing.compact,
-                            ),
-                            child: _ManagementCertificationCard(
-                              certification: certification,
-                              missionByResultPackageId: {
-                                for (final mission in data.recentResults)
-                                  mission.latestResultPackageId.trim(): mission,
-                              },
-                              onOpenResult: (mission) => _openResultReport(
-                                mission: mission,
-                                student: workspace.selectedStudent,
-                              ),
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -1244,89 +1339,162 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   onTapNotification: _openNotification,
                 ),
                 const SizedBox(height: AppSpacing.item),
-                WeeklyTimetableCalendar(
-                  title: 'Student Timetable',
-                  subtitle:
-                      'Confirm lesson coverage across week and month for the selected student.',
-                  entries: workspace.timetable,
-                  date: _selectedTimetableDate,
-                  showDateEditIcon: true,
-                  actionLabel: _showTimetableEditor
-                      ? 'Hide timetable editor'
-                      : selectedTimetableHasEntry
-                      ? 'Update teacher, subject, and room'
-                      : 'Add teacher, subject, and room',
-                  actionIcon: _showTimetableEditor
-                      ? Icons.keyboard_arrow_up_rounded
-                      : selectedTimetableHasEntry
-                      ? Icons.edit_calendar_rounded
-                      : Icons.add_circle_outline_rounded,
-                  onActionPressed: () => _toggleTimetableEditor(data),
-                  inlineEditor: _showTimetableEditor
-                      ? _ManagementTimetableInlineEditor(
+                SoftPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _ManagementExpandableHeader(
+                        title: 'Student Timetable',
+                        subtitle:
+                            'Confirm lesson coverage across week and month for the selected student.',
+                        summary: _buildTimetablePanelSummary(
+                          selectedEntry: selectedTimetableEntry,
                           selectedDate: _selectedTimetableDate,
-                          isWeekend: _isWeekendDate(_selectedTimetableDate),
-                          hasExistingEntry: selectedTimetableHasEntry,
-                          hasSubjects: data.certificationSubjects.isNotEmpty,
-                          subjectOptions: data.certificationSubjects,
-                          teacherOptions: data.teachers,
-                          selectedDayKey: _selectedTimetableDay,
-                          selectedMorningSubjectId: _selectedMorningSubjectId,
-                          selectedAfternoonSubjectId:
-                              _selectedAfternoonSubjectId,
-                          selectedMorningTeacherId: _selectedMorningTeacherId,
-                          selectedAfternoonTeacherId:
-                              _selectedAfternoonTeacherId,
-                          selectedMorningRoom: _selectedMorningRoom,
-                          selectedAfternoonRoom: _selectedAfternoonRoom,
-                          roomOptions: _timetableRoomOptions,
-                          isSaving: _isSavingTimetable,
-                          onMorningSubjectChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() => _selectedMorningSubjectId = value);
-                          },
-                          onAfternoonSubjectChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() => _selectedAfternoonSubjectId = value);
-                          },
-                          onMorningTeacherChanged: (value) => setState(
-                            () => _selectedMorningTeacherId = value ?? '',
-                          ),
-                          onAfternoonTeacherChanged: (value) => setState(
-                            () => _selectedAfternoonTeacherId = value ?? '',
-                          ),
-                          onMorningRoomChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() => _selectedMorningRoom = value);
-                          },
-                          onAfternoonRoomChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() => _selectedAfternoonRoom = value);
-                          },
-                          onSave: () => _saveTimetableEntry(data),
-                        )
-                      : null,
-                  onDateChanged: (date) => setState(
-                    () => _selectTimetableDate(
-                      date: date,
-                      timetable: workspace.timetable,
-                      subjects: data.certificationSubjects,
-                      teachers: data.teachers,
-                    ),
-                  ),
-                  onDateTap: (date) => _openTimetableEditorForDate(
-                    date: date,
-                    timetable: workspace.timetable,
-                    subjects: data.certificationSubjects,
-                    teachers: data.teachers,
+                          scheduledDayCount: workspace.timetable.length,
+                        ),
+                        isExpanded: _showTimetablePanel,
+                        onToggle: () => setState(() {
+                          _showTimetablePanel = !_showTimetablePanel;
+                          if (!_showTimetablePanel) {
+                            _showTimetableEditor = false;
+                          }
+                        }),
+                      ),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        child: !_showTimetablePanel
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AppSpacing.compact),
+                                  WeeklyTimetableCalendar(
+                                    title: 'Student Timetable',
+                                    subtitle:
+                                        'Confirm lesson coverage across week and month for the selected student.',
+                                    entries: workspace.timetable,
+                                    date: _selectedTimetableDate,
+                                    showHeader: false,
+                                    showPanel: false,
+                                    showDateEditIcon: true,
+                                    actionLabel: _showTimetableEditor
+                                        ? 'Hide timetable editor'
+                                        : selectedTimetableHasEntry
+                                        ? 'Update teacher, subject, and room'
+                                        : 'Add teacher, subject, and room',
+                                    actionIcon: _showTimetableEditor
+                                        ? Icons.keyboard_arrow_up_rounded
+                                        : selectedTimetableHasEntry
+                                        ? Icons.edit_calendar_rounded
+                                        : Icons.add_circle_outline_rounded,
+                                    onActionPressed: () =>
+                                        _toggleTimetableEditor(data),
+                                    inlineEditor: _showTimetableEditor
+                                        ? _ManagementTimetableInlineEditor(
+                                            selectedDate:
+                                                _selectedTimetableDate,
+                                            isWeekend: _isWeekendDate(
+                                              _selectedTimetableDate,
+                                            ),
+                                            hasExistingEntry:
+                                                selectedTimetableHasEntry,
+                                            hasSubjects: data
+                                                .certificationSubjects
+                                                .isNotEmpty,
+                                            subjectOptions:
+                                                data.certificationSubjects,
+                                            teacherOptions: data.teachers,
+                                            selectedDayKey:
+                                                _selectedTimetableDay,
+                                            selectedMorningSubjectId:
+                                                _selectedMorningSubjectId,
+                                            selectedAfternoonSubjectId:
+                                                _selectedAfternoonSubjectId,
+                                            selectedMorningTeacherId:
+                                                _selectedMorningTeacherId,
+                                            selectedAfternoonTeacherId:
+                                                _selectedAfternoonTeacherId,
+                                            selectedMorningRoom:
+                                                _selectedMorningRoom,
+                                            selectedAfternoonRoom:
+                                                _selectedAfternoonRoom,
+                                            roomOptions: _timetableRoomOptions,
+                                            isSaving: _isSavingTimetable,
+                                            onMorningSubjectChanged: (value) {
+                                              if (value == null) {
+                                                return;
+                                              }
+                                              setState(
+                                                () =>
+                                                    _selectedMorningSubjectId =
+                                                        value,
+                                              );
+                                            },
+                                            onAfternoonSubjectChanged: (value) {
+                                              if (value == null) {
+                                                return;
+                                              }
+                                              setState(
+                                                () =>
+                                                    _selectedAfternoonSubjectId =
+                                                        value,
+                                              );
+                                            },
+                                            onMorningTeacherChanged: (value) =>
+                                                setState(
+                                                  () =>
+                                                      _selectedMorningTeacherId =
+                                                          value ?? '',
+                                                ),
+                                            onAfternoonTeacherChanged:
+                                                (value) => setState(
+                                                  () =>
+                                                      _selectedAfternoonTeacherId =
+                                                          value ?? '',
+                                                ),
+                                            onMorningRoomChanged: (value) {
+                                              if (value == null) {
+                                                return;
+                                              }
+                                              setState(
+                                                () => _selectedMorningRoom =
+                                                    value,
+                                              );
+                                            },
+                                            onAfternoonRoomChanged: (value) {
+                                              if (value == null) {
+                                                return;
+                                              }
+                                              setState(
+                                                () => _selectedAfternoonRoom =
+                                                    value,
+                                              );
+                                            },
+                                            onSave: () =>
+                                                _saveTimetableEntry(data),
+                                          )
+                                        : null,
+                                    onDateChanged: (date) => setState(
+                                      () => _selectTimetableDate(
+                                        date: date,
+                                        timetable: workspace.timetable,
+                                        subjects: data.certificationSubjects,
+                                        teachers: data.teachers,
+                                      ),
+                                    ),
+                                    onDateTap: (date) =>
+                                        _openTimetableEditorForDate(
+                                          date: date,
+                                          timetable: workspace.timetable,
+                                          subjects: data.certificationSubjects,
+                                          teachers: data.teachers,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: AppSpacing.item),
@@ -1335,165 +1503,206 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Student Results',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Filter by subject or mission date, download the selected result set, or export each mission as a result or teacher copy.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppPalette.textMuted,
+                      _ManagementExpandableHeader(
+                        title: 'Student Results',
+                        subtitle:
+                            'Filter by subject or mission date, download the selected result set, or export each mission as a result or teacher copy.',
+                        summary: _buildStudentResultsSummary(
+                          filteredResults: filteredResults,
+                          selectedSubject: selectedSubject,
+                          selectedDate: selectedResultDate,
+                        ),
+                        isExpanded: _showStudentResultsPanel,
+                        onToggle: () => setState(
+                          () => _showStudentResultsPanel =
+                              !_showStudentResultsPanel,
                         ),
                       ),
-                      const SizedBox(height: AppSpacing.compact),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: subjectFilters
-                            .map(
-                              (subject) => _SubjectFilterChip(
-                                label: subject,
-                                selected: subject == selectedSubject,
-                                onTap: () =>
-                                    setState(() => _selectedSubject = subject),
-                              ),
-                            )
-                            .toList(growable: false),
-                      ),
-                      const SizedBox(height: AppSpacing.compact),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final compact = constraints.maxWidth < 760;
-                          final dateFilter = DropdownButtonFormField<String>(
-                            initialValue: selectedResultDate,
-                            decoration: const InputDecoration(
-                              labelText: 'Mission date',
-                            ),
-                            items: resultDateFilters
-                                .map(
-                                  (dateLabel) => DropdownMenuItem<String>(
-                                    value: dateLabel,
-                                    child: Text(dateLabel),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        child: !_showStudentResultsPanel
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AppSpacing.compact),
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    children: subjectFilters
+                                        .map(
+                                          (subject) => _SubjectFilterChip(
+                                            label: subject,
+                                            selected:
+                                                subject == selectedSubject,
+                                            onTap: () => setState(
+                                              () => _selectedSubject = subject,
+                                            ),
+                                          ),
+                                        )
+                                        .toList(growable: false),
                                   ),
-                                )
-                                .toList(growable: false),
-                            onChanged: (value) {
-                              if (value == null) {
-                                return;
-                              }
-                              setState(() => _selectedResultDate = value);
-                            },
-                          );
-                          final downloadButton = SizedBox(
-                            width: compact ? double.infinity : null,
-                            child: FilledButton.icon(
-                              onPressed:
-                                  filteredResults.isEmpty ||
-                                      _isAnyManagementDownloadActive
-                                  ? null
-                                  : () => _downloadFilteredResults(
-                                      student: workspace.selectedStudent,
-                                      missions: filteredResults,
+                                  const SizedBox(height: AppSpacing.compact),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final compact =
+                                          constraints.maxWidth < 760;
+                                      final dateFilter =
+                                          DropdownButtonFormField<String>(
+                                            initialValue: selectedResultDate,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Mission date',
+                                            ),
+                                            items: resultDateFilters
+                                                .map(
+                                                  (dateLabel) =>
+                                                      DropdownMenuItem<String>(
+                                                        value: dateLabel,
+                                                        child: Text(dateLabel),
+                                                      ),
+                                                )
+                                                .toList(growable: false),
+                                            onChanged: (value) {
+                                              if (value == null) {
+                                                return;
+                                              }
+                                              setState(
+                                                () =>
+                                                    _selectedResultDate = value,
+                                              );
+                                            },
+                                          );
+                                      final downloadButton = SizedBox(
+                                        width: compact ? double.infinity : null,
+                                        child: FilledButton.icon(
+                                          onPressed:
+                                              filteredResults.isEmpty ||
+                                                  _isAnyManagementDownloadActive
+                                              ? null
+                                              : () => _downloadFilteredResults(
+                                                  student:
+                                                      workspace.selectedStudent,
+                                                  missions: filteredResults,
+                                                ),
+                                          icon: Icon(
+                                            _isAnyManagementDownloadActive
+                                                ? Icons.hourglass_top_rounded
+                                                : Icons.download_rounded,
+                                          ),
+                                          label: Text(
+                                            _isAnyManagementDownloadActive
+                                                ? 'Preparing download...'
+                                                : 'Download filtered results',
+                                          ),
+                                        ),
+                                      );
+                                      final resultCount = Text(
+                                        '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: AppPalette.textMuted,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      );
+
+                                      if (compact) {
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            dateFilter,
+                                            const SizedBox(height: 10),
+                                            resultCount,
+                                            const SizedBox(height: 10),
+                                            downloadButton,
+                                          ],
+                                        );
+                                      }
+
+                                      return Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Expanded(child: dateFilter),
+                                          const SizedBox(width: 12),
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 12,
+                                            ),
+                                            child: resultCount,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          downloadButton,
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: AppSpacing.item),
+                                  if (filteredResults.isEmpty)
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.item,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.78,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.radiusMd,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        data.recentResults.isEmpty
+                                            ? 'No saved result packages were found for this student yet.'
+                                            : 'No results match this subject filter.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    )
+                                  else
+                                    ...filteredResults.map(
+                                      (mission) => Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: AppSpacing.compact,
+                                        ),
+                                        child: _ManagementResultCard(
+                                          mission: mission,
+                                          downloadsLocked:
+                                              _isAnyManagementDownloadActive,
+                                          isDownloading:
+                                              _downloadingResultPackageId ==
+                                              mission.latestResultPackageId
+                                                  .trim(),
+                                          isDownloadingTeacherCopy:
+                                              _downloadingTeacherCopyMissionId ==
+                                              mission.id.trim(),
+                                          onDownload: () =>
+                                              _downloadMissionResult(
+                                                student:
+                                                    workspace.selectedStudent,
+                                                mission: mission,
+                                              ),
+                                          onDownloadTeacherCopy: () =>
+                                              _downloadMissionTeacherCopy(
+                                                student:
+                                                    workspace.selectedStudent,
+                                                mission: mission,
+                                              ),
+                                          onView: () => _openResultReport(
+                                            mission: mission,
+                                            student: workspace.selectedStudent,
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                              icon: Icon(
-                                _isAnyManagementDownloadActive
-                                    ? Icons.hourglass_top_rounded
-                                    : Icons.download_rounded,
+                                ],
                               ),
-                              label: Text(
-                                _isAnyManagementDownloadActive
-                                    ? 'Preparing download...'
-                                    : 'Download filtered results',
-                              ),
-                            ),
-                          );
-                          final resultCount = Text(
-                            '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: AppPalette.textMuted,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          );
-
-                          if (compact) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                dateFilter,
-                                const SizedBox(height: 10),
-                                resultCount,
-                                const SizedBox(height: 10),
-                                downloadButton,
-                              ],
-                            );
-                          }
-
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Expanded(child: dateFilter),
-                              const SizedBox(width: 12),
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: resultCount,
-                              ),
-                              const SizedBox(width: 12),
-                              downloadButton,
-                            ],
-                          );
-                        },
                       ),
-                      const SizedBox(height: AppSpacing.item),
-                      if (filteredResults.isEmpty)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(AppSpacing.item),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.78),
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.radiusMd,
-                            ),
-                          ),
-                          child: Text(
-                            data.recentResults.isEmpty
-                                ? 'No saved result packages were found for this student yet.'
-                                : 'No results match this subject filter.',
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        )
-                      else
-                        ...filteredResults.map(
-                          (mission) => Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: AppSpacing.compact,
-                            ),
-                            child: _ManagementResultCard(
-                              mission: mission,
-                              downloadsLocked: _isAnyManagementDownloadActive,
-                              isDownloading:
-                                  _downloadingResultPackageId ==
-                                  mission.latestResultPackageId.trim(),
-                              isDownloadingTeacherCopy:
-                                  _downloadingTeacherCopyMissionId ==
-                                  mission.id.trim(),
-                              onDownload: () => _downloadMissionResult(
-                                student: workspace.selectedStudent,
-                                mission: mission,
-                              ),
-                              onDownloadTeacherCopy: () =>
-                                  _downloadMissionTeacherCopy(
-                                    student: workspace.selectedStudent,
-                                    mission: mission,
-                                  ),
-                              onView: () => _openResultReport(
-                                mission: mission,
-                                student: workspace.selectedStudent,
-                              ),
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -1598,6 +1807,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       _selectedStudentId = selectedStudentId;
       _selectedSubject = _allSubjectsFilterLabel;
       _selectedResultDate = _allResultDatesFilterLabel;
+      _showTimetableEditor = false;
+      _showCertificationProgressPanel = false;
+      _showTimetablePanel = false;
+      _showStudentResultsPanel = false;
       _notificationInbox = null;
       _future = _loadWorkspace();
     });
@@ -1677,6 +1890,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           _selectedStudentId = createdUser.id;
           _selectedSubject = _allSubjectsFilterLabel;
           _selectedResultDate = _allResultDatesFilterLabel;
+          _showTimetableEditor = false;
+          _showCertificationProgressPanel = false;
+          _showTimetablePanel = false;
+          _showStudentResultsPanel = false;
           _notificationInbox = null;
           _future = _loadWorkspace();
         }
@@ -3685,75 +3902,104 @@ class _ManagementExpandableHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final toggleButton = TextButton.icon(
-      onPressed: onToggle,
-      icon: Icon(
-        isExpanded
-            ? Icons.keyboard_arrow_up_rounded
-            : Icons.keyboard_arrow_down_rounded,
+    final toggleLabel = isExpanded ? 'Hide' : 'Show';
+    final toggleAffordance = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(999),
       ),
-      label: Text(isExpanded ? 'Hide' : 'Show'),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isExpanded
+                ? Icons.keyboard_arrow_up_rounded
+                : Icons.keyboard_arrow_down_rounded,
+            size: 18,
+            color: AppPalette.navy,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            toggleLabel,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.navy,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final stacked = constraints.maxWidth < 840;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 840;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (stacked) ...[
-              Row(
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                  toggleButton,
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                subtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-              ),
-              const SizedBox(height: 10),
-              _ManagementSectionSummary(summary: summary),
-            ] else
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
+                  if (stacked) ...[
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          title,
-                          style: Theme.of(context).textTheme.titleMedium,
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitle,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AppPalette.textMuted),
-                        ),
-                        const SizedBox(height: 10),
-                        _ManagementSectionSummary(summary: summary),
+                        toggleAffordance,
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  toggleButton,
+                    const SizedBox(height: 6),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _ManagementSectionSummary(summary: summary),
+                  ] else
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                subtitle,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: AppPalette.textMuted),
+                              ),
+                              const SizedBox(height: 10),
+                              _ManagementSectionSummary(summary: summary),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        toggleAffordance,
+                      ],
+                    ),
                 ],
-              ),
-          ],
-        );
-      },
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }
