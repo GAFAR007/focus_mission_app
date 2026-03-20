@@ -716,7 +716,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   }
 
   String _buildStudentResultsSummary({
-    required List<MissionPayload> filteredResults,
+    required List<ResultHistoryItem> filteredResults,
     required String selectedSubject,
     required String selectedDate,
   }) {
@@ -1534,7 +1534,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                       _ManagementExpandableHeader(
                         title: 'Student Results',
                         subtitle:
-                            'Filter by subject or mission date, download the selected result set, or export each mission as a result or teacher copy.',
+                            'Filter by subject or result date, download the selected result set, or export each mission result or paper assessment.',
                         summary: _buildStudentResultsSummary(
                           filteredResults: filteredResults,
                           selectedSubject: selectedSubject,
@@ -1580,7 +1580,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                           DropdownButtonFormField<String>(
                                             initialValue: selectedResultDate,
                                             decoration: const InputDecoration(
-                                              labelText: 'Mission date',
+                                              labelText: 'Result date',
                                             ),
                                             items: resultDateFilters
                                                 .map(
@@ -1708,7 +1708,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                                   .trim(),
                                           isDownloadingTeacherCopy:
                                               _downloadingTeacherCopyMissionId ==
-                                              mission.id.trim(),
+                                              mission.missionId.trim(),
                                           onDownload: () =>
                                               _downloadMissionResult(
                                                 student:
@@ -1927,10 +1927,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   }
 
   Future<void> _openResultReport({
-    required MissionPayload mission,
+    required ResultHistoryItem mission,
     required StudentSummary student,
   }) async {
-    final resultPackageId = mission.latestResultPackageId.trim();
+    final resultPackageId = mission.resultPackageId.trim();
 
     if (resultPackageId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1947,7 +1947,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       MaterialPageRoute<void>(
         builder: (_) => ResultReportScreen(
           session: _session,
-          mission: mission,
+          mission: mission.toMissionContext(),
           student: student,
           resultPackageId: resultPackageId,
           api: _api,
@@ -2089,7 +2089,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     );
   }
 
-  List<String> _buildSubjectFilters(List<MissionPayload> missions) {
+  List<String> _buildSubjectFilters(List<ResultHistoryItem> missions) {
     final labels = <String>{_allSubjectsFilterLabel};
 
     for (final mission in missions) {
@@ -2102,7 +2102,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return labels.toList(growable: false);
   }
 
-  List<String> _buildResultDateFilters(List<MissionPayload> missions) {
+  List<String> _buildResultDateFilters(List<ResultHistoryItem> missions) {
     final dates = <String>{};
 
     for (final mission in missions) {
@@ -2117,8 +2117,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return <String>[_allResultDatesFilterLabel, ...sortedDates];
   }
 
-  List<MissionPayload> _filterResults(
-    List<MissionPayload> missions, {
+  List<ResultHistoryItem> _filterResults(
+    List<ResultHistoryItem> missions, {
     required String subject,
     required String dateKey,
   }) {
@@ -2135,7 +2135,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         .toList(growable: false);
   }
 
-  String _resultDateKeyForMission(MissionPayload mission) {
+  String _resultDateKeyForMission(ResultHistoryItem mission) {
     final scheduledDate = (mission.availableOnDate ?? '').trim();
     if (scheduledDate.isNotEmpty) {
       return _formatManagementMissionDate(scheduledDate);
@@ -2148,7 +2148,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
   Future<void> _downloadFilteredResults({
     required StudentSummary student,
-    required List<MissionPayload> missions,
+    required List<ResultHistoryItem> missions,
   }) async {
     if (_isAnyManagementDownloadActive || missions.isEmpty) {
       return;
@@ -2204,7 +2204,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
   Future<void> _downloadMissionResult({
     required StudentSummary student,
-    required MissionPayload mission,
+    required ResultHistoryItem mission,
   }) async {
     final resultPackageId = mission.latestResultPackageId.trim();
     if (_isAnyManagementDownloadActive || resultPackageId.isEmpty) {
@@ -2258,10 +2258,12 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
   Future<void> _downloadMissionTeacherCopy({
     required StudentSummary student,
-    required MissionPayload mission,
+    required ResultHistoryItem mission,
   }) async {
-    final missionId = mission.id.trim();
-    if (_isAnyManagementDownloadActive || missionId.isEmpty) {
+    final missionId = mission.missionId.trim();
+    if (_isAnyManagementDownloadActive ||
+        missionId.isEmpty ||
+        !mission.hasTeacherCopy) {
       return;
     }
 
@@ -2310,7 +2312,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   }
 
   Future<_ManagementResultExportRow> _loadResultExportRowForMission(
-    MissionPayload mission,
+    ResultHistoryItem mission,
   ) async {
     final resultPackageId = mission.latestResultPackageId.trim();
     if (resultPackageId.isEmpty) {
@@ -2342,7 +2344,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
   String _buildManagementMissionResultFileName({
     required StudentSummary student,
-    required MissionPayload mission,
+    required ResultHistoryItem mission,
   }) {
     final studentSlug = _sanitizeManagementFileName(student.name);
     final missionSlug = _sanitizeManagementFileName(mission.title);
@@ -2354,7 +2356,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
   String _buildManagementTeacherCopyFileName({
     required StudentSummary student,
-    required MissionPayload mission,
+    required ResultHistoryItem mission,
   }) {
     final studentSlug = _sanitizeManagementFileName(student.name);
     final missionSlug = _sanitizeManagementFileName(mission.title);
@@ -2420,8 +2422,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         ? '${rows.first.resultPackage.meta.missionTitle} Result Export'
         : '${student.name} Result Export';
     final heroSummary = rows.length == 1
-        ? 'Saved result evidence for one completed mission from the management workspace.'
-        : 'Grouped by mission date and subject using saved result packages from the management workspace.';
+        ? rows.first.mission.isPaperAssessment
+              ? 'Saved result evidence for one paper assessment from the management workspace.'
+              : 'Saved result evidence for one completed mission from the management workspace.'
+        : 'Grouped by result date and subject using saved result packages from the management workspace.';
 
     final buffer = StringBuffer()
       ..writeln('<!DOCTYPE html>')
@@ -2491,7 +2495,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
   String _buildManagementTeacherCopyHtml({
     required StudentSummary student,
-    required MissionPayload mission,
+    required ResultHistoryItem mission,
   }) {
     final subjectName = (mission.subject?.name ?? 'No subject').trim();
     final taskFocusText = mission.taskCodes.isEmpty
@@ -2632,7 +2636,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return buffer.toString();
   }
 
-  String _buildManagementTeacherCopyQuestionHtml(MissionPayload mission) {
+  String _buildManagementTeacherCopyQuestionHtml(ResultHistoryItem mission) {
     final questions = mission.questions;
     if (questions.isEmpty) {
       return '<section class="section-card"><h2>Questions</h2><p class="section-kicker">No question content was saved for this mission.</p></section>';
@@ -2728,7 +2732,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return buffer.toString();
   }
 
-  String _buildManagementTeacherCopyEssayHtml(MissionPayload mission) {
+  String _buildManagementTeacherCopyEssayHtml(ResultHistoryItem mission) {
     final draft = mission.essayBuilderDraft;
     if (draft == null) {
       return '<section class="section-card"><h2>Essay Builder</h2><p class="section-kicker">Essay builder draft is missing for this mission.</p></section>';
@@ -3151,7 +3155,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return (row.mission.subject?.name ?? 'No subject').trim();
   }
 
-  String _managementFormatLabel(MissionPayload mission) {
+  String _managementFormatLabel(ResultHistoryItem mission) {
+    if (mission.isPaperAssessment) {
+      return 'Paper Assessment';
+    }
     if (mission.draftFormat == 'THEORY') {
       return 'Theory';
     }
@@ -3631,8 +3638,8 @@ class _ManagementCertificationCard extends StatelessWidget {
   });
 
   final SubjectCertificationSummary certification;
-  final Map<String, MissionPayload> missionByResultPackageId;
-  final ValueChanged<MissionPayload> onOpenResult;
+  final Map<String, ResultHistoryItem> missionByResultPackageId;
+  final ValueChanged<ResultHistoryItem> onOpenResult;
 
   @override
   Widget build(BuildContext context) {
@@ -3859,7 +3866,7 @@ class _ManagementScreenData {
   });
 
   final MentorWorkspaceData workspace;
-  final List<MissionPayload> recentResults;
+  final List<ResultHistoryItem> recentResults;
   final List<SubjectCertificationSummary> certifications;
   final List<SubjectCertificationSettings> certificationSubjects;
   final List<TeacherSummary> teachers;
@@ -3871,7 +3878,7 @@ class _ManagementResultExportRow {
     required this.resultPackage,
   });
 
-  final MissionPayload mission;
+  final ResultHistoryItem mission;
   final ResultPackageData resultPackage;
 }
 
@@ -4590,7 +4597,7 @@ class _ManagementResultCard extends StatelessWidget {
     this.isDownloadingTeacherCopy = false,
   });
 
-  final MissionPayload mission;
+  final ResultHistoryItem mission;
   final bool downloadsLocked;
   final VoidCallback onDownload;
   final VoidCallback onDownloadTeacherCopy;
@@ -4624,6 +4631,13 @@ class _ManagementResultCard extends StatelessWidget {
     final dateLabel = _formatManagementMissionDate(
       mission.availableOnDate ?? mission.publishedAt ?? mission.createdAt,
     );
+    final formatLabel = mission.isPaperAssessment
+        ? 'Paper assessment'
+        : mission.draftFormat == 'ESSAY_BUILDER'
+        ? 'Essay Builder'
+        : mission.draftFormat == 'THEORY'
+        ? 'Theory'
+        : '${mission.questionCount} questions';
 
     return Container(
       width: double.infinity,
@@ -4670,7 +4684,7 @@ class _ManagementResultCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '${mission.draftFormat == 'ESSAY_BUILDER' ? 'Essay Builder' : '${mission.questionCount} questions'} · ${mission.sessionType} · $dateLabel',
+            '$formatLabel · ${mission.sessionType} · $dateLabel',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -4740,7 +4754,7 @@ class _ManagementResultCard extends StatelessWidget {
                   ? SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: downloadsLocked
+                        onPressed: downloadsLocked || !mission.hasTeacherCopy
                             ? null
                             : onDownloadTeacherCopy,
                         icon: Icon(
@@ -4757,7 +4771,7 @@ class _ManagementResultCard extends StatelessWidget {
                     )
                   : Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: downloadsLocked
+                        onPressed: downloadsLocked || !mission.hasTeacherCopy
                             ? null
                             : onDownloadTeacherCopy,
                         icon: Icon(

@@ -1,14 +1,16 @@
 /**
  * WHAT:
- * ResultReportScreen shows one mission Result Package, lets teachers upload
- * work evidence, apply teacher review scores, and send the package onward.
+ * ResultReportScreen shows one mission or paper-assessment Result Package, lets
+ * teachers upload work evidence, apply teacher review scores, and send the
+ * package onward.
  * WHY:
- * Teachers need one auditable review screen for mission outcomes, uploaded work
- * samples, manual scoring, and delivery status visibility.
+ * Teachers need one auditable review screen for mission outcomes and
+ * paper-based classroom assessments, including uploaded work samples, manual
+ * scoring, and delivery status visibility.
  * HOW:
- * Fetch the result package by id, render meta + evidence dynamically by format,
- * upload report screenshots or work files, save teacher review scores, and
- * call send endpoint with chosen channels.
+ * Fetch the result package by id, render meta + evidence dynamically by source
+ * and format, upload report screenshots or work files, save teacher review
+ * scores, and call send endpoint with chosen channels.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -394,7 +396,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
         final sessionType = widget.mission.sessionType.trim();
         if (subjectId.isEmpty || targetDate.isEmpty || sessionType.isEmpty) {
           throw const FocusMissionApiException(
-            'Pick a valid lesson subject and date before uploading an offline result.',
+            'Pick a valid lesson subject and date before uploading a paper result.',
           );
         }
       }
@@ -408,7 +410,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
               fileBytes: bytes,
               fileName: file.name,
             )
-          : await widget.api.createTeacherLessonManualResultPackage(
+          : await widget.api.createTeacherPaperResultPackage(
               token: widget.session.token,
               studentId: widget.student.id,
               subjectId: (widget.mission.subject?.id ?? '').trim(),
@@ -435,7 +437,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
         SnackBar(
           content: Text(
             widget.mission.id.trim().isEmpty
-                ? 'Offline result created for this lesson. Review and score it below.'
+                ? 'Paper result created for this lesson. Review and score it below.'
                 : 'Manual result created. Review and score it below.',
           ),
         ),
@@ -1468,13 +1470,13 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     final isLessonSlotFallback = widget.mission.id.trim().isEmpty;
     final formatLabel = widget.mission.draftFormat == 'THEORY'
         ? isLessonSlotFallback
-              ? 'No published mission exists for this lesson slot. Upload the student work first, then score each theory answer on the next screen.'
+              ? 'No paper assessment has been uploaded for this lesson slot yet. Upload the student work first, then score each theory answer on the next screen.'
               : 'Upload the student work first, then score each theory answer on the next screen.'
         : isLessonSlotFallback
-        ? 'No published mission exists for this lesson slot. Upload the student work first, then save the teacher review score out of 10, 30, 50, or 100.'
+        ? 'No paper assessment has been uploaded for this lesson slot yet. Upload the student work first, then save the teacher review score out of 10, 30, 50, or 100.'
         : 'Upload the student work first, then save the teacher review score out of 10, 30, 50, or 100.';
     final noResultSummary = isLessonSlotFallback
-        ? 'No saved result package exists yet for ${widget.student.name} in this ${widget.mission.sessionType} ${widget.mission.subject?.name ?? 'lesson'} slot.'
+        ? 'No saved paper result exists yet for ${widget.student.name} in this ${widget.mission.sessionType} ${widget.mission.subject?.name ?? 'lesson'} slot.'
         : 'This mission does not have a saved result package yet for ${widget.student.name}.';
 
     return Center(
@@ -2141,6 +2143,7 @@ class _StatusPanel extends StatelessWidget {
     final isTheory = resultPackage.missionType == 'THEORY';
     final isManualTeacherResult =
         resultPackage.evidence['manualTeacherResult'] == true;
+    final isPaperAssessment = resultPackage.resultKind == 'paper_assessment';
     final teacherReviewStatus =
         (resultPackage.evidence['teacherReviewStatus'] ?? 'pending')
             .toString()
@@ -2174,7 +2177,11 @@ class _StatusPanel extends StatelessWidget {
         spacing: 10,
         runSpacing: 10,
         children: [
-          _Pill(label: 'Type: ${resultPackage.missionType}'),
+          _Pill(
+            label: isPaperAssessment
+                ? 'Type: Paper assessment'
+                : 'Type: ${resultPackage.missionType}',
+          ),
           if (isTheory)
             _Pill(
               label:
@@ -2203,6 +2210,7 @@ class _MetaPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final meta = resultPackage.meta;
+    final isPaperAssessment = resultPackage.resultKind == 'paper_assessment';
     return SoftPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2210,13 +2218,19 @@ class _MetaPanel extends StatelessWidget {
           Text('Meta', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppSpacing.compact),
           _MetaRow(label: 'Student', value: meta.studentName),
-          _MetaRow(label: 'Mission', value: meta.missionTitle),
+          _MetaRow(
+            label: isPaperAssessment ? 'Assessment' : 'Mission',
+            value: meta.missionTitle,
+          ),
           _MetaRow(label: 'Subject', value: meta.subject),
           _MetaRow(
             label: 'Task Codes',
             value: meta.taskCodes.isEmpty ? 'None' : meta.taskCodes.join(', '),
           ),
-          _MetaRow(label: 'Assigned Date', value: meta.assignedDate),
+          _MetaRow(
+            label: isPaperAssessment ? 'Lesson Date' : 'Assigned Date',
+            value: meta.assignedDate,
+          ),
           _MetaRow(
             label: 'Started',
             value: _formatReportDateTime(meta.startTime),
@@ -2823,7 +2837,7 @@ class _QuestionEvidence extends StatelessWidget {
             ),
           ),
           child: Text(
-            'This offline result was uploaded without digital question-by-question evidence. Review the attached work file, save the teacher score, and use the audit notes above for the lesson context.',
+            'This paper result was uploaded without digital question-by-question evidence. Review the attached work file, save the teacher score, and use the audit notes above for the lesson context.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),

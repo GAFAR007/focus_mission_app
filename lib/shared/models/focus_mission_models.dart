@@ -977,6 +977,197 @@ class MissionPayload {
   }
 }
 
+class ResultHistoryItem {
+  const ResultHistoryItem({
+    required this.id,
+    required this.resultPackageId,
+    required this.resultKind,
+    required this.missionId,
+    required this.title,
+    required this.teacherNote,
+    required this.sourceUnitText,
+    required this.sourceRawText,
+    required this.sourceFileName,
+    required this.sourceFileType,
+    required this.draftFormat,
+    required this.essayMode,
+    required this.draftJson,
+    required this.source,
+    required this.status,
+    required this.sessionType,
+    required this.difficulty,
+    required this.taskCodes,
+    required this.xpReward,
+    required this.xpEarned,
+    required this.questionCount,
+    required this.scoreCorrect,
+    required this.scoreTotal,
+    required this.scorePercent,
+    required this.questions,
+    required this.hasTeacherCopy,
+    this.aiModel,
+    this.createdAt,
+    this.updatedAt,
+    this.publishedAt,
+    this.availableOnDate,
+    this.availableOnDay,
+    this.subject,
+  });
+
+  final String id;
+  final String resultPackageId;
+  final String resultKind;
+  final String missionId;
+  final String title;
+  final String teacherNote;
+  final String sourceUnitText;
+  final String sourceRawText;
+  final String sourceFileName;
+  final String sourceFileType;
+  final String draftFormat;
+  final String essayMode;
+  final Map<String, dynamic>? draftJson;
+  final String source;
+  final String status;
+  final String sessionType;
+  final String difficulty;
+  final List<String> taskCodes;
+  final int xpReward;
+  final int xpEarned;
+  final int questionCount;
+  final int scoreCorrect;
+  final int scoreTotal;
+  final int scorePercent;
+  final String? aiModel;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? publishedAt;
+  final String? availableOnDate;
+  final String? availableOnDay;
+  final MissionSubject? subject;
+  final List<MissionQuestion> questions;
+  final bool hasTeacherCopy;
+
+  String get latestResultPackageId => resultPackageId;
+  bool get isPaperAssessment => resultKind == 'paper_assessment';
+  bool get isMissionBased => !isPaperAssessment;
+  EssayBuilderDraft? get essayBuilderDraft {
+    if (draftFormat != 'ESSAY_BUILDER') {
+      return null;
+    }
+    final json = draftJson;
+    if (json == null) {
+      return null;
+    }
+    return EssayBuilderDraft.fromJson(json);
+  }
+
+  MissionPayload toMissionContext() {
+    return MissionPayload(
+      id: missionId,
+      title: title,
+      teacherNote: teacherNote,
+      sourceUnitText: sourceUnitText,
+      sourceRawText: sourceRawText,
+      sourceFileName: sourceFileName,
+      sourceFileType: sourceFileType,
+      draftFormat: draftFormat,
+      essayMode: essayMode,
+      draftJson: draftJson,
+      source: source,
+      status: status,
+      sessionType: sessionType,
+      difficulty: difficulty,
+      taskCodes: taskCodes,
+      xpReward: xpReward,
+      xpEarned: xpEarned,
+      questionCount: questionCount,
+      scoreCorrect: scoreCorrect,
+      scoreTotal: scoreTotal,
+      scorePercent: scorePercent,
+      latestResultPackageId: resultPackageId,
+      aiModel: aiModel,
+      createdAt: createdAt,
+      publishedAt: publishedAt,
+      availableOnDate: availableOnDate,
+      availableOnDay: availableOnDay,
+      subject: subject,
+      questions: questions,
+    );
+  }
+
+  factory ResultHistoryItem.fromJson(Map<String, dynamic> json) {
+    final resultPackageId =
+        (json['resultPackageId'] ?? json['latestResultPackageId'] ?? '')
+            .toString();
+    final missionId = (json['missionId'] ?? json['id'] ?? '').toString();
+    final normalizedResultKind =
+        (json['resultKind'] ?? '').toString().trim().isNotEmpty
+        ? (json['resultKind'] ?? '').toString().trim()
+        : missionId.trim().isEmpty
+        ? 'paper_assessment'
+        : 'mission';
+    final questionCount = _asInt(json['questionCount']);
+    final parsedScoreTotal = _asInt(json['scoreTotal']);
+
+    return ResultHistoryItem(
+      id:
+          (json['historyId'] ??
+                  (resultPackageId.trim().isNotEmpty
+                      ? resultPackageId
+                      : missionId))
+              .toString(),
+      resultPackageId: resultPackageId,
+      resultKind: normalizedResultKind,
+      missionId: missionId,
+      title: (json['title'] ?? '').toString(),
+      teacherNote: (json['teacherNote'] ?? '').toString(),
+      sourceUnitText: (json['sourceUnitText'] ?? '').toString(),
+      sourceRawText: (json['sourceRawText'] ?? '').toString(),
+      sourceFileName: (json['sourceFileName'] ?? '').toString(),
+      sourceFileType: (json['sourceFileType'] ?? '').toString(),
+      draftFormat: (json['draftFormat'] ?? 'QUESTIONS').toString(),
+      essayMode: (json['essayMode'] ?? '').toString(),
+      draftJson: _asNullableMap(json['draftJson']),
+      source: (json['source'] ?? '').toString(),
+      status:
+          (json['status'] ??
+                  (normalizedResultKind == 'paper_assessment'
+                      ? 'paper_assessment'
+                      : 'published'))
+              .toString(),
+      sessionType: (json['sessionType'] ?? '').toString(),
+      difficulty: (json['difficulty'] ?? '').toString(),
+      taskCodes: _asStringList(json['taskCodes']),
+      xpReward: _asInt(json['xpReward']) > 0
+          ? _asInt(json['xpReward'])
+          : normalizedResultKind == 'paper_assessment'
+          ? 30
+          : 0,
+      xpEarned: _asInt(json['xpEarned']),
+      questionCount: questionCount,
+      scoreCorrect: _asInt(json['scoreCorrect']),
+      scoreTotal: parsedScoreTotal > 0 ? parsedScoreTotal : questionCount,
+      scorePercent: _asInt(json['scorePercent']),
+      aiModel: json['aiModel']?.toString(),
+      createdAt: json['createdAt']?.toString(),
+      updatedAt: json['updatedAt']?.toString(),
+      publishedAt: json['publishedAt']?.toString(),
+      availableOnDate: json['availableOnDate']?.toString(),
+      availableOnDay: json['availableOnDay']?.toString(),
+      subject: _asNullableMap(json['subject']) == null
+          ? null
+          : MissionSubject.fromJson(_asMap(json['subject'])),
+      questions: (json['questions'] as List<dynamic>? ?? const [])
+          .map((item) => MissionQuestion.fromJson(_asMap(item)))
+          .toList(growable: false),
+      hasTeacherCopy: json['hasTeacherCopy'] == false
+          ? false
+          : normalizedResultKind == 'mission' && missionId.trim().isNotEmpty,
+    );
+  }
+}
+
 class EssayBuilderDraft {
   const EssayBuilderDraft({
     required this.type,
@@ -1571,6 +1762,7 @@ class ResultPackageData {
     required this.id,
     required this.studentId,
     required this.teacherId,
+    required this.resultKind,
     required this.missionId,
     required this.missionType,
     required this.meta,
@@ -1585,6 +1777,7 @@ class ResultPackageData {
   final String id;
   final String studentId;
   final String teacherId;
+  final String resultKind;
   final String missionId;
   final String missionType;
   final ResultPackageMeta meta;
@@ -1600,6 +1793,7 @@ class ResultPackageData {
       id: (json['id'] ?? '').toString(),
       studentId: (json['studentId'] ?? '').toString(),
       teacherId: (json['teacherId'] ?? '').toString(),
+      resultKind: (json['resultKind'] ?? 'mission').toString(),
       missionId: (json['missionId'] ?? '').toString(),
       missionType: (json['missionType'] ?? '').toString(),
       meta: ResultPackageMeta.fromJson(_asMap(json['meta'])),
@@ -1924,7 +2118,7 @@ class TeacherWorkspaceData {
   final List<CriterionOverview> criteria;
   final List<MissionPayload> draftMissions;
   final List<MissionPayload> recentMissions;
-  final List<MissionPayload> studentResults;
+  final List<ResultHistoryItem> studentResults;
   final NotificationInboxData notificationInbox;
   final List<TargetSummary> targets;
 }

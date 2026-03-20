@@ -22,6 +22,59 @@ import '../../shared/models/user_role.dart';
 import '../../features/teacher/models/analytics_models.dart';
 import '../../shared/models/focus_mission_models.dart';
 
+Map<String, dynamic> _missionPayloadToJson(MissionPayload mission) {
+  return <String, dynamic>{
+    'id': mission.id,
+    'title': mission.title,
+    'teacherNote': mission.teacherNote,
+    'sourceUnitText': mission.sourceUnitText,
+    'sourceRawText': mission.sourceRawText,
+    'sourceFileName': mission.sourceFileName,
+    'sourceFileType': mission.sourceFileType,
+    'draftFormat': mission.draftFormat,
+    'essayMode': mission.essayMode,
+    'draftJson': mission.draftJson,
+    'source': mission.source,
+    'status': mission.status,
+    'sessionType': mission.sessionType,
+    'difficulty': mission.difficulty,
+    'taskCodes': mission.taskCodes,
+    'xpReward': mission.xpReward,
+    'xpEarned': mission.xpEarned,
+    'questionCount': mission.questionCount,
+    'scoreCorrect': mission.scoreCorrect,
+    'scoreTotal': mission.scoreTotal,
+    'scorePercent': mission.scorePercent,
+    'latestResultPackageId': mission.latestResultPackageId,
+    'aiModel': mission.aiModel,
+    'createdAt': mission.createdAt,
+    'publishedAt': mission.publishedAt,
+    'availableOnDate': mission.availableOnDate,
+    'availableOnDay': mission.availableOnDay,
+    'subject': mission.subject == null
+        ? null
+        : {
+            'id': mission.subject!.id,
+            'name': mission.subject!.name,
+            'icon': mission.subject!.icon,
+            'color': mission.subject!.color,
+          },
+    'questions': mission.questions
+        .map(
+          (question) => <String, dynamic>{
+            'learningText': question.learningText,
+            'prompt': question.prompt,
+            'options': question.options,
+            'correctIndex': question.correctIndex,
+            'explanation': question.explanation,
+            'expectedAnswer': question.expectedAnswer,
+            'minWordCount': question.minWordCount,
+          },
+        )
+        .toList(growable: false),
+  };
+}
+
 class FocusMissionApi {
   FocusMissionApi({http.Client? client}) : _client = client ?? http.Client();
 
@@ -390,7 +443,7 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
-  Future<List<MissionPayload>> fetchTeacherStudentResults({
+  Future<List<ResultHistoryItem>> fetchTeacherStudentResults({
     required String token,
     required String studentId,
   }) async {
@@ -399,18 +452,22 @@ class FocusMissionApi {
       '/teacher/students/$studentId/results',
       token: token,
     );
-    final missions = json['missions'] as List<dynamic>? ?? const [];
+    final results =
+        (json['results'] as List<dynamic>? ??
+                json['missions'] as List<dynamic>? ??
+                const [])
+            .cast<dynamic>();
 
-    return missions
+    return results
         .map(
-          (item) => MissionPayload.fromJson(
+          (item) => ResultHistoryItem.fromJson(
             (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
           ),
         )
         .toList(growable: false);
   }
 
-  Future<List<MissionPayload>> fetchManagementStudentResults({
+  Future<List<ResultHistoryItem>> fetchManagementStudentResults({
     required String token,
     required String studentId,
   }) async {
@@ -419,11 +476,15 @@ class FocusMissionApi {
       '/management/students/$studentId/results',
       token: token,
     );
-    final missions = json['missions'] as List<dynamic>? ?? const [];
+    final results =
+        (json['results'] as List<dynamic>? ??
+                json['missions'] as List<dynamic>? ??
+                const [])
+            .cast<dynamic>();
 
-    return missions
+    return results
         .map(
-          (item) => MissionPayload.fromJson(
+          (item) => ResultHistoryItem.fromJson(
             (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
           ),
         )
@@ -975,7 +1036,7 @@ class FocusMissionApi {
       token: session.token,
       studentId: selectedStudent.id,
     );
-    late final List<MissionPayload> studentResults;
+    late final List<ResultHistoryItem> studentResults;
     try {
       studentResults = await fetchTeacherStudentResults(
         token: session.token,
@@ -991,6 +1052,15 @@ class FocusMissionApi {
       // working until the dedicated result-history endpoint is live.
       studentResults = recentMissions
           .where((mission) => mission.latestResultPackageId.trim().isNotEmpty)
+          .map(
+            (mission) => ResultHistoryItem.fromJson({
+              ..._missionPayloadToJson(mission),
+              'resultPackageId': mission.latestResultPackageId,
+              'resultKind': 'mission',
+              'missionId': mission.id,
+              'hasTeacherCopy': true,
+            }),
+          )
           .toList(growable: false);
     }
     final mentorOverview = await fetchMentorOverview(
@@ -1530,7 +1600,7 @@ class FocusMissionApi {
     );
   }
 
-  Future<ResultPackageData> createTeacherLessonManualResultPackage({
+  Future<ResultPackageData> createTeacherPaperResultPackage({
     required String token,
     required String studentId,
     required String subjectId,
@@ -1566,6 +1636,26 @@ class FocusMissionApi {
     return ResultPackageData.fromJson(
       (json['resultPackage'] as Map<dynamic, dynamic>? ?? const {})
           .cast<String, dynamic>(),
+    );
+  }
+
+  Future<ResultPackageData> createTeacherLessonManualResultPackage({
+    required String token,
+    required String studentId,
+    required String subjectId,
+    required String sessionType,
+    required String targetDate,
+    required List<int> fileBytes,
+    required String fileName,
+  }) {
+    return createTeacherPaperResultPackage(
+      token: token,
+      studentId: studentId,
+      subjectId: subjectId,
+      sessionType: sessionType,
+      targetDate: targetDate,
+      fileBytes: fileBytes,
+      fileName: fileName,
     );
   }
 
