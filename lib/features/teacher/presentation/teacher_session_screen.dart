@@ -344,13 +344,13 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
             selectedSubject,
           );
           final uploadResultHelperText = recentMissions.isNotEmpty
-              ? 'Upload offline work for an assigned mission, then review and score it.'
+              ? 'Upload Result uses the selected timetable date above. If a mission exists for that date, subject, and lesson slot, it will open that mission.'
               : canCreateFallbackResultUpload
-              ? 'No assigned mission is live for this lesson slot. Upload offline work and Focus Mission will create an auditable result for ${selectedSubject?.name ?? 'this lesson'} on ${_dateKey(_selectedLessonDate)}.'
+              ? 'Upload Result uses the selected timetable date above. No assigned mission is live for this lesson slot, so Focus Mission will create an auditable result for ${selectedSubject?.name ?? 'this lesson'} on ${_dateKey(_selectedLessonDate)}.'
               : _dateOnly(
                   _selectedLessonDate,
                 ).isAfter(_dateOnly(DateTime.now()))
-              ? 'Offline result uploads are available after the lesson date arrives.'
+              ? 'Select today or a past timetable date before uploading a result.'
               : 'Pick a valid lesson subject before uploading an offline result.';
 
           return SingleChildScrollView(
@@ -1527,42 +1527,34 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     final selectedDateKey = _dateKey(_selectedLessonDate);
     final lessonKey = lessonLabel.toLowerCase();
     final selectedSubjectId = (selectedSubject?.id ?? '').trim();
-    final rankedMissions = <({MissionPayload mission, int score})>[];
+    final matchingMissions = missions
+        .where((mission) {
+          // WHY: Uploading offline work should follow the timetable date the
+          // teacher selected, not offer unrelated missions from older lessons.
+          final matchesDate =
+              (mission.availableOnDate ?? '').trim() == selectedDateKey;
+          final matchesLesson = mission.sessionType == lessonKey;
+          final matchesSubject =
+              selectedSubjectId.isEmpty ||
+              (mission.subject?.id ?? '').trim() == selectedSubjectId;
+          return matchesDate && matchesLesson && matchesSubject;
+        })
+        .toList(growable: false);
 
-    for (final mission in missions) {
-      var score = 0;
-      if ((mission.availableOnDate ?? '') == selectedDateKey) {
-        score += 4;
-      }
-      if (mission.sessionType == lessonKey) {
-        score += 2;
-      }
-      if ((mission.subject?.id ?? '') == selectedSubjectId &&
-          selectedSubjectId.isNotEmpty) {
-        score += 2;
-      }
-      rankedMissions.add((mission: mission, score: score));
-    }
-
+    final rankedMissions = [...matchingMissions];
     rankedMissions.sort((left, right) {
-      final byScore = right.score.compareTo(left.score);
-      if (byScore != 0) {
-        return byScore;
-      }
       final leftDate =
-          left.mission.availableOnDate ??
-          left.mission.publishedAt ??
-          left.mission.createdAt ??
-          '';
+          left.availableOnDate ?? left.publishedAt ?? left.createdAt ?? '';
       final rightDate =
-          right.mission.availableOnDate ??
-          right.mission.publishedAt ??
-          right.mission.createdAt ??
-          '';
-      return rightDate.compareTo(leftDate);
+          right.availableOnDate ?? right.publishedAt ?? right.createdAt ?? '';
+      final byDate = rightDate.compareTo(leftDate);
+      if (byDate != 0) {
+        return byDate;
+      }
+      return right.title.toLowerCase().compareTo(left.title.toLowerCase());
     });
 
-    return rankedMissions.map((entry) => entry.mission).toList(growable: false);
+    return rankedMissions;
   }
 
   Future<MissionPayload?> _pickMissionForResultUpload({
@@ -1612,6 +1604,17 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     required String lessonLabel,
     SubjectSummary? selectedSubject,
   }) async {
+    if (_dateOnly(_selectedLessonDate).isAfter(_dateOnly(DateTime.now()))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Select today or a past timetable date before uploading a result.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final candidates = _uploadableResultMissions(
       recentMissions,
       lessonLabel: lessonLabel,
