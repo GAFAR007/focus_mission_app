@@ -603,6 +603,13 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       setState(() => _selectedResultDate = value),
                   onOpenResult: (mission) =>
                       _openStudentResultHistory(workspace, mission),
+                  onUploadResult: () => _openUploadResultFromStudentResults(
+                    workspace,
+                    recentMissions: recentMissions,
+                    lessonLabel: activeLesson,
+                    selectedSubject: selectedSubject,
+                  ),
+                  canUploadResult: recentMissions.isNotEmpty,
                 ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
@@ -1495,6 +1502,122 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         ),
       ),
     );
+  }
+
+  List<MissionPayload> _uploadableResultMissions(
+    List<MissionPayload> missions, {
+    required String lessonLabel,
+    SubjectSummary? selectedSubject,
+  }) {
+    final selectedDateKey = _dateKey(_selectedLessonDate);
+    final lessonKey = lessonLabel.toLowerCase();
+    final selectedSubjectId = (selectedSubject?.id ?? '').trim();
+    final rankedMissions = <({MissionPayload mission, int score})>[];
+
+    for (final mission in missions) {
+      var score = 0;
+      if ((mission.availableOnDate ?? '') == selectedDateKey) {
+        score += 4;
+      }
+      if (mission.sessionType == lessonKey) {
+        score += 2;
+      }
+      if ((mission.subject?.id ?? '') == selectedSubjectId &&
+          selectedSubjectId.isNotEmpty) {
+        score += 2;
+      }
+      rankedMissions.add((mission: mission, score: score));
+    }
+
+    rankedMissions.sort((left, right) {
+      final byScore = right.score.compareTo(left.score);
+      if (byScore != 0) {
+        return byScore;
+      }
+      final leftDate =
+          left.mission.availableOnDate ??
+          left.mission.publishedAt ??
+          left.mission.createdAt ??
+          '';
+      final rightDate =
+          right.mission.availableOnDate ??
+          right.mission.publishedAt ??
+          right.mission.createdAt ??
+          '';
+      return rightDate.compareTo(leftDate);
+    });
+
+    return rankedMissions.map((entry) => entry.mission).toList(growable: false);
+  }
+
+  Future<MissionPayload?> _pickMissionForResultUpload(
+    TeacherWorkspaceData workspace, {
+    required List<MissionPayload> recentMissions,
+    required String lessonLabel,
+    SubjectSummary? selectedSubject,
+  }) async {
+    final candidates = _uploadableResultMissions(
+      recentMissions,
+      lessonLabel: lessonLabel,
+      selectedSubject: selectedSubject,
+    );
+
+    if (candidates.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Publish or assign a mission first, then upload the student result.',
+            ),
+          ),
+        );
+      }
+      return null;
+    }
+
+    if (candidates.length == 1) {
+      return candidates.first;
+    }
+
+    final selectedMissionId = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _ResultUploadMissionPickerSheet(
+        missions: candidates,
+        selectedDate: _selectedLessonDate,
+      ),
+    );
+
+    if (!mounted || selectedMissionId == null || selectedMissionId.isEmpty) {
+      return null;
+    }
+
+    for (final mission in candidates) {
+      if (mission.id == selectedMissionId) {
+        return mission;
+      }
+    }
+
+    return null;
+  }
+
+  Future<void> _openUploadResultFromStudentResults(
+    TeacherWorkspaceData workspace, {
+    required List<MissionPayload> recentMissions,
+    required String lessonLabel,
+    SubjectSummary? selectedSubject,
+  }) async {
+    final mission = await _pickMissionForResultUpload(
+      workspace,
+      recentMissions: recentMissions,
+      lessonLabel: lessonLabel,
+      selectedSubject: selectedSubject,
+    );
+    if (!mounted || mission == null) {
+      return;
+    }
+
+    await _openResultReport(workspace, mission);
   }
 
   Future<void> _sendMissionResult(
@@ -3750,6 +3873,8 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
     required this.onSelectSubject,
     required this.onSelectDate,
     required this.onOpenResult,
+    required this.onUploadResult,
+    required this.canUploadResult,
   });
 
   final String studentName;
@@ -3764,6 +3889,8 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
   final ValueChanged<String> onSelectSubject;
   final ValueChanged<String> onSelectDate;
   final ValueChanged<MissionPayload> onOpenResult;
+  final VoidCallback onUploadResult;
+  final bool canUploadResult;
 
   @override
   Widget build(BuildContext context) {
@@ -3866,11 +3993,33 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.78),
                   borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                 ),
-                child: Text(
-                  allResults.isEmpty
-                      ? 'No saved results are available yet for this student in your subjects.'
-                      : 'No results match the selected filters.',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      allResults.isEmpty
+                          ? 'No saved results are available yet for this student in your subjects.'
+                          : 'No results match the selected filters.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    if (allResults.isEmpty) ...[
+                      const SizedBox(height: AppSpacing.compact),
+                      Text(
+                        canUploadResult
+                            ? 'Upload offline work for an assigned mission, then review and score it.'
+                            : 'Publish or assign a mission first, then upload the student result here.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      FilledButton.icon(
+                        onPressed: canUploadResult ? onUploadResult : null,
+                        icon: const Icon(Icons.upload_file_rounded),
+                        label: const Text('Upload Result'),
+                      ),
+                    ],
+                  ],
                 ),
               )
             else
@@ -4151,6 +4300,112 @@ class _TeacherStudentResultCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ResultUploadMissionPickerSheet extends StatelessWidget {
+  const _ResultUploadMissionPickerSheet({
+    required this.missions,
+    required this.selectedDate,
+  });
+
+  final List<MissionPayload> missions;
+  final DateTime selectedDate;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedDateLabel = _formatTeacherMissionDate(
+      '${selectedDate.year.toString().padLeft(4, '0')}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
+    );
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.screen,
+          0,
+          AppSpacing.screen,
+          AppSpacing.screen,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Choose Mission',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Pick the mission that matches the uploaded work for $selectedDateLabel.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+            ),
+            const SizedBox(height: AppSpacing.compact),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: missions.length,
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.compact),
+                itemBuilder: (context, index) {
+                  final mission = missions[index];
+                  final subjectName =
+                      (mission.subject?.name ?? '').trim().isEmpty
+                      ? 'No subject'
+                      : mission.subject!.name.trim();
+                  final dateLabel = _formatTeacherMissionDate(
+                    mission.availableOnDate ??
+                        mission.publishedAt ??
+                        mission.createdAt,
+                  );
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    onTap: () => Navigator.of(context).pop(mission.id),
+                    child: Ink(
+                      padding: const EdgeInsets.all(AppSpacing.item),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusMd,
+                        ),
+                        border: Border.all(
+                          color: AppPalette.primaryBlue.withValues(alpha: 0.14),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  mission.title,
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '$subjectName · ${mission.sessionType} · $dateLabel',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: AppPalette.textMuted),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Icon(Icons.chevron_right_rounded),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
