@@ -4007,6 +4007,11 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
             summaryChips: summaryChips,
             isExpanded: isExpanded,
             onTap: onToggleExpanded,
+            action: FilledButton.tonalIcon(
+              onPressed: canUploadResult ? onUploadResult : null,
+              icon: const Icon(Icons.upload_file_rounded),
+              label: const Text('Upload Result'),
+            ),
           ),
           if (isExpanded) ...[
             const SizedBox(height: AppSpacing.compact),
@@ -4098,16 +4103,10 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
                     if (allResults.isEmpty) ...[
                       const SizedBox(height: AppSpacing.compact),
                       Text(
-                        uploadResultHelperText,
+                        '$uploadResultHelperText Use the Upload Result button above to start.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppPalette.textMuted,
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.compact),
-                      FilledButton.icon(
-                        onPressed: canUploadResult ? onUploadResult : null,
-                        icon: const Icon(Icons.upload_file_rounded),
-                        label: const Text('Upload Result'),
                       ),
                     ],
                   ],
@@ -4138,6 +4137,7 @@ class _ExpandablePanelHeader extends StatelessWidget {
     required this.isExpanded,
     required this.onTap,
     this.leading,
+    this.action,
   });
 
   final String title;
@@ -4146,6 +4146,7 @@ class _ExpandablePanelHeader extends StatelessWidget {
   final bool isExpanded;
   final VoidCallback onTap;
   final Widget? leading;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -4156,64 +4157,80 @@ class _ExpandablePanelHeader extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (leading != null) ...[
-                leading!,
-                const SizedBox(width: AppSpacing.item),
-              ],
-              Expanded(
-                child: Column(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                onTap: onTap,
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 6),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
+                    if (leading != null) ...[
+                      leading!,
+                      const SizedBox(width: AppSpacing.item),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            subtitle,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: AppPalette.textMuted),
+                          ),
+                          if (visibleSummaryChips.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: visibleSummaryChips
+                                  .map(
+                                    (label) =>
+                                        _ExpandablePanelChip(label: label),
+                                  )
+                                  .toList(growable: false),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                    if (visibleSummaryChips.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: visibleSummaryChips
-                            .map((label) => _ExpandablePanelChip(label: label))
-                            .toList(growable: false),
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: AppPalette.primaryBlue.withValues(alpha: 0.14),
+                        ),
                       ),
-                    ],
+                      child: Center(
+                        child: AnimatedRotation(
+                          turns: isExpanded ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 180),
+                          child: const Icon(Icons.keyboard_arrow_down_rounded),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
+            ),
+            if (action != null) ...[
               const SizedBox(width: 12),
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.78),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: AppPalette.primaryBlue.withValues(alpha: 0.14),
-                  ),
-                ),
-                child: Center(
-                  child: AnimatedRotation(
-                    turns: isExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 180),
-                    child: const Icon(Icons.keyboard_arrow_down_rounded),
-                  ),
-                ),
-              ),
+              Padding(padding: const EdgeInsets.only(top: 2), child: action!),
             ],
-          ),
+          ],
         ),
       ),
     );
