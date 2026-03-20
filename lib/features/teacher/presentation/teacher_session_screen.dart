@@ -4177,9 +4177,36 @@ class _ExpandablePanelHeader extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            title,
-                            style: Theme.of(context).textTheme.titleMedium,
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final titleText = Text(
+                                title,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              );
+
+                              if (action == null) {
+                                return titleText;
+                              }
+
+                              if (constraints.maxWidth < 440) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    titleText,
+                                    const SizedBox(height: 8),
+                                    action!,
+                                  ],
+                                );
+                              }
+
+                              return Row(
+                                children: [
+                                  Flexible(child: titleText),
+                                  const SizedBox(width: 12),
+                                  action!,
+                                ],
+                              );
+                            },
                           ),
                           const SizedBox(height: 6),
                           Text(
@@ -4226,10 +4253,6 @@ class _ExpandablePanelHeader extends StatelessWidget {
                 ),
               ),
             ),
-            if (action != null) ...[
-              const SizedBox(width: 12),
-              Padding(padding: const EdgeInsets.only(top: 2), child: action!),
-            ],
           ],
         ),
       ),
