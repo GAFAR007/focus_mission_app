@@ -335,6 +335,11 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
       return;
     }
 
+    if (widget.mission.id.trim().isEmpty) {
+      await _refreshResultPackage();
+      return;
+    }
+
     setState(() {
       _future = () async {
         final recentMissions = await widget.api.fetchTeacherRecentMissions(
@@ -383,15 +388,35 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
           'The selected file could not be read. Try again.',
         );
       }
+      if (widget.mission.id.trim().isEmpty) {
+        final subjectId = (widget.mission.subject?.id ?? '').trim();
+        final targetDate = (widget.mission.availableOnDate ?? '').trim();
+        final sessionType = widget.mission.sessionType.trim();
+        if (subjectId.isEmpty || targetDate.isEmpty || sessionType.isEmpty) {
+          throw const FocusMissionApiException(
+            'Pick a valid lesson subject and date before uploading an offline result.',
+          );
+        }
+      }
 
       setState(() => _isCreatingManualResult = true);
 
-      final resultPackage = await widget.api.createTeacherManualResultPackage(
-        token: widget.session.token,
-        missionId: widget.mission.id,
-        fileBytes: bytes,
-        fileName: file.name,
-      );
+      final resultPackage = widget.mission.id.trim().isNotEmpty
+          ? await widget.api.createTeacherManualResultPackage(
+              token: widget.session.token,
+              missionId: widget.mission.id,
+              fileBytes: bytes,
+              fileName: file.name,
+            )
+          : await widget.api.createTeacherLessonManualResultPackage(
+              token: widget.session.token,
+              studentId: widget.student.id,
+              subjectId: (widget.mission.subject?.id ?? '').trim(),
+              sessionType: widget.mission.sessionType.trim(),
+              targetDate: (widget.mission.availableOnDate ?? '').trim(),
+              fileBytes: bytes,
+              fileName: file.name,
+            );
 
       if (!mounted) {
         return;
@@ -407,8 +432,12 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
         _future = Future<ResultPackageData?>.value(resultPackage);
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Manual result created. Review and score it below.'),
+        SnackBar(
+          content: Text(
+            widget.mission.id.trim().isEmpty
+                ? 'Offline result created for this lesson. Review and score it below.'
+                : 'Manual result created. Review and score it below.',
+          ),
         ),
       );
     } catch (error) {
@@ -1436,9 +1465,17 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
 
   Widget _buildNoResultState() {
     final isTeacherEditable = !widget.readOnly && !widget.useManagementAccess;
+    final isLessonSlotFallback = widget.mission.id.trim().isEmpty;
     final formatLabel = widget.mission.draftFormat == 'THEORY'
-        ? 'Upload the student work first, then score each theory answer on the next screen.'
+        ? isLessonSlotFallback
+              ? 'No published mission exists for this lesson slot. Upload the student work first, then score each theory answer on the next screen.'
+              : 'Upload the student work first, then score each theory answer on the next screen.'
+        : isLessonSlotFallback
+        ? 'No published mission exists for this lesson slot. Upload the student work first, then save the teacher review score out of 10, 30, 50, or 100.'
         : 'Upload the student work first, then save the teacher review score out of 10, 30, 50, or 100.';
+    final noResultSummary = isLessonSlotFallback
+        ? 'No saved result package exists yet for ${widget.student.name} in this ${widget.mission.sessionType} ${widget.mission.subject?.name ?? 'lesson'} slot.'
+        : 'This mission does not have a saved result package yet for ${widget.student.name}.';
 
     return Center(
       child: Padding(
@@ -1455,7 +1492,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'This mission does not have a saved result package yet for ${widget.student.name}.',
+                noResultSummary,
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
@@ -2774,6 +2811,25 @@ class _QuestionEvidence extends StatelessWidget {
         : answeredFromRows;
 
     if (questions.isEmpty) {
+      if (isManualTeacherResult) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(AppSpacing.item),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            border: Border.all(
+              color: AppPalette.primaryBlue.withValues(alpha: 0.24),
+            ),
+          ),
+          child: Text(
+            'This offline result was uploaded without digital question-by-question evidence. Review the attached work file, save the teacher score, and use the audit notes above for the lesson context.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+          ),
+        );
+      }
       return const Text('No question evidence available.');
     }
 

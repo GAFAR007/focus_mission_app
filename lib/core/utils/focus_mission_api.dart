@@ -1530,6 +1530,45 @@ class FocusMissionApi {
     );
   }
 
+  Future<ResultPackageData> createTeacherLessonManualResultPackage({
+    required String token,
+    required String studentId,
+    required String subjectId,
+    required String sessionType,
+    required String targetDate,
+    required List<int> fileBytes,
+    required String fileName,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('${ApiConfig.baseUrl}/teacher/results/manual-upload'),
+    );
+
+    request.headers['Authorization'] = 'Bearer $token';
+    request.fields['studentId'] = studentId;
+    request.fields['subjectId'] = subjectId;
+    request.fields['sessionType'] = sessionType;
+    request.fields['targetDate'] = targetDate;
+    request.files.add(
+      http.MultipartFile.fromBytes('resultFile', fileBytes, filename: fileName),
+    );
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode >= 400) {
+      throw FocusMissionApiException(
+        (json['message'] ?? 'Manual result upload failed.').toString(),
+      );
+    }
+
+    return ResultPackageData.fromJson(
+      (json['resultPackage'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
   Future<ResultPackageData> scoreTeacherTheoryResultPackage({
     required String token,
     required String resultPackageId,

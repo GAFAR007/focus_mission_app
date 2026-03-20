@@ -340,6 +340,18 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
             selectedSubject?.name ?? 'No subject assigned',
             '${targets.length} target${targets.length == 1 ? '' : 's'}',
           ];
+          final canCreateFallbackResultUpload = _canCreateFallbackResultUpload(
+            selectedSubject,
+          );
+          final uploadResultHelperText = recentMissions.isNotEmpty
+              ? 'Upload offline work for an assigned mission, then review and score it.'
+              : canCreateFallbackResultUpload
+              ? 'No assigned mission is live for this lesson slot. Upload offline work and Focus Mission will create an auditable result for ${selectedSubject?.name ?? 'this lesson'} on ${_dateKey(_selectedLessonDate)}.'
+              : _dateOnly(
+                  _selectedLessonDate,
+                ).isAfter(_dateOnly(DateTime.now()))
+              ? 'Offline result uploads are available after the lesson date arrives.'
+              : 'Pick a valid lesson subject before uploading an offline result.';
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(AppSpacing.screen),
@@ -609,7 +621,10 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                     lessonLabel: activeLesson,
                     selectedSubject: selectedSubject,
                   ),
-                  canUploadResult: recentMissions.isNotEmpty,
+                  canUploadResult:
+                      recentMissions.isNotEmpty ||
+                      canCreateFallbackResultUpload,
+                  uploadResultHelperText: uploadResultHelperText,
                 ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
@@ -1550,8 +1565,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     return rankedMissions.map((entry) => entry.mission).toList(growable: false);
   }
 
-  Future<MissionPayload?> _pickMissionForResultUpload(
-    TeacherWorkspaceData workspace, {
+  Future<MissionPayload?> _pickMissionForResultUpload({
     required List<MissionPayload> recentMissions,
     required String lessonLabel,
     SubjectSummary? selectedSubject,
@@ -1563,15 +1577,6 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     );
 
     if (candidates.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Publish or assign a mission first, then upload the student result.',
-            ),
-          ),
-        );
-      }
       return null;
     }
 
@@ -1607,17 +1612,42 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     required String lessonLabel,
     SubjectSummary? selectedSubject,
   }) async {
-    final mission = await _pickMissionForResultUpload(
-      workspace,
-      recentMissions: recentMissions,
+    final candidates = _uploadableResultMissions(
+      recentMissions,
       lessonLabel: lessonLabel,
       selectedSubject: selectedSubject,
     );
-    if (!mounted || mission == null) {
+
+    if (candidates.isNotEmpty) {
+      final mission = await _pickMissionForResultUpload(
+        recentMissions: recentMissions,
+        lessonLabel: lessonLabel,
+        selectedSubject: selectedSubject,
+      );
+      if (!mounted || mission == null) {
+        return;
+      }
+
+      await _openResultReport(workspace, mission);
       return;
     }
 
-    await _openResultReport(workspace, mission);
+    final fallbackMission = _buildFallbackResultUploadMission(
+      lessonLabel: lessonLabel,
+      selectedSubject: selectedSubject,
+    );
+    if (!mounted || fallbackMission == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Pick a valid lesson slot on today or a past date before uploading an offline result.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await _openResultReport(workspace, fallbackMission);
   }
 
   Future<void> _sendMissionResult(
@@ -2208,6 +2238,67 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     }
 
     return null;
+  }
+
+  bool _canCreateFallbackResultUpload(SubjectSummary? selectedSubject) {
+    if (selectedSubject == null || selectedSubject.id.trim().isEmpty) {
+      return false;
+    }
+
+    // WHY: Offline result uploads should only represent work from lessons that
+    // have already happened, not future timetable slots.
+    return !_dateOnly(_selectedLessonDate).isAfter(_dateOnly(DateTime.now()));
+  }
+
+  MissionPayload? _buildFallbackResultUploadMission({
+    required String lessonLabel,
+    SubjectSummary? selectedSubject,
+  }) {
+    if (!_canCreateFallbackResultUpload(selectedSubject) ||
+        selectedSubject == null) {
+      return null;
+    }
+
+    final normalizedLessonLabel = lessonLabel == 'Afternoon'
+        ? 'Afternoon'
+        : 'Morning';
+
+    return MissionPayload(
+      id: '',
+      title: '${selectedSubject.name} $normalizedLessonLabel Offline Result',
+      teacherNote:
+          'Teacher-uploaded offline work for this lesson slot before any digital mission result existed.',
+      sourceUnitText: '',
+      sourceRawText: '',
+      sourceFileName: '',
+      sourceFileType: '',
+      draftFormat: 'QUESTIONS',
+      essayMode: '',
+      draftJson: null,
+      source: 'bank',
+      status: 'draft',
+      sessionType: normalizedLessonLabel.toLowerCase(),
+      difficulty: 'medium',
+      taskCodes: const <String>[],
+      xpReward: 30,
+      xpEarned: 0,
+      questionCount: 5,
+      scoreCorrect: 0,
+      scoreTotal: 0,
+      scorePercent: 0,
+      latestResultPackageId: '',
+      createdAt: null,
+      publishedAt: null,
+      availableOnDate: _dateKey(_selectedLessonDate),
+      availableOnDay: _weekdayLabelForDate(_selectedLessonDate),
+      subject: MissionSubject(
+        id: selectedSubject.id,
+        name: selectedSubject.name,
+        icon: selectedSubject.icon,
+        color: selectedSubject.color,
+      ),
+      questions: const <MissionQuestion>[],
+    );
   }
 
   String _resolvedLessonForTeacher(TodaySchedule? schedule) {
@@ -3875,6 +3966,7 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
     required this.onOpenResult,
     required this.onUploadResult,
     required this.canUploadResult,
+    required this.uploadResultHelperText,
   });
 
   final String studentName;
@@ -3891,6 +3983,7 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
   final ValueChanged<MissionPayload> onOpenResult;
   final VoidCallback onUploadResult;
   final bool canUploadResult;
+  final String uploadResultHelperText;
 
   @override
   Widget build(BuildContext context) {
@@ -4005,9 +4098,7 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
                     if (allResults.isEmpty) ...[
                       const SizedBox(height: AppSpacing.compact),
                       Text(
-                        canUploadResult
-                            ? 'Upload offline work for an assigned mission, then review and score it.'
-                            : 'Publish or assign a mission first, then upload the student result here.',
+                        uploadResultHelperText,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppPalette.textMuted,
                         ),
