@@ -2058,7 +2058,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         ..writeln('<section class="section-card">')
         ..writeln('<h2>Unit Text</h2>')
         ..writeln(
-          '<p class="section-kicker">Source guidance used for draft generation.</p>',
+          '<p class="section-kicker">Reviewed unit text saved with this mission.</p>',
         )
         ..writeln(_buildRichTextHtml(unitText))
         ..writeln('</section>');
