@@ -1005,6 +1005,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             sourceFileName: _resolvedSourceFileName,
             sourceFileType: _resolvedSourceFileType,
             xpReward: _effectiveXpReward,
+            sourceUploadMode:
+                _activeSourceUploadMode ?? _SourceUploadMode.aiDraft,
           ),
         ],
         if (_sourceUploadReadiness != null) ...[
@@ -1012,6 +1014,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           _SourceReadinessCard(
             readiness: _sourceUploadReadiness!,
             hasPrefilledMission: _uploadedSource?.prefilledMission != null,
+            sourceUploadMode:
+                _activeSourceUploadMode ?? _SourceUploadMode.aiDraft,
           ),
         ],
         if (_uploadedSource != null) ...[
@@ -1019,13 +1023,19 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           _UnitPlanDraftCard(
             draft: _uploadedSource!,
             appliedXpReward: _effectiveXpReward,
+            sourceUploadMode:
+                _activeSourceUploadMode ?? _SourceUploadMode.aiDraft,
           ),
         ],
         const SizedBox(height: AppSpacing.section),
         Text('Unit text', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
-          _rawUploadedSourceText.trim().isEmpty
+          _activeSourceUploadMode == _SourceUploadMode.populateDraft
+              ? _rawUploadedSourceText.trim().isEmpty
+                    ? 'Populate draft reads the uploaded file directly. This Unit text box is only used if you later switch to Generate with AI.'
+                    : 'Populate draft reads the uploaded file directly. This Unit text box stays separate unless you later switch to Generate with AI.'
+              : _rawUploadedSourceText.trim().isEmpty
               ? 'This text is what Groq uses to generate the draft questions.'
               : 'The selected source preview (or this text) is what Groq uses to generate the draft questions.',
           style: Theme.of(
@@ -1052,7 +1062,11 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         if (_hasDraft) ...[
           const SizedBox(height: 10),
           Text(
-            _isPublishedMission
+            _activeSourceUploadMode == _SourceUploadMode.populateDraft
+                ? _isPublishedMission
+                      ? 'Upload another structured file to repopulate this draft, or paste lesson text here if you want to switch back to Generate with AI before saving changes.'
+                      : 'Upload another structured file to repopulate this draft, or paste lesson text here if you want to switch back to Generate with AI.'
+                : _isPublishedMission
                 ? 'Paste fresh lesson text here or upload a new source file, then regenerate the question set before saving changes.'
                 : 'Paste fresh lesson text here or upload a new source file, then regenerate the draft with Groq.',
             style: Theme.of(
@@ -4408,14 +4422,18 @@ class _SourceReadinessCard extends StatelessWidget {
   const _SourceReadinessCard({
     required this.readiness,
     required this.hasPrefilledMission,
+    required this.sourceUploadMode,
   });
 
   final MissionSourceReadiness readiness;
   final bool hasPrefilledMission;
+  final _SourceUploadMode sourceUploadMode;
 
   @override
   Widget build(BuildContext context) {
     final needsAttention = readiness.needsAttention;
+    final isPopulateImport =
+        sourceUploadMode == _SourceUploadMode.populateDraft;
 
     return SoftPanel(
       colors: needsAttention
@@ -4454,7 +4472,11 @@ class _SourceReadinessCard extends StatelessWidget {
                       hasPrefilledMission
                           ? 'Draft populated from upload'
                           : needsAttention
-                          ? 'Upload needs attention'
+                          ? isPopulateImport
+                                ? 'Import needs attention'
+                                : 'Upload needs attention'
+                          : isPopulateImport
+                          ? 'Import is ready'
                           : 'Upload is ready',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
@@ -4543,7 +4565,9 @@ class _SourceReadinessCard extends StatelessWidget {
           if (needsAttention) ...[
             const SizedBox(height: 4),
             Text(
-              'Upload a fuller PDF or add the missing detail in Unit text, then regenerate the draft.',
+              isPopulateImport
+                  ? 'Populate draft only imports fully structured files. Upload a cleaner worksheet or switch to Generate with AI if this file is lesson text only.'
+                  : 'Upload a fuller PDF or add the missing detail in Unit text, then regenerate the draft.',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -4561,15 +4585,20 @@ class _SourceSummaryCard extends StatelessWidget {
     required this.sourceFileName,
     required this.sourceFileType,
     required this.xpReward,
+    required this.sourceUploadMode,
   });
 
   final UploadedSourceDraft? uploadedSource;
   final String sourceFileName;
   final String sourceFileType;
   final int xpReward;
+  final _SourceUploadMode sourceUploadMode;
 
   @override
   Widget build(BuildContext context) {
+    final isPopulateImport =
+        sourceUploadMode == _SourceUploadMode.populateDraft;
+
     return SoftPanel(
       colors: const [Color(0xFFF7FCFF), Color(0xFFE9F5FF)],
       child: Row(
@@ -4598,7 +4627,9 @@ class _SourceSummaryCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   sourceFileType.isEmpty
-                      ? 'AI will use the extracted text as the planning source.'
+                      ? isPopulateImport
+                            ? 'The extracted file is ready for direct draft import.'
+                            : 'AI will use the extracted text as the planning source.'
                       : '$sourceFileType · ${uploadedSource?.sourceKind ?? 'text extraction'}',
                   style: Theme.of(
                     context,
@@ -4631,13 +4662,18 @@ class _UnitPlanDraftCard extends StatelessWidget {
   const _UnitPlanDraftCard({
     required this.draft,
     required this.appliedXpReward,
+    required this.sourceUploadMode,
   });
 
   final UploadedSourceDraft draft;
   final int appliedXpReward;
+  final _SourceUploadMode sourceUploadMode;
 
   @override
   Widget build(BuildContext context) {
+    final isPopulateImport =
+        sourceUploadMode == _SourceUploadMode.populateDraft;
+
     return SoftPanel(
       colors: const [Color(0xFFFFFCF7), Color(0xFFFFF3E2)],
       child: Column(
@@ -4655,8 +4691,10 @@ class _UnitPlanDraftCard extends StatelessWidget {
                   ),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(
-                  Icons.auto_awesome_rounded,
+                child: Icon(
+                  isPopulateImport
+                      ? Icons.file_download_done_rounded
+                      : Icons.auto_awesome_rounded,
                   color: Colors.white,
                 ),
               ),
@@ -4667,7 +4705,9 @@ class _UnitPlanDraftCard extends StatelessWidget {
                   children: [
                     Text(
                       draft.unitPlan.unitTitle.isEmpty
-                          ? 'Suggested unit plan'
+                          ? isPopulateImport
+                                ? 'Imported file summary'
+                                : 'Suggested unit plan'
                           : draft.unitPlan.unitTitle,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
@@ -4686,7 +4726,9 @@ class _UnitPlanDraftCard extends StatelessWidget {
           if (draft.unitPlan.keyPoints.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.item),
             Text(
-              'Key points Groq found',
+              isPopulateImport
+                  ? 'What the file contained'
+                  : 'Key points Groq found',
               style: Theme.of(context).textTheme.titleSmall,
             ),
             const SizedBox(height: 8),
@@ -4725,7 +4767,8 @@ class _UnitPlanDraftCard extends StatelessWidget {
                 label: '${draft.unitPlan.suggestedQuestionCount} questions',
               ),
               _InfoPill(label: '$appliedXpReward XP mission policy'),
-              if ((draft.unitPlan.aiModel ?? '').isNotEmpty)
+              if (!isPopulateImport &&
+                  (draft.unitPlan.aiModel ?? '').isNotEmpty)
                 _InfoPill(label: draft.unitPlan.aiModel!),
             ],
           ),
