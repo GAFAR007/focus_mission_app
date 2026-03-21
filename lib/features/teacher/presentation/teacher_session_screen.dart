@@ -30,6 +30,7 @@ import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import 'criterion_review_sheet.dart';
 import 'mission_builder_sheet.dart';
 import 'result_report_screen.dart';
+import 'standalone_paper_screen.dart';
 import 'teacher_analytics_screen.dart';
 
 const List<String> _availableCertificationTaskCodes = <String>[
@@ -579,6 +580,19 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                         ? 'Afternoon'
                         : 'Morning',
                     initialDraft: mission,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                _StandalonePapersPanel(
+                  onOpenTest: () => _openStandalonePaperScreen(
+                    workspace: workspace,
+                    selectedSubject: selectedSubject,
+                    paperKind: 'TEST',
+                  ),
+                  onOpenExam: () => _openStandalonePaperScreen(
+                    workspace: workspace,
+                    selectedSubject: selectedSubject,
+                    paperKind: 'EXAM',
                   ),
                 ),
                 const SizedBox(height: AppSpacing.item),
@@ -1854,6 +1868,68 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           ? 'Afternoon'
           : 'Morning',
       initialDraft: selected,
+    );
+  }
+
+  SubjectSummary? _resolveStandalonePaperSubject(
+    TeacherWorkspaceData workspace, {
+    SubjectSummary? selectedSubject,
+  }) {
+    if (selectedSubject != null && selectedSubject.id.trim().isNotEmpty) {
+      return selectedSubject;
+    }
+
+    final specialty = _normalizeLessonValue(_session.user.subjectSpecialty);
+    for (final subject in workspace.teacherSubjects) {
+      if (_normalizeLessonValue(subject.name) == specialty) {
+        return subject;
+      }
+    }
+
+    return workspace.teacherSubjects.isEmpty
+        ? null
+        : workspace.teacherSubjects.first;
+  }
+
+  Future<void> _openStandalonePaperScreen({
+    required TeacherWorkspaceData workspace,
+    required String paperKind,
+    SubjectSummary? selectedSubject,
+  }) async {
+    final subject = _resolveStandalonePaperSubject(
+      workspace,
+      selectedSubject: selectedSubject,
+    );
+
+    if (subject == null || subject.id.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'A valid subject is required before opening standalone Test or Exam drafts.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => paperKind.trim().toUpperCase() == 'EXAM'
+            ? StandaloneExamScreen(
+                session: _session,
+                student: workspace.selectedStudent,
+                subject: subject,
+                initialTargetDate: _selectedLessonDate,
+                api: _api,
+              )
+            : StandaloneTestScreen(
+                session: _session,
+                student: workspace.selectedStudent,
+                subject: subject,
+                initialTargetDate: _selectedLessonDate,
+                api: _api,
+              ),
+      ),
     );
   }
 
@@ -4263,6 +4339,83 @@ class _DraftMissionsPanel extends StatelessWidget {
     ];
 
     return labels[month - 1];
+  }
+}
+
+class _StandalonePapersPanel extends StatelessWidget {
+  const _StandalonePapersPanel({
+    required this.onOpenTest,
+    required this.onOpenExam,
+  });
+
+  final VoidCallback onOpenTest;
+  final VoidCallback onOpenExam;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftPanel(
+      colors: const [Color(0xFFFFFCF7), Color(0xFFFFF4E4)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFF0B45D), Color(0xFFE58E3F)],
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.fact_check_rounded,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.item),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Standalone Papers',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tests and Exams live here as their own mixed-format draft flow, separate from Daily Missions and Assessment drafts.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.item),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              GradientButton(
+                label: 'Open Test screen',
+                colors: AppPalette.teacherGradient,
+                onPressed: onOpenTest,
+              ),
+              GradientButton(
+                label: 'Open Exam screen',
+                colors: const [Color(0xFFF0B45D), Color(0xFFE58E3F)],
+                onPressed: onOpenExam,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 

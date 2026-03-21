@@ -20,6 +20,7 @@ import '../constants/seed_credentials.dart';
 import '../constants/api_config.dart';
 import '../../shared/models/user_role.dart';
 import '../../features/teacher/models/analytics_models.dart';
+import '../../features/teacher/models/standalone_paper_models.dart';
 import '../../shared/models/focus_mission_models.dart';
 
 Map<String, dynamic> _missionPayloadToJson(MissionPayload mission) {
@@ -1238,6 +1239,158 @@ class FocusMissionApi {
     return UploadedSourceDraft.fromJson(
       (json['draft'] as Map<dynamic, dynamic>? ?? const {})
           .cast<String, dynamic>(),
+    );
+  }
+
+  Future<List<StandalonePaperDraft>> fetchStandalonePapers({
+    required String token,
+    required String studentId,
+    required String paperKind,
+  }) async {
+    final resolvedKind = paperKind.trim().toUpperCase();
+    final json = await _requestJson(
+      'GET',
+      '/teacher/standalone-papers/$studentId?paperKind=$resolvedKind',
+      token: token,
+    );
+    final papers = json['papers'] as List<dynamic>? ?? const [];
+
+    return papers
+        .map(
+          (item) => StandalonePaperDraft.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<UploadedStandalonePaperDraft> uploadStandalonePaperSourceDraft({
+    required String token,
+    required String studentId,
+    required String subjectId,
+    required String paperKind,
+    required List<int> fileBytes,
+    required String fileName,
+    String title = '',
+    String targetDate = '',
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('${ApiConfig.baseUrl}/teacher/standalone-papers/import'),
+    );
+
+    request.headers['Authorization'] = 'Bearer $token';
+    request.fields['studentId'] = studentId.trim();
+    request.fields['subjectId'] = subjectId.trim();
+    request.fields['paperKind'] = paperKind.trim().toUpperCase();
+    if (title.trim().isNotEmpty) {
+      request.fields['title'] = title.trim();
+    }
+    if (targetDate.trim().isNotEmpty) {
+      request.fields['targetDate'] = targetDate.trim();
+    }
+    request.files.add(
+      http.MultipartFile.fromBytes('sourceFile', fileBytes, filename: fileName),
+    );
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode >= 400) {
+      throw FocusMissionApiException(
+        (json['message'] ?? 'Standalone paper import failed.').toString(),
+      );
+    }
+
+    return UploadedStandalonePaperDraft.fromJson(json);
+  }
+
+  Future<StandalonePaperDraft> createStandalonePaper({
+    required String token,
+    required String studentId,
+    required String subjectId,
+    required String paperKind,
+    required String title,
+    required String teacherNote,
+    required String sourceUnitText,
+    required String sourceRawText,
+    required String sourceFileName,
+    required String sourceFileType,
+    required String targetDate,
+    required int durationMinutes,
+    required List<StandalonePaperItem> items,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/standalone-papers',
+      token: token,
+      body: {
+        'studentId': studentId,
+        'subjectId': subjectId,
+        'paperKind': paperKind.trim().toUpperCase(),
+        'title': title,
+        'teacherNote': teacherNote,
+        'sourceUnitText': sourceUnitText,
+        'sourceRawText': sourceRawText,
+        'sourceFileName': sourceFileName,
+        'sourceFileType': sourceFileType,
+        'targetDate': targetDate,
+        'durationMinutes': durationMinutes,
+        'items': items.map((item) => item.toJson()).toList(growable: false),
+      },
+    );
+
+    return StandalonePaperDraft.fromJson(
+      (json['paper'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<StandalonePaperDraft> updateStandalonePaper({
+    required String token,
+    required String paperId,
+    required String title,
+    required String teacherNote,
+    required String sourceUnitText,
+    required String sourceRawText,
+    required String sourceFileName,
+    required String sourceFileType,
+    required String targetDate,
+    required int durationMinutes,
+    required List<StandalonePaperItem> items,
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/teacher/standalone-papers/$paperId',
+      token: token,
+      body: {
+        'title': title,
+        'teacherNote': teacherNote,
+        'sourceUnitText': sourceUnitText,
+        'sourceRawText': sourceRawText,
+        'sourceFileName': sourceFileName,
+        'sourceFileType': sourceFileType,
+        'targetDate': targetDate,
+        'durationMinutes': durationMinutes,
+        'items': items.map((item) => item.toJson()).toList(growable: false),
+      },
+    );
+
+    return StandalonePaperDraft.fromJson(
+      (json['paper'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<void> deleteStandalonePaper({
+    required String token,
+    required String paperId,
+  }) async {
+    await _requestJson(
+      'DELETE',
+      '/teacher/standalone-papers/$paperId',
+      token: token,
     );
   }
 
