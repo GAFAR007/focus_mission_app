@@ -30,6 +30,7 @@ import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
 import 'flexible_learning_helper_sheet.dart';
 import 'mission_play_screen.dart';
+import 'standalone_paper_play_screen.dart';
 import 'student_result_report_screen.dart';
 import 'student_subject_report_screen.dart';
 
@@ -268,6 +269,51 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           'No mission is assigned for today yet. Your board will wake up as soon as one is added.',
                         ),
                       ),
+                    if (data.dashboard.todayStandalonePapers.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.section),
+                      const _SectionLead(
+                        title: 'Today Tests And Exams',
+                        subtitle:
+                            'These stay separate from missions and open in their own timed paper runner.',
+                      ),
+                      const SizedBox(height: AppSpacing.item),
+                      ...data.dashboard.todayStandalonePapers.map(
+                        (paper) => Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: AppSpacing.item,
+                          ),
+                          child: MissionCard(
+                            title: paper.title,
+                            subtitle:
+                                '${paper.subject?.name ?? 'Subject'} · ${_standaloneSessionLabel(paper.sessionType)} · ${paper.durationMinutes <= 0 ? 'No timer' : '${paper.durationMinutes} min'}',
+                            actionLabel: _standaloneActionLabel(paper),
+                            icon: paper.isExam
+                                ? Icons.fact_check_rounded
+                                : Icons.quiz_rounded,
+                            colors: paper.isExam
+                                ? const [Color(0xFFF0B45D), Color(0xFFE58E3F)]
+                                : const [
+                                    AppPalette.primaryBlue,
+                                    AppPalette.aqua,
+                                  ],
+                            eyebrow: paper.isExam ? 'Exam mode' : 'Test mode',
+                            toneMessage: paper.latestSession?.isActive == true
+                                ? 'Pick up where you left off. Your timer keeps running.'
+                                : paper.latestSession?.isLocked == true
+                                ? 'This paper is locked right now. Open it to see what happened.'
+                                : 'One question at a time, with your progress saved as you go.',
+                            featurePills: <String>[
+                              _standaloneStatusLabel(
+                                paper.latestSession?.status ?? 'ready',
+                              ),
+                              if ((paper.latestSession?.warningCount ?? 0) > 0)
+                                'Warnings ${paper.latestSession!.warningCount}',
+                            ],
+                            onPressed: () => _openStandalonePaper(paper),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.section),
                     const _SectionLead(
                       title: 'This week',
@@ -913,6 +959,38 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
+  }
+
+  Future<void> _openStandalonePaper(StandalonePaperAvailability paper) async {
+    final latestSession = paper.latestSession;
+    if (latestSession != null &&
+        latestSession.isSubmitted &&
+        latestSession.resultPackageId.trim().isNotEmpty) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => StudentResultReportScreen(
+            session: _session,
+            resultPackageId: latestSession.resultPackageId,
+            api: _api,
+          ),
+        ),
+      );
+    } else {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => StandalonePaperPlayScreen(
+            session: _session,
+            paperId: paper.id,
+            api: _api,
+          ),
+        ),
+      );
+    }
+
+    if (!mounted) {
+      return;
+    }
+    _refreshData();
   }
 
   List<StudentSubjectReportSummary> _buildSubjectSummaries(
@@ -2017,6 +2095,41 @@ Color _mySubjectColor(String value) {
     return AppPalette.primaryBlue;
   }
   return Color(0xFF000000 | parsed);
+}
+
+String _standaloneSessionLabel(String value) {
+  return value.trim().toLowerCase() == 'afternoon' ? 'Afternoon' : 'Morning';
+}
+
+String _standaloneStatusLabel(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'active':
+      return 'In progress';
+    case 'locked':
+      return 'Locked';
+    case 'submitted':
+      return 'Submitted';
+    case 'time_expired':
+      return 'Time up';
+    default:
+      return 'Ready';
+  }
+}
+
+String _standaloneActionLabel(StandalonePaperAvailability paper) {
+  final latestSession = paper.latestSession;
+  if (latestSession != null &&
+      latestSession.isSubmitted &&
+      latestSession.resultPackageId.trim().isNotEmpty) {
+    return 'View result';
+  }
+  if (latestSession?.isActive == true) {
+    return 'Resume ${paper.isExam ? 'Exam' : 'Test'}';
+  }
+  if (latestSession?.isLocked == true) {
+    return 'Open ${paper.isExam ? 'Exam' : 'Test'}';
+  }
+  return 'Start ${paper.isExam ? 'Exam' : 'Test'}';
 }
 
 IconData _mySubjectIcon(String subjectName, String rawIcon) {

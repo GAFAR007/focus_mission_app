@@ -116,6 +116,7 @@ class StandalonePaperDraft {
     required this.teacherId,
     required this.studentId,
     required this.paperKind,
+    required this.sessionType,
     required this.title,
     required this.teacherNote,
     required this.sourceUnitText,
@@ -137,6 +138,7 @@ class StandalonePaperDraft {
   final String teacherId;
   final String studentId;
   final String paperKind;
+  final String sessionType;
   final String title;
   final String teacherNote;
   final String sourceUnitText;
@@ -161,6 +163,7 @@ class StandalonePaperDraft {
       teacherId: (json['teacherId'] ?? '').toString(),
       studentId: (json['studentId'] ?? '').toString(),
       paperKind: (json['paperKind'] ?? '').toString(),
+      sessionType: (json['sessionType'] ?? '').toString(),
       title: (json['title'] ?? '').toString(),
       teacherNote: (json['teacherNote'] ?? '').toString(),
       sourceUnitText: (json['sourceUnitText'] ?? '').toString(),
@@ -188,6 +191,7 @@ class StandalonePaperDraft {
     String? teacherId,
     String? studentId,
     String? paperKind,
+    String? sessionType,
     String? title,
     String? teacherNote,
     String? sourceUnitText,
@@ -209,6 +213,7 @@ class StandalonePaperDraft {
       teacherId: teacherId ?? this.teacherId,
       studentId: studentId ?? this.studentId,
       paperKind: paperKind ?? this.paperKind,
+      sessionType: sessionType ?? this.sessionType,
       title: title ?? this.title,
       teacherNote: teacherNote ?? this.teacherNote,
       sourceUnitText: sourceUnitText ?? this.sourceUnitText,
@@ -233,6 +238,7 @@ class StandalonePaperDraft {
       'teacherId': teacherId,
       'studentId': studentId,
       'paperKind': paperKind,
+      'sessionType': sessionType,
       'title': title,
       'teacherNote': teacherNote,
       'sourceUnitText': sourceUnitText,

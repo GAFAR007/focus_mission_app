@@ -77,7 +77,9 @@ String _studentReportFormatOneDecimal(double value) {
   return value % 1 == 0 ? value.toInt().toString() : value.toStringAsFixed(1);
 }
 
-Map<String, String> _studentReportQuestionOptions(Map<String, dynamic> question) {
+Map<String, String> _studentReportQuestionOptions(
+  Map<String, dynamic> question,
+) {
   final normalized = <String, String>{'A': '', 'B': '', 'C': '', 'D': ''};
   final rawOptions = question['options'];
   if (rawOptions is Map<dynamic, dynamic>) {
@@ -180,9 +182,14 @@ class _StudentResultReportScreenState extends State<StudentResultReportScreen> {
 
           final resultPackage = snapshot.data!;
           final certification = resultPackage.certification;
-          final reviewStatus = certification == null
-              ? 'submitted'
-              : certification.certificationPassStatus;
+          final paperReviewStatus =
+              (resultPackage.evidence['reviewStatus'] ?? '').toString().trim();
+          final reviewStatus = certification != null
+              ? certification.certificationPassStatus
+              : resultPackage.resultKind == 'paper_assessment' &&
+                    paperReviewStatus.isNotEmpty
+              ? paperReviewStatus
+              : 'submitted';
           final status = _studentResultStatus(reviewStatus);
 
           // WHY: Student result view must stay read-only, so this screen only
@@ -207,7 +214,9 @@ class _StudentResultReportScreenState extends State<StudentResultReportScreen> {
                         spacing: 10,
                         runSpacing: 10,
                         children: [
-                          _ResultPill(label: 'Type: ${resultPackage.missionType}'),
+                          _ResultPill(
+                            label: 'Type: ${resultPackage.missionType}',
+                          ),
                           _ResultPill(
                             label:
                                 'Score: ${resultPackage.meta.scorePercent}% (${resultPackage.meta.scoreCorrect}/${resultPackage.meta.scoreTotal})',
@@ -227,8 +236,8 @@ class _StudentResultReportScreenState extends State<StudentResultReportScreen> {
                       Text(
                         '${resultPackage.meta.subject} · ${resultPackage.meta.taskCodes.join(', ')}',
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: AppPalette.textMuted,
-                            ),
+                          color: AppPalette.textMuted,
+                        ),
                       ),
                     ],
                   ),
@@ -237,7 +246,9 @@ class _StudentResultReportScreenState extends State<StudentResultReportScreen> {
                 _StudentResultMetaPanel(resultPackage: resultPackage),
                 if (certification != null) ...[
                   const SizedBox(height: AppSpacing.section),
-                  _StudentResultCertificationPanel(certification: certification),
+                  _StudentResultCertificationPanel(
+                    certification: certification,
+                  ),
                 ],
                 const SizedBox(height: AppSpacing.section),
                 _StudentResultEvidencePanel(resultPackage: resultPackage),
@@ -260,10 +271,7 @@ class _StudentResultLoadingState extends StatelessWidget {
 }
 
 class _StudentResultErrorState extends StatelessWidget {
-  const _StudentResultErrorState({
-    required this.message,
-    required this.onBack,
-  });
+  const _StudentResultErrorState({required this.message, required this.onBack});
 
   final String message;
   final VoidCallback onBack;
@@ -334,10 +342,9 @@ class _StudentReportHeader extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: AppPalette.textMuted),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
               ),
             ],
           ),
@@ -368,7 +375,10 @@ class _StudentResultMetaPanel extends StatelessWidget {
                 ? '-'
                 : resultPackage.meta.taskCodes.join(', '),
           ),
-          _MetaRow(label: 'Assigned date', value: resultPackage.meta.assignedDate),
+          _MetaRow(
+            label: 'Assigned date',
+            value: resultPackage.meta.assignedDate,
+          ),
           _MetaRow(
             label: 'Started',
             value: _studentReportFormatDate(resultPackage.meta.startTime),
@@ -415,7 +425,9 @@ class _StudentResultCertificationPanel extends StatelessWidget {
             children: [
               _ResultStatusPill(status: status),
               if (certification.certificationTaskCode.isNotEmpty)
-                _ResultPill(label: 'Task focus: ${certification.certificationTaskCode}'),
+                _ResultPill(
+                  label: 'Task focus: ${certification.certificationTaskCode}',
+                ),
               if (certification.scorePercent > 0)
                 _ResultPill(
                   label:
@@ -428,11 +440,11 @@ class _StudentResultCertificationPanel extends StatelessWidget {
             certification.reason.isNotEmpty
                 ? certification.reason
                 : certification.certificationCounted
-                    ? 'This mission counted toward your certification progress.'
-                    : 'This mission did not count toward certification yet.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppPalette.textMuted,
-                ),
+                ? 'This mission counted toward your certification progress.'
+                : 'This mission did not count toward certification yet.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
           ),
         ],
       ),
@@ -447,10 +459,11 @@ class _StudentResultEvidencePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final format = (resultPackage.evidence['format'] ?? resultPackage.missionType)
-        .toString()
-        .trim()
-        .toUpperCase();
+    final format =
+        (resultPackage.evidence['format'] ?? resultPackage.missionType)
+            .toString()
+            .trim()
+            .toUpperCase();
 
     switch (format) {
       case 'THEORY':
@@ -474,6 +487,10 @@ class _StudentQuestionEvidencePanel extends StatelessWidget {
     final evidence = resultPackage.evidence;
     final questions = _studentReportAsMapList(evidence['questions']);
     final legacyReason = (evidence['legacyBackfillReason'] ?? '').toString();
+    final isStandalonePaper =
+        (evidence['format'] ?? '').toString().trim().toUpperCase() ==
+        'STANDALONE_PAPER';
+    final reviewStatus = (evidence['reviewStatus'] ?? '').toString().trim();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -488,9 +505,58 @@ class _StudentQuestionEvidencePanel extends StatelessWidget {
           ),
         Text('Evidence', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: AppSpacing.item),
+        if (isStandalonePaper)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.item),
+            child: SoftPanel(
+              colors: reviewStatus == 'pending_review'
+                  ? const [Color(0xFFFFFBF3), Color(0xFFFFF0D8)]
+                  : const [Color(0xFFF4FBFF), Color(0xFFE8F7FF)],
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _ResultPill(
+                    label:
+                        'Answered: ${_studentReportAsInt(evidence['questionsAnsweredCount'])}/${_studentReportAsInt(evidence['totalQuestions'])}',
+                  ),
+                  _ResultPill(
+                    label:
+                        'Score: ${_studentReportAsInt(evidence['overallScorePercent'])}%',
+                  ),
+                  if (reviewStatus.isNotEmpty)
+                    _ResultStatusPill(
+                      status: _studentResultStatus(reviewStatus),
+                    ),
+                ],
+              ),
+            ),
+          ),
         ...questions.asMap().entries.map((entry) {
           final index = entry.key;
           final question = entry.value;
+          final itemType = (question['itemType'] ?? '')
+              .toString()
+              .trim()
+              .toUpperCase();
+          if (itemType == 'FILL_GAP') {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.item),
+              child: _StudentFillGapEvidenceCard(
+                itemNumber: index + 1,
+                question: question,
+              ),
+            );
+          }
+          if (itemType == 'THEORY') {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.item),
+              child: _StudentTheoryQuestionEvidenceCard(
+                itemNumber: index + 1,
+                question: question,
+              ),
+            );
+          }
           final options = _studentReportQuestionOptions(question);
           final selectedLetter = (question['selectedOptionLetter'] ?? '')
               .toString()
@@ -503,85 +569,278 @@ class _StudentQuestionEvidencePanel extends StatelessWidget {
           final isCorrect = question['correctness'] == true;
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.item),
-            child: SoftPanel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Question ${index + 1}',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      _ResultStatusPill(
-                        status: _studentResultStatus(
-                          isCorrect ? 'correct' : 'incorrect',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.compact),
-                  Text(
-                    (question['questionText'] ?? '').toString(),
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: AppSpacing.item),
-                  ...options.entries.map((option) {
-                    final isSelected = option.key == selectedLetter;
-                    final isCorrectOption = option.key == correctLetter;
-                    final background = isCorrectOption
-                        ? const Color(0xFFE9FFF1)
-                        : isSelected
-                            ? const Color(0xFFEAF3FF)
-                            : Colors.white.withValues(alpha: 0.72);
-                    final border = isCorrectOption
-                        ? const Color(0xFF84D8A5)
-                        : isSelected
-                            ? const Color(0xFFB9D6FF)
-                            : const Color(0xFFDCE7F8);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: background,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: border),
-                        ),
-                        child: Text(
-                          '${option.key}) ${option.value.isEmpty ? '-' : option.value}',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Selected: ${selectedLetter.isEmpty ? 'No answer recorded' : '$selectedLetter) ${(question['selectedAnswer'] ?? '').toString()}'}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppPalette.primaryBlue,
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Correct: ${correctLetter.isEmpty ? 'No correct answer recorded' : '$correctLetter) ${(question['correctAnswer'] ?? '').toString()}'}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF157347),
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ],
-              ),
+            child: _StudentObjectiveEvidenceCard(
+              itemNumber: index + 1,
+              question: question,
+              options: options,
+              selectedLetter: selectedLetter,
+              correctLetter: correctLetter,
+              isCorrect: isCorrect,
             ),
           );
         }),
       ],
+    );
+  }
+}
+
+class _StudentObjectiveEvidenceCard extends StatelessWidget {
+  const _StudentObjectiveEvidenceCard({
+    required this.itemNumber,
+    required this.question,
+    required this.options,
+    required this.selectedLetter,
+    required this.correctLetter,
+    required this.isCorrect,
+  });
+
+  final int itemNumber;
+  final Map<String, dynamic> question;
+  final Map<String, String> options;
+  final String selectedLetter;
+  final String correctLetter;
+  final bool isCorrect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Question $itemNumber',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            _ResultStatusPill(
+              status: _studentResultStatus(isCorrect ? 'correct' : 'incorrect'),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.compact),
+        Text(
+          (question['questionText'] ?? '').toString(),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: AppSpacing.item),
+        ...options.entries.map((option) {
+          final isSelected = option.key == selectedLetter;
+          final isCorrectOption = option.key == correctLetter;
+          final background = isCorrectOption
+              ? const Color(0xFFE9FFF1)
+              : isSelected
+              ? const Color(0xFFEAF3FF)
+              : Colors.white.withValues(alpha: 0.72);
+          final border = isCorrectOption
+              ? const Color(0xFF84D8A5)
+              : isSelected
+              ? const Color(0xFFB9D6FF)
+              : const Color(0xFFDCE7F8);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: border),
+              ),
+              child: Text(
+                '${option.key}) ${option.value.isEmpty ? '-' : option.value}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 4),
+        Text(
+          'Selected: ${selectedLetter.isEmpty ? 'No answer recorded' : '$selectedLetter) ${(question['selectedAnswer'] ?? '').toString()}'}',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: AppPalette.primaryBlue,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Correct: ${correctLetter.isEmpty ? 'No correct answer recorded' : '$correctLetter) ${(question['correctAnswer'] ?? '').toString()}'}',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: const Color(0xFF157347),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StudentFillGapEvidenceCard extends StatelessWidget {
+  const _StudentFillGapEvidenceCard({
+    required this.itemNumber,
+    required this.question,
+  });
+
+  final int itemNumber;
+  final Map<String, dynamic> question;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCorrect = question['correctness'] == true;
+    final studentAnswer = (question['studentAnswer'] ?? '').toString();
+    final expectedAnswer = (question['expectedAnswer'] ?? '').toString();
+    final acceptedAnswers =
+        (question['acceptedAnswers'] as List<dynamic>? ?? const <dynamic>[])
+            .map((item) => item.toString())
+            .where((item) => item.trim().isNotEmpty)
+            .toList(growable: false);
+
+    return SoftPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Item $itemNumber',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              _ResultStatusPill(
+                status: _studentResultStatus(
+                  isCorrect ? 'correct' : 'incorrect',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Text(
+            (question['questionText'] ?? '').toString(),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.item),
+          Text(
+            'Your answer',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.textMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(studentAnswer.isEmpty ? 'No answer recorded.' : studentAnswer),
+          const SizedBox(height: 10),
+          Text(
+            'Expected answer',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.textMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(expectedAnswer.isEmpty ? '-' : expectedAnswer),
+          if (acceptedAnswers.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Accepted answers',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppPalette.textMuted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(acceptedAnswers.join(', ')),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _StudentTheoryQuestionEvidenceCard extends StatelessWidget {
+  const _StudentTheoryQuestionEvidenceCard({
+    required this.itemNumber,
+    required this.question,
+  });
+
+  final int itemNumber;
+  final Map<String, dynamic> question;
+
+  @override
+  Widget build(BuildContext context) {
+    final teacherScore = _studentReportAsInt(question['teacherScorePercent']);
+    final hasTeacherScore = question['teacherScorePercent'] != null;
+    final teacherFeedback = (question['teacherFeedback'] ?? '').toString();
+    final minimumWordCount = _studentReportAsInt(question['minimumWordCount']);
+    final studentWordCount = _studentReportAsInt(question['studentWordCount']);
+    final status = hasTeacherScore ? 'scored' : 'pending_review';
+
+    return SoftPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Theory item $itemNumber',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              _ResultStatusPill(status: _studentResultStatus(status)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Text(
+            (question['questionText'] ?? '').toString(),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AppSpacing.item),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _ResultPill(label: 'Words: $studentWordCount'),
+              _ResultPill(label: 'Minimum: $minimumWordCount'),
+              if (hasTeacherScore)
+                _ResultPill(label: 'Score: $teacherScore / 100'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.item),
+          Text(
+            'Your answer',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.textMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            ((question['studentAnswer'] ?? '').toString()).trim().isEmpty
+                ? 'No written answer recorded.'
+                : (question['studentAnswer'] ?? '').toString(),
+          ),
+          if (teacherFeedback.trim().isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.item),
+            Text(
+              'Teacher feedback',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppPalette.textMuted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(teacherFeedback),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -595,8 +854,11 @@ class _StudentTheoryEvidencePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final evidence = resultPackage.evidence;
     final questions = _studentReportAsMapList(evidence['questions']);
-    final reviewStatus = (evidence['reviewStatus'] ?? 'pending_review').toString();
-    final average = _studentReportAsDouble(evidence['averageTeacherScorePercent']);
+    final reviewStatus = (evidence['reviewStatus'] ?? 'pending_review')
+        .toString();
+    final average = _studentReportAsDouble(
+      evidence['averageTeacherScorePercent'],
+    );
     final xpMax = _studentReportAsInt(evidence['xpMax']);
     final xpAwarded = _studentReportAsInt(evidence['xpAwarded']);
     final legacyReason = (evidence['legacyBackfillReason'] ?? '').toString();
@@ -636,11 +898,14 @@ class _StudentTheoryEvidencePanel extends StatelessWidget {
           final index = entry.key;
           final question = entry.value;
           final teacherScore = question['teacherScorePercent'];
-          final teacherFeedback = (question['teacherFeedback'] ?? '').toString();
+          final teacherFeedback = (question['teacherFeedback'] ?? '')
+              .toString();
           final status = _studentResultStatus(
             teacherScore == null
                 ? reviewStatus
-                : (_studentReportAsInt(teacherScore) >= 70 ? 'passed' : 'not_passed'),
+                : (_studentReportAsInt(teacherScore) >= 70
+                      ? 'passed'
+                      : 'not_passed'),
           );
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.item),
@@ -663,8 +928,8 @@ class _StudentTheoryEvidencePanel extends StatelessWidget {
                   Text(
                     (question['questionText'] ?? '').toString(),
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.item),
                   _EvidenceLabel(
@@ -769,10 +1034,11 @@ class _StudentEssayEvidencePanel extends StatelessWidget {
           final index = entry.key;
           final sentence = entry.value;
           final blanks = _studentReportAsMapList(sentence['blankSelections']);
-          final learnFirstBullets = (sentence['learnFirstBullets'] as List<dynamic>? ?? const [])
-              .map((item) => item.toString().trim())
-              .where((item) => item.isNotEmpty)
-              .toList(growable: false);
+          final learnFirstBullets =
+              (sentence['learnFirstBullets'] as List<dynamic>? ?? const [])
+                  .map((item) => item.toString().trim())
+                  .where((item) => item.isNotEmpty)
+                  .toList(growable: false);
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.item),
             child: SoftPanel(
@@ -826,7 +1092,8 @@ class _StudentEssayEvidencePanel extends StatelessWidget {
                           ),
                           Text(
                             'Selected: ${selectedLetter.isEmpty ? '-' : '$selectedLetter) ${(blank['chosenOptionText'] ?? '').toString()}'}',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
                                   color: AppPalette.primaryBlue,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -834,7 +1101,8 @@ class _StudentEssayEvidencePanel extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             'Correct: ${correctLetter.isEmpty ? '-' : '$correctLetter) ${(blank['correctOptionText'] ?? '').toString()}'}',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
                                   color: const Color(0xFF157347),
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -870,9 +1138,9 @@ class _EvidenceLabel extends StatelessWidget {
       children: [
         Text(
           label,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: AppPalette.navy,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(color: AppPalette.navy),
         ),
         const SizedBox(height: 4),
         Container(
@@ -906,17 +1174,17 @@ class _MetaRow extends StatelessWidget {
             width: 112,
             child: Text(
               label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppPalette.textMuted,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -940,9 +1208,9 @@ class _ResultPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -964,9 +1232,9 @@ class _ResultStatusPill extends StatelessWidget {
       child: Text(
         status.label,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: status.foreground,
-              fontWeight: FontWeight.w700,
-            ),
+          color: status.foreground,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

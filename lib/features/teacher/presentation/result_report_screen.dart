@@ -2791,6 +2791,9 @@ class _QuestionEvidence extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final questions = evidence['questions'] as List<dynamic>? ?? const [];
+    final isStandalonePaper =
+        (evidence['format'] ?? '').toString().trim().toUpperCase() ==
+        'STANDALONE_PAPER';
     final isManualTeacherResult = evidence['manualTeacherResult'] == true;
     final teacherReview = evidence['teacherReview'] is Map<dynamic, dynamic>
         ? (evidence['teacherReview'] as Map<dynamic, dynamic>)
@@ -2902,11 +2905,53 @@ class _QuestionEvidence extends StatelessWidget {
             ),
           ),
         ],
+        if (isStandalonePaper) ...[
+          const SizedBox(height: AppSpacing.compact),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.item),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              border: Border.all(
+                color: AppPalette.primaryBlue.withValues(alpha: 0.24),
+              ),
+            ),
+            child: Text(
+              'This standalone paper can mix objective, fill gap, and theory items in one sitting. Review each card using the stored item type below.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+            ),
+          ),
+        ],
         const SizedBox(height: AppSpacing.compact),
         ...questions.asMap().entries.map((entry) {
           final index = entry.key;
           final question = (entry.value as Map<dynamic, dynamic>)
               .cast<String, dynamic>();
+          final itemType = (question['itemType'] ?? '')
+              .toString()
+              .trim()
+              .toUpperCase();
+          if (itemType == 'FILL_GAP') {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+              child: _TeacherFillGapEvidenceCard(
+                itemNumber: index + 1,
+                question: question,
+              ),
+            );
+          }
+          if (itemType == 'THEORY') {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+              child: _TeacherTheoryEvidenceCard(
+                itemNumber: index + 1,
+                question: question,
+              ),
+            );
+          }
           final correctness =
               !isManualTeacherResult && question['correctness'] == true;
           final selectedOptionLetter = (question['selectedOptionLetter'] ?? '')
@@ -2936,186 +2981,430 @@ class _QuestionEvidence extends StatelessWidget {
 
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.compact),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.item),
-              decoration: BoxDecoration(
-                color: isManualTeacherResult
-                    ? const Color(0xFFF8FBFF)
-                    : correctness
-                    ? const Color(0xFFF1FBF4)
-                    : const Color(0xFFFFF7EF),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                border: Border.all(
-                  color: isManualTeacherResult
-                      ? AppPalette.sky.withValues(alpha: 0.5)
-                      : correctness
-                      ? AppPalette.mint.withValues(alpha: 0.75)
-                      : AppPalette.orange.withValues(alpha: 0.55),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Q${index + 1}',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: correctness
-                              ? AppPalette.mint.withValues(alpha: 0.3)
-                              : AppPalette.sun.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          isManualTeacherResult
-                              ? 'Reference question'
-                              : correctness
-                              ? 'Correct'
-                              : 'Incorrect',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: AppPalette.navy,
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                      ),
-                      const Spacer(),
-                      if (!isManualTeacherResult)
-                        Text(
-                          'Points: $pointsEarned/$maxPoints',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: AppPalette.textMuted,
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    (question['questionText'] ?? '').toString(),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppPalette.navy,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  ...['A', 'B', 'C', 'D'].map((letter) {
-                    final optionText = (optionMap[letter] ?? '').trim();
-                    final isCorrectOption = letter == correctOptionLetter;
-                    final isSelectedOption = letter == selectedOptionLetter;
-                    final isSelectedWrong =
-                        isSelectedOption && !isCorrectOption;
-                    Color tileColor = Colors.white;
-                    Color borderColor = AppPalette.sky.withValues(alpha: 0.5);
-                    if (isCorrectOption) {
-                      tileColor = const Color(0xFFEAF9EE);
-                      borderColor = AppPalette.mint.withValues(alpha: 0.85);
-                    } else if (isSelectedWrong) {
-                      tileColor = const Color(0xFFFFF0E3);
-                      borderColor = AppPalette.orange.withValues(alpha: 0.8);
-                    } else if (isSelectedOption) {
-                      tileColor = const Color(0xFFEAF2FF);
-                      borderColor = AppPalette.primaryBlue.withValues(
-                        alpha: 0.6,
-                      );
-                    }
-
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: tileColor,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: borderColor),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '$letter) ',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: AppPalette.navy,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                            Expanded(
-                              child: Text(
-                                optionText.isEmpty ? '-' : optionText,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(color: AppPalette.navy),
-                              ),
-                            ),
-                            if (isCorrectOption)
-                              Icon(
-                                Icons.check_circle_rounded,
-                                size: 16,
-                                color: AppPalette.mint.withValues(alpha: 0.95),
-                              )
-                            else if (isSelectedWrong)
-                              Icon(
-                                Icons.radio_button_checked_rounded,
-                                size: 16,
-                                color: AppPalette.orange,
-                              )
-                            else if (isSelectedOption)
-                              Icon(
-                                Icons.radio_button_checked_rounded,
-                                size: 16,
-                                color: AppPalette.primaryBlue,
-                              ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Correct: ${correctOptionLetter.isNotEmpty ? '$correctOptionLetter) ' : ''}$correctAnswer',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppPalette.mint.withValues(alpha: 0.95),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    'Selected: ${selectedOptionLetter.isNotEmpty ? '$selectedOptionLetter) ' : ''}${selectedAnswer.isNotEmpty ? selectedAnswer : 'No selection recorded'}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppPalette.navy,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (legacySelectionUnavailable &&
-                      selectedOptionLetter.isEmpty &&
-                      selectedAnswer.isEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Original selected option was not saved in this older record.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+            child: _TeacherObjectiveEvidenceCard(
+              itemNumber: index + 1,
+              isManualTeacherResult: isManualTeacherResult,
+              correctness: correctness,
+              pointsEarned: pointsEarned,
+              maxPoints: maxPoints,
+              question: question,
+              optionMap: optionMap,
+              selectedOptionLetter: selectedOptionLetter,
+              selectedAnswer: selectedAnswer,
+              correctOptionLetter: correctOptionLetter,
+              correctAnswer: correctAnswer,
+              legacySelectionUnavailable: legacySelectionUnavailable,
             ),
           );
         }),
       ],
+    );
+  }
+}
+
+class _TeacherObjectiveEvidenceCard extends StatelessWidget {
+  const _TeacherObjectiveEvidenceCard({
+    required this.itemNumber,
+    required this.isManualTeacherResult,
+    required this.correctness,
+    required this.pointsEarned,
+    required this.maxPoints,
+    required this.question,
+    required this.optionMap,
+    required this.selectedOptionLetter,
+    required this.selectedAnswer,
+    required this.correctOptionLetter,
+    required this.correctAnswer,
+    required this.legacySelectionUnavailable,
+  });
+
+  final int itemNumber;
+  final bool isManualTeacherResult;
+  final bool correctness;
+  final int pointsEarned;
+  final int maxPoints;
+  final Map<String, dynamic> question;
+  final Map<String, String> optionMap;
+  final String selectedOptionLetter;
+  final String selectedAnswer;
+  final String correctOptionLetter;
+  final String correctAnswer;
+  final bool legacySelectionUnavailable;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: isManualTeacherResult
+            ? const Color(0xFFF8FBFF)
+            : correctness
+            ? const Color(0xFFF1FBF4)
+            : const Color(0xFFFFF7EF),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(
+          color: isManualTeacherResult
+              ? AppPalette.sky.withValues(alpha: 0.5)
+              : correctness
+              ? AppPalette.mint.withValues(alpha: 0.75)
+              : AppPalette.orange.withValues(alpha: 0.55),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Q$itemNumber',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: correctness
+                      ? AppPalette.mint.withValues(alpha: 0.3)
+                      : AppPalette.sun.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  isManualTeacherResult
+                      ? 'Reference question'
+                      : correctness
+                      ? 'Correct'
+                      : 'Incorrect',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppPalette.navy,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (!isManualTeacherResult)
+                Text(
+                  'Points: $pointsEarned/$maxPoints',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppPalette.textMuted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            (question['questionText'] ?? '').toString(),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppPalette.navy,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...['A', 'B', 'C', 'D'].map((letter) {
+            final optionText = (optionMap[letter] ?? '').trim();
+            final isCorrectOption = letter == correctOptionLetter;
+            final isSelectedOption = letter == selectedOptionLetter;
+            final isSelectedWrong = isSelectedOption && !isCorrectOption;
+            Color tileColor = Colors.white;
+            Color borderColor = AppPalette.sky.withValues(alpha: 0.5);
+            if (isCorrectOption) {
+              tileColor = const Color(0xFFEAF9EE);
+              borderColor = AppPalette.mint.withValues(alpha: 0.85);
+            } else if (isSelectedWrong) {
+              tileColor = const Color(0xFFFFF0E3);
+              borderColor = AppPalette.orange.withValues(alpha: 0.8);
+            } else if (isSelectedOption) {
+              tileColor = const Color(0xFFEAF2FF);
+              borderColor = AppPalette.primaryBlue.withValues(alpha: 0.6);
+            }
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: tileColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: borderColor),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$letter) ',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.navy,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        optionText.isEmpty ? '-' : optionText,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                      ),
+                    ),
+                    if (isCorrectOption)
+                      Icon(
+                        Icons.check_circle_rounded,
+                        size: 16,
+                        color: AppPalette.mint.withValues(alpha: 0.95),
+                      )
+                    else if (isSelectedWrong)
+                      Icon(
+                        Icons.radio_button_checked_rounded,
+                        size: 16,
+                        color: AppPalette.orange,
+                      )
+                    else if (isSelectedOption)
+                      Icon(
+                        Icons.radio_button_checked_rounded,
+                        size: 16,
+                        color: AppPalette.primaryBlue,
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 4),
+          Text(
+            'Correct: ${correctOptionLetter.isNotEmpty ? '$correctOptionLetter) ' : ''}$correctAnswer',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.mint.withValues(alpha: 0.95),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            'Selected: ${selectedOptionLetter.isNotEmpty ? '$selectedOptionLetter) ' : ''}${selectedAnswer.isNotEmpty ? selectedAnswer : 'No selection recorded'}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.navy,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (legacySelectionUnavailable &&
+              selectedOptionLetter.isEmpty &&
+              selectedAnswer.isEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Original selected option was not saved in this older record.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TeacherFillGapEvidenceCard extends StatelessWidget {
+  const _TeacherFillGapEvidenceCard({
+    required this.itemNumber,
+    required this.question,
+  });
+
+  final int itemNumber;
+  final Map<String, dynamic> question;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCorrect = question['correctness'] == true;
+    final acceptedAnswers =
+        (question['acceptedAnswers'] as List<dynamic>? ?? const <dynamic>[])
+            .map((item) => item.toString())
+            .where((item) => item.trim().isNotEmpty)
+            .toList(growable: false);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: isCorrect ? const Color(0xFFF1FBF4) : const Color(0xFFFFF7EF),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(
+          color: isCorrect
+              ? AppPalette.mint.withValues(alpha: 0.75)
+              : AppPalette.orange.withValues(alpha: 0.55),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Item $itemNumber',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isCorrect
+                      ? AppPalette.mint.withValues(alpha: 0.3)
+                      : AppPalette.sun.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  isCorrect ? 'Correct' : 'Incorrect',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppPalette.navy,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            (question['questionText'] ?? '').toString(),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppPalette.navy,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Student answer: ${((question['studentAnswer'] ?? '').toString()).trim().isEmpty ? 'No answer recorded' : (question['studentAnswer'] ?? '').toString()}',
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Expected answer: ${((question['expectedAnswer'] ?? '').toString()).trim().isEmpty ? '-' : (question['expectedAnswer'] ?? '').toString()}',
+          ),
+          if (acceptedAnswers.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('Accepted answers: ${acceptedAnswers.join(', ')}'),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TeacherTheoryEvidenceCard extends StatelessWidget {
+  const _TeacherTheoryEvidenceCard({
+    required this.itemNumber,
+    required this.question,
+  });
+
+  final int itemNumber;
+  final Map<String, dynamic> question;
+
+  @override
+  Widget build(BuildContext context) {
+    final teacherScorePercent = question['teacherScorePercent'];
+    final teacherFeedback = (question['teacherFeedback'] ?? '').toString();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: teacherScorePercent == null
+            ? const Color(0xFFFFFBF3)
+            : const Color(0xFFF1FBF4),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(
+          color: teacherScorePercent == null
+              ? AppPalette.sun.withValues(alpha: 0.6)
+              : AppPalette.mint.withValues(alpha: 0.75),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Theory $itemNumber',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: teacherScorePercent == null
+                      ? AppPalette.sun.withValues(alpha: 0.35)
+                      : AppPalette.mint.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  teacherScorePercent == null ? 'Pending review' : 'Scored',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppPalette.navy,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (teacherScorePercent != null)
+                Text(
+                  'Score: ${_asIntValue(teacherScorePercent)}/100',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppPalette.textMuted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            (question['questionText'] ?? '').toString(),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppPalette.navy,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Student answer',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.textMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FBFF),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              ((question['studentAnswer'] ?? '').toString()).trim().isEmpty
+                  ? 'No written answer recorded.'
+                  : (question['studentAnswer'] ?? '').toString(),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Minimum words: ${_asIntValue(question['minimumWordCount'])} · Student words: ${_asIntValue(question['studentWordCount'])}',
+          ),
+          if (teacherFeedback.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Teacher feedback',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppPalette.textMuted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(teacherFeedback),
+          ],
+        ],
+      ),
     );
   }
 }

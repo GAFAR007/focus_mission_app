@@ -32,6 +32,7 @@ class StandaloneTestScreen extends StatelessWidget {
     required this.student,
     required this.subject,
     required this.initialTargetDate,
+    required this.initialSessionType,
     this.api,
   });
 
@@ -39,6 +40,7 @@ class StandaloneTestScreen extends StatelessWidget {
   final StudentSummary student;
   final SubjectSummary subject;
   final DateTime initialTargetDate;
+  final String initialSessionType;
   final FocusMissionApi? api;
 
   @override
@@ -48,6 +50,7 @@ class StandaloneTestScreen extends StatelessWidget {
       student: student,
       subject: subject,
       initialTargetDate: initialTargetDate,
+      initialSessionType: initialSessionType,
       paperKind: 'TEST',
       api: api,
     );
@@ -61,6 +64,7 @@ class StandaloneExamScreen extends StatelessWidget {
     required this.student,
     required this.subject,
     required this.initialTargetDate,
+    required this.initialSessionType,
     this.api,
   });
 
@@ -68,6 +72,7 @@ class StandaloneExamScreen extends StatelessWidget {
   final StudentSummary student;
   final SubjectSummary subject;
   final DateTime initialTargetDate;
+  final String initialSessionType;
   final FocusMissionApi? api;
 
   @override
@@ -77,6 +82,7 @@ class StandaloneExamScreen extends StatelessWidget {
       student: student,
       subject: subject,
       initialTargetDate: initialTargetDate,
+      initialSessionType: initialSessionType,
       paperKind: 'EXAM',
       api: api,
     );
@@ -90,6 +96,7 @@ class StandalonePaperScreen extends StatefulWidget {
     required this.student,
     required this.subject,
     required this.initialTargetDate,
+    required this.initialSessionType,
     required this.paperKind,
     this.api,
   });
@@ -98,6 +105,7 @@ class StandalonePaperScreen extends StatefulWidget {
   final StudentSummary student;
   final SubjectSummary subject;
   final DateTime initialTargetDate;
+  final String initialSessionType;
   final String paperKind;
   final FocusMissionApi? api;
 
@@ -124,19 +132,27 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
   late final TextEditingController _durationController;
 
   final List<_StandalonePaperItemController> _itemEditors = [];
+  final Map<int, _TheoryReviewController> _theoryReviewControllers =
+      <int, _TheoryReviewController>{};
 
   List<StandalonePaperDraft> _papers = const [];
   UploadedStandalonePaperDraft? _uploadedDraft;
   StandalonePaperImportReadiness? _importReadiness;
+  StandalonePaperSessionState? _latestSession;
   String _rawUploadedSourceText = '';
   String _selectedSourceFileName = '';
   String _selectedSourceFileType = '';
   String _activePaperId = '';
+  String _sessionType = 'morning';
   DateTime? _targetDate;
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isDeleting = false;
   bool _isImporting = false;
+  bool _isPublishing = false;
+  bool _isRefreshingSession = false;
+  bool _isResettingSession = false;
+  bool _isScoringSession = false;
   String? _errorMessage;
 
   String get _paperKind => widget.paperKind.trim().toUpperCase();
@@ -151,6 +167,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     _teacherNoteController = TextEditingController();
     _unitTextController = TextEditingController();
     _durationController = TextEditingController(text: '0');
+    _sessionType = _normalizeStandaloneSessionType(widget.initialSessionType);
     _targetDate = _dateOnly(widget.initialTargetDate);
     _resetDraft(keepTargetDate: true);
     _loadPapers();
@@ -164,6 +181,9 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     _durationController.dispose();
     for (final editor in _itemEditors) {
       editor.dispose();
+    }
+    for (final controller in _theoryReviewControllers.values) {
+      controller.dispose();
     }
     super.dispose();
   }
@@ -209,9 +229,11 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     _activePaperId = '';
     _uploadedDraft = null;
     _importReadiness = null;
+    _latestSession = null;
     _rawUploadedSourceText = '';
     _selectedSourceFileName = '';
     _selectedSourceFileType = '';
+    _sessionType = _normalizeStandaloneSessionType(widget.initialSessionType);
     if (!keepTargetDate) {
       _targetDate = _dateOnly(widget.initialTargetDate);
     }
@@ -221,6 +243,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     _itemEditors
       ..clear()
       ..add(_StandalonePaperItemController.empty('OBJECTIVE'));
+    _syncTheoryReviewControllers();
   }
 
   void _applyPaper(StandalonePaperDraft paper, {bool clearImportState = true}) {
@@ -229,6 +252,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     _unitTextController.text = paper.sourceUnitText;
     _durationController.text = paper.durationMinutes.toString();
     _activePaperId = paper.id;
+    _latestSession = null;
     if (clearImportState) {
       _uploadedDraft = null;
       _importReadiness = null;
@@ -236,6 +260,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     _rawUploadedSourceText = paper.sourceRawText;
     _selectedSourceFileName = paper.sourceFileName;
     _selectedSourceFileType = paper.sourceFileType;
+    _sessionType = _normalizeStandaloneSessionType(paper.sessionType);
     _targetDate = paper.targetDate.trim().isEmpty
         ? _dateOnly(widget.initialTargetDate)
         : _dateOnly(
@@ -253,6 +278,8 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
               ]
             : paper.items.map(_StandalonePaperItemController.fromItem),
       );
+    _syncTheoryReviewControllers();
+    _loadLatestSessionForPaper(paper.id);
   }
 
   Future<void> _pickAndPopulateDraft() async {
@@ -288,6 +315,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
         studentId: widget.student.id,
         subjectId: widget.subject.id,
         paperKind: _paperKind,
+        sessionType: _sessionType,
         fileBytes: bytes,
         fileName: file.name,
         title: _titleController.text.trim(),
@@ -415,6 +443,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
               studentId: widget.student.id,
               subjectId: widget.subject.id,
               paperKind: _paperKind,
+              sessionType: _sessionType,
               title: _titleController.text.trim(),
               teacherNote: _teacherNoteController.text.trim(),
               sourceUnitText: _unitTextController.text.trim(),
@@ -428,6 +457,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
           : await _api.updateStandalonePaper(
               token: widget.session.token,
               paperId: _activePaperId,
+              sessionType: _sessionType,
               title: _titleController.text.trim(),
               teacherNote: _teacherNoteController.text.trim(),
               sourceUnitText: _unitTextController.text.trim(),
@@ -508,6 +538,292 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     } finally {
       if (mounted) {
         setState(() => _isDeleting = false);
+      }
+    }
+  }
+
+  Future<void> _publishDraft() async {
+    if (_activePaperId.trim().isEmpty || _isPublishing) {
+      return;
+    }
+
+    setState(() {
+      _isPublishing = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final paper = await _api.publishStandalonePaper(
+        token: widget.session.token,
+        paperId: _activePaperId,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _papers = <StandalonePaperDraft>[
+          paper,
+          ..._papers.where((entry) => entry.id != paper.id),
+        ];
+        _applyPaper(paper);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$_paperLabel published for ${_sessionTypeLabel(_sessionType)}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _errorMessage = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isPublishing = false);
+      }
+    }
+  }
+
+  Future<void> _unpublishDraft() async {
+    if (_activePaperId.trim().isEmpty || _isPublishing) {
+      return;
+    }
+
+    setState(() {
+      _isPublishing = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final paper = await _api.unpublishStandalonePaper(
+        token: widget.session.token,
+        paperId: _activePaperId,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _papers = <StandalonePaperDraft>[
+          paper,
+          ..._papers.where((entry) => entry.id != paper.id),
+        ];
+        _applyPaper(paper);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$_paperLabel moved back to draft mode.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _errorMessage = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isPublishing = false);
+      }
+    }
+  }
+
+  Future<void> _loadLatestSessionForPaper(
+    String paperId, {
+    bool showBusy = false,
+  }) async {
+    final normalizedPaperId = paperId.trim();
+    if (normalizedPaperId.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _latestSession = null;
+          _isRefreshingSession = false;
+        });
+      }
+      _syncTheoryReviewControllers();
+      return;
+    }
+
+    if (showBusy && mounted) {
+      setState(() => _isRefreshingSession = true);
+    }
+
+    try {
+      final session = await _api.fetchLatestStandalonePaperSession(
+        token: widget.session.token,
+        paperId: normalizedPaperId,
+      );
+
+      if (!mounted || _activePaperId != normalizedPaperId) {
+        return;
+      }
+
+      setState(() {
+        _latestSession = session;
+      });
+      _syncTheoryReviewControllers();
+    } catch (error) {
+      if (!mounted || _activePaperId != normalizedPaperId) {
+        return;
+      }
+      setState(() => _errorMessage = error.toString());
+    } finally {
+      if (showBusy && mounted && _activePaperId == normalizedPaperId) {
+        setState(() => _isRefreshingSession = false);
+      }
+    }
+  }
+
+  void _syncTheoryReviewControllers() {
+    final session = _latestSession;
+    final relevantIndexes = <int>{};
+    for (final response
+        in session?.responses ?? const <StandalonePaperSessionResponse>[]) {
+      if (response.itemType.trim().toUpperCase() != 'THEORY') {
+        continue;
+      }
+      relevantIndexes.add(response.itemIndex);
+      _theoryReviewControllers.putIfAbsent(
+        response.itemIndex,
+        () => _TheoryReviewController(
+          scoreText: response.teacherScorePercent?.toString() ?? '',
+          feedbackText: response.teacherFeedback,
+        ),
+      );
+      final controller = _theoryReviewControllers[response.itemIndex]!;
+      final expectedScore = response.teacherScorePercent?.toString() ?? '';
+      if (controller.scoreController.text.trim() != expectedScore) {
+        controller.scoreController.text = expectedScore;
+      }
+      if (controller.feedbackController.text.trim() !=
+          response.teacherFeedback.trim()) {
+        controller.feedbackController.text = response.teacherFeedback.trim();
+      }
+    }
+
+    final staleIndexes = _theoryReviewControllers.keys
+        .where((index) => !relevantIndexes.contains(index))
+        .toList(growable: false);
+    for (final index in staleIndexes) {
+      _theoryReviewControllers.remove(index)?.dispose();
+    }
+  }
+
+  Future<void> _refreshLatestSession() async {
+    await _loadLatestSessionForPaper(_activePaperId, showBusy: true);
+  }
+
+  Future<void> _resetLatestSession() async {
+    final session = _latestSession;
+    if (session == null || session.id.trim().isEmpty || _isResettingSession) {
+      return;
+    }
+
+    setState(() {
+      _isResettingSession = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final resetSession = await _api.resetStandalonePaperSession(
+        token: widget.session.token,
+        sessionId: session.id,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _latestSession = resetSession;
+      });
+      _syncTheoryReviewControllers();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Student sitting reset for another try.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _errorMessage = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isResettingSession = false);
+      }
+    }
+  }
+
+  Future<void> _scoreLatestSession() async {
+    final session = _latestSession;
+    if (session == null || _isScoringSession) {
+      return;
+    }
+
+    final reviews = <Map<String, dynamic>>[];
+    for (final response in session.responses) {
+      if (response.itemType.trim().toUpperCase() != 'THEORY') {
+        continue;
+      }
+      final controller = _theoryReviewControllers[response.itemIndex];
+      final rawScore = controller?.scoreController.text.trim() ?? '';
+      final parsedScore = int.tryParse(rawScore);
+      if (parsedScore == null || parsedScore < 0 || parsedScore > 100) {
+        setState(() {
+          _errorMessage =
+              'Each theory response needs a score between 0 and 100 before review can be saved.';
+        });
+        return;
+      }
+      reviews.add({
+        'itemIndex': response.itemIndex,
+        'scorePercent': parsedScore,
+        'feedback': controller?.feedbackController.text.trim() ?? '',
+      });
+    }
+
+    if (reviews.isEmpty) {
+      setState(() {
+        _errorMessage =
+            'No theory responses are waiting for review in this $_paperLabel.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isScoringSession = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final reviewed = await _api.scoreStandalonePaperSession(
+        token: widget.session.token,
+        sessionId: session.id,
+        reviews: reviews,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _latestSession = reviewed;
+      });
+      _syncTheoryReviewControllers();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Theory review saved.')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _errorMessage = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isScoringSession = false);
       }
     }
   }
@@ -713,7 +1029,24 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isBusy = _isLoading || _isSaving || _isDeleting || _isImporting;
+    final isBusy =
+        _isLoading ||
+        _isSaving ||
+        _isDeleting ||
+        _isImporting ||
+        _isPublishing ||
+        _isRefreshingSession ||
+        _isResettingSession ||
+        _isScoringSession;
+    StandalonePaperDraft? activePaper;
+    for (final paper in _papers) {
+      if (paper.id == _activePaperId) {
+        activePaper = paper;
+        break;
+      }
+    }
+    final isPublished = activePaper?.status.trim().toLowerCase() == 'published';
+    final latestSession = _latestSession;
 
     return FocusScaffold(
       child: SafeArea(
@@ -754,6 +1087,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                     _InfoPill(label: widget.student.name),
                     _InfoPill(label: widget.subject.name),
                     _InfoPill(label: _paperLabel),
+                    _InfoPill(label: _sessionTypeLabel(_sessionType)),
                     _InfoPill(label: _targetDateKey),
                   ],
                 ),
@@ -784,14 +1118,36 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                 isSaving: _isSaving,
                 isDeleting: _isDeleting,
                 isImporting: _isImporting,
+                isPublishing: _isPublishing,
                 hasSavedDraft: _activePaperId.trim().isNotEmpty,
+                isPublished: isPublished,
                 onPopulate: _pickAndPopulateDraft,
                 onSave: _saveDraft,
+                onPublish: _publishDraft,
+                onUnpublish: _unpublishDraft,
                 onDelete: _deleteDraft,
                 onDownloadTeacher: () => _downloadCopy(includeAnswers: true),
                 onDownloadStudent: () => _downloadCopy(includeAnswers: false),
               ),
               const SizedBox(height: AppSpacing.section),
+              if (_activePaperId.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.section),
+                  child: _StandaloneSessionPanel(
+                    paperLabel: _paperLabel,
+                    sessionTypeLabel: _sessionTypeLabel(_sessionType),
+                    isPublished: isPublished,
+                    isRefreshing: _isRefreshingSession,
+                    isResetting: _isResettingSession,
+                    isSavingReview: _isScoringSession,
+                    session: latestSession,
+                    itemEditors: _itemEditors,
+                    reviewControllers: _theoryReviewControllers,
+                    onRefresh: _refreshLatestSession,
+                    onReset: _resetLatestSession,
+                    onSaveReview: _scoreLatestSession,
+                  ),
+                ),
               if (_importReadiness != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.section),
@@ -838,6 +1194,34 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _sessionType,
+                            decoration: const InputDecoration(
+                              labelText: 'Lesson slot',
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'morning',
+                                child: Text('Morning'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'afternoon',
+                                child: Text('Afternoon'),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              if (value == null) {
+                                return;
+                              }
+                              setState(
+                                () => _sessionType =
+                                    _normalizeStandaloneSessionType(value),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
                           child: TextFormField(
                             controller: _durationController,
                             keyboardType: TextInputType.number,
@@ -851,12 +1235,22 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                     const SizedBox(height: 12),
                     Text(
                       _selectedSourceFileName.trim().isEmpty
-                          ? 'Populate draft reads the uploaded file directly. Unit text stays teacher-reviewed here.'
-                          : 'Imported from $_selectedSourceFileName${_selectedSourceFileType.trim().isEmpty ? '' : ' · $_selectedSourceFileType'}.',
+                          ? 'Populate draft reads the uploaded file directly. Unit text stays teacher-reviewed here, and this paper will open in the ${_sessionTypeLabel(_sessionType).toLowerCase()} slot.'
+                          : 'Imported from $_selectedSourceFileName${_selectedSourceFileType.trim().isEmpty ? '' : ' · $_selectedSourceFileType'} for the ${_sessionTypeLabel(_sessionType).toLowerCase()} slot.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppPalette.textMuted,
                       ),
                     ),
+                    if (isPublished) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'This $_paperLabel is published. Unpublish it before changing the saved content.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF9A5C00),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _unitTextController,
@@ -953,6 +1347,14 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                         ? 'Populating $_paperLabel draft...'
                         : _isSaving
                         ? 'Saving $_paperLabel draft...'
+                        : _isPublishing
+                        ? '${isPublished ? 'Unpublishing' : 'Publishing'} $_paperLabel...'
+                        : _isRefreshingSession
+                        ? 'Refreshing student session...'
+                        : _isResettingSession
+                        ? 'Resetting student session...'
+                        : _isScoringSession
+                        ? 'Saving theory review...'
                         : _isDeleting
                         ? 'Deleting $_paperLabel draft...'
                         : 'Loading $_paperLabel drafts...',
@@ -1308,9 +1710,13 @@ class _ActionPanel extends StatelessWidget {
     required this.isSaving,
     required this.isDeleting,
     required this.isImporting,
+    required this.isPublishing,
     required this.hasSavedDraft,
+    required this.isPublished,
     required this.onPopulate,
     required this.onSave,
+    required this.onPublish,
+    required this.onUnpublish,
     required this.onDelete,
     required this.onDownloadTeacher,
     required this.onDownloadStudent,
@@ -1320,9 +1726,13 @@ class _ActionPanel extends StatelessWidget {
   final bool isSaving;
   final bool isDeleting;
   final bool isImporting;
+  final bool isPublishing;
   final bool hasSavedDraft;
+  final bool isPublished;
   final VoidCallback onPopulate;
   final VoidCallback onSave;
+  final VoidCallback onPublish;
+  final VoidCallback onUnpublish;
   final VoidCallback onDelete;
   final VoidCallback onDownloadTeacher;
   final VoidCallback onDownloadStudent;
@@ -1347,6 +1757,20 @@ class _ActionPanel extends StatelessWidget {
             colors: const [Color(0xFF5BB87D), Color(0xFF3D9970)],
             onPressed: isSaving ? () {} : onSave,
           ),
+          if (hasSavedDraft)
+            GradientButton(
+              label: isPublishing
+                  ? (isPublished ? 'Unpublishing...' : 'Publishing...')
+                  : (isPublished
+                        ? 'Unpublish $paperLabel'
+                        : 'Publish $paperLabel'),
+              colors: isPublished
+                  ? const [Color(0xFFE7A34B), Color(0xFFD47C2C)]
+                  : const [Color(0xFF7D8CFF), Color(0xFF5066E4)],
+              onPressed: isPublishing
+                  ? () {}
+                  : (isPublished ? onUnpublish : onPublish),
+            ),
           OutlinedButton.icon(
             onPressed: onDownloadTeacher,
             icon: const Icon(Icons.download_rounded),
@@ -1367,6 +1791,303 @@ class _ActionPanel extends StatelessWidget {
               ),
               label: Text(isDeleting ? 'Deleting...' : 'Delete draft'),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TheoryReviewController {
+  _TheoryReviewController({String scoreText = '', String feedbackText = ''})
+    : scoreController = TextEditingController(text: scoreText),
+      feedbackController = TextEditingController(text: feedbackText);
+
+  final TextEditingController scoreController;
+  final TextEditingController feedbackController;
+
+  void dispose() {
+    scoreController.dispose();
+    feedbackController.dispose();
+  }
+}
+
+class _StandaloneSessionPanel extends StatelessWidget {
+  const _StandaloneSessionPanel({
+    required this.paperLabel,
+    required this.sessionTypeLabel,
+    required this.isPublished,
+    required this.isRefreshing,
+    required this.isResetting,
+    required this.isSavingReview,
+    required this.session,
+    required this.itemEditors,
+    required this.reviewControllers,
+    required this.onRefresh,
+    required this.onReset,
+    required this.onSaveReview,
+  });
+
+  final String paperLabel;
+  final String sessionTypeLabel;
+  final bool isPublished;
+  final bool isRefreshing;
+  final bool isResetting;
+  final bool isSavingReview;
+  final StandalonePaperSessionState? session;
+  final List<_StandalonePaperItemController> itemEditors;
+  final Map<int, _TheoryReviewController> reviewControllers;
+  final VoidCallback onRefresh;
+  final VoidCallback onReset;
+  final VoidCallback onSaveReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final latestSession = session;
+    final theoryResponses =
+        (latestSession?.responses ?? const <StandalonePaperSessionResponse>[])
+            .where(
+              (response) => response.itemType.trim().toUpperCase() == 'THEORY',
+            )
+            .toList(growable: false);
+
+    return SoftPanel(
+      colors: const [Color(0xFFF5FBFF), Color(0xFFE8F3FF)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Student delivery',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            latestSession == null
+                ? isPublished
+                      ? 'This $paperLabel is published for the $sessionTypeLabel slot. A live session summary will appear once the student begins.'
+                      : 'Save and publish this $paperLabel to let the student begin in the $sessionTypeLabel slot.'
+                : 'Track the live sitting, reset it if needed, and finish any theory review here.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.item),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _InfoPill(label: isPublished ? 'Published' : 'Draft only'),
+              _InfoPill(label: sessionTypeLabel),
+              if (latestSession != null) ...[
+                _InfoPill(
+                  label: 'Status: ${_sessionStatusLabel(latestSession.status)}',
+                ),
+                _InfoPill(
+                  label:
+                      'Answered ${latestSession.answeredCount}/${latestSession.totalItems}',
+                ),
+                _InfoPill(label: 'Warnings ${latestSession.warningCount}'),
+                _InfoPill(label: 'Leaves ${latestSession.leaveCount}'),
+                _InfoPill(
+                  label: latestSession.secondsRemaining == null
+                      ? 'Untimed'
+                      : '${latestSession.secondsRemaining}s left',
+                ),
+                if (latestSession.resultPackageId.trim().isNotEmpty)
+                  _InfoPill(label: 'Result saved'),
+              ],
+            ],
+          ),
+          if (latestSession != null) ...[
+            const SizedBox(height: AppSpacing.item),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: isRefreshing ? () {} : onRefresh,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(
+                    isRefreshing ? 'Refreshing...' : 'Refresh session',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: isResetting ? () {} : onReset,
+                  icon: const Icon(Icons.restart_alt_rounded),
+                  label: Text(isResetting ? 'Resetting...' : 'Reset sitting'),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.item),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.item),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.84),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              child: Text(
+                'Started: ${_formatStandaloneDateTime(latestSession.startedAt)}\n'
+                'Submitted: ${_formatStandaloneDateTime(latestSession.submittedAt)}\n'
+                'Last heartbeat: ${_formatStandaloneDateTime(latestSession.lastHeartbeatAt)}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+              ),
+            ),
+          ],
+          if (theoryResponses.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.section),
+            Text(
+              'Theory review',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              latestSession?.reviewStatus == 'scored'
+                  ? 'These written answers are already scored. You can still adjust the marks and save again.'
+                  : 'Score each written response from 0 to 100 before saving the review.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+            ),
+            const SizedBox(height: AppSpacing.item),
+            ...theoryResponses.map((response) {
+              final itemIndex = response.itemIndex;
+              final item = itemIndex >= 0 && itemIndex < itemEditors.length
+                  ? itemEditors[itemIndex].toItem()
+                  : const StandalonePaperItem(
+                      itemType: 'THEORY',
+                      learningText: '',
+                      prompt: '',
+                      options: <String>[],
+                      correctIndex: -1,
+                      expectedAnswer: '',
+                      acceptedAnswers: <String>[],
+                      explanation: '',
+                      minWordCount: 0,
+                    );
+              final controller = reviewControllers.putIfAbsent(
+                itemIndex,
+                _TheoryReviewController.new,
+              );
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.item),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(AppSpacing.item),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    border: Border.all(
+                      color: AppPalette.primaryBlue.withValues(alpha: 0.18),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Theory item ${itemIndex + 1}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      if (item.learningText.trim().isNotEmpty) ...[
+                        Text(
+                          'Learn First',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppPalette.textMuted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(item.learningText),
+                        const SizedBox(height: 10),
+                      ],
+                      Text(
+                        item.prompt.trim().isEmpty
+                            ? 'Prompt not saved.'
+                            : item.prompt,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Student answer',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FBFF),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          response.textAnswer.trim().isEmpty
+                              ? 'No written answer recorded.'
+                              : response.textAnswer,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          _InfoPill(
+                            label:
+                                'Words ${response.textAnswer.trim().isEmpty ? 0 : response.textAnswer.trim().split(RegExp(r"\\s+")).where((word) => word.trim().isNotEmpty).length}',
+                          ),
+                          _InfoPill(label: 'Minimum ${item.minWordCount}'),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (item.expectedAnswer.trim().isNotEmpty) ...[
+                        Text(
+                          'Expected answer',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppPalette.textMuted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(item.expectedAnswer),
+                        const SizedBox(height: 10),
+                      ],
+                      TextFormField(
+                        controller: controller.scoreController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Score percent',
+                          hintText: '0 to 100',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: controller.feedbackController,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          labelText: 'Teacher feedback',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+            GradientButton(
+              label: isSavingReview ? 'Saving review...' : 'Save theory review',
+              colors: const [Color(0xFF7D8CFF), Color(0xFF5066E4)],
+              onPressed: isSavingReview ? () {} : onSaveReview,
+            ),
+          ],
         ],
       ),
     );
@@ -1599,6 +2320,48 @@ class _InfoPill extends StatelessWidget {
 
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
+
+String _normalizeStandaloneSessionType(String value) {
+  return value.trim().toLowerCase() == 'afternoon' ? 'afternoon' : 'morning';
+}
+
+String _sessionTypeLabel(String value) {
+  return _normalizeStandaloneSessionType(value) == 'afternoon'
+      ? 'Afternoon'
+      : 'Morning';
+}
+
+String _sessionStatusLabel(String value) {
+  switch (value.trim().toLowerCase()) {
+    case 'active':
+      return 'Active';
+    case 'locked':
+      return 'Locked';
+    case 'submitted':
+      return 'Submitted';
+    case 'time_expired':
+      return 'Time expired';
+    case 'reset_by_teacher':
+      return 'Reset';
+    default:
+      return value.trim().isEmpty ? 'Not started' : value.trim();
+  }
+}
+
+String _formatStandaloneDateTime(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return '-';
+  }
+  final parsed = DateTime.tryParse(value)?.toLocal();
+  if (parsed == null) {
+    return value;
+  }
+  final month = parsed.month.toString().padLeft(2, '0');
+  final day = parsed.day.toString().padLeft(2, '0');
+  final hour = parsed.hour.toString().padLeft(2, '0');
+  final minute = parsed.minute.toString().padLeft(2, '0');
+  return '${parsed.year}-$month-$day $hour:$minute';
+}
 
 String _sanitizeFileNameSegment(String value) {
   final normalized = value

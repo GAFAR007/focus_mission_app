@@ -1912,6 +1912,12 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       return;
     }
 
+    final schedule = _scheduleForDate(workspace.timetable, _selectedLessonDate);
+    final initialSessionType =
+        _resolvedLessonForTeacher(schedule).trim().toLowerCase() == 'afternoon'
+        ? 'afternoon'
+        : 'morning';
+
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => paperKind.trim().toUpperCase() == 'EXAM'
@@ -1920,6 +1926,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 student: workspace.selectedStudent,
                 subject: subject,
                 initialTargetDate: _selectedLessonDate,
+                initialSessionType: initialSessionType,
                 api: _api,
               )
             : StandaloneTestScreen(
@@ -1927,6 +1934,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 student: workspace.selectedStudent,
                 subject: subject,
                 initialTargetDate: _selectedLessonDate,
+                initialSessionType: initialSessionType,
                 api: _api,
               ),
       ),

@@ -280,6 +280,7 @@ class StudentDashboardData {
     required this.dailyXp,
     required this.subjectProgress,
     required this.subjectCertification,
+    required this.todayStandalonePapers,
     this.today,
   });
 
@@ -289,6 +290,7 @@ class StudentDashboardData {
   final DailyXpSummary dailyXp;
   final List<SubjectProgressSummary> subjectProgress;
   final List<SubjectCertificationSummary> subjectCertification;
+  final List<StandalonePaperAvailability> todayStandalonePapers;
 
   factory StudentDashboardData.fromJson(Map<String, dynamic> json) {
     final sessions = (json['recentSessions'] as List<dynamic>? ?? const [])
@@ -304,6 +306,10 @@ class StudentDashboardData {
       subjectCertification:
           (json['subjectCertification'] as List<dynamic>? ?? const [])
               .map((item) => SubjectCertificationSummary.fromJson(_asMap(item)))
+              .toList(growable: false),
+      todayStandalonePapers:
+          (json['todayStandalonePapers'] as List<dynamic>? ?? const [])
+              .map((item) => StandalonePaperAvailability.fromJson(_asMap(item)))
               .toList(growable: false),
       today: _asNullableMap(json['today']) == null
           ? null
@@ -1552,6 +1558,302 @@ class StartedMission {
       sessionType: (json['sessionType'] ?? '').toString(),
       maxQuestions: _asInt(json['maxQuestions']),
       mission: MissionPayload.fromJson(_asMap(json['mission'])),
+    );
+  }
+}
+
+class StandalonePaperSessionResponse {
+  const StandalonePaperSessionResponse({
+    required this.itemIndex,
+    required this.itemType,
+    required this.selectedOptionIndex,
+    required this.textAnswer,
+    required this.flagged,
+    required this.answeredAt,
+    required this.teacherScorePercent,
+    required this.teacherFeedback,
+  });
+
+  final int itemIndex;
+  final String itemType;
+  final int selectedOptionIndex;
+  final String textAnswer;
+  final bool flagged;
+  final String? answeredAt;
+  final int? teacherScorePercent;
+  final String teacherFeedback;
+
+  factory StandalonePaperSessionResponse.fromJson(Map<String, dynamic> json) {
+    return StandalonePaperSessionResponse(
+      itemIndex: _asInt(json['itemIndex']),
+      itemType: (json['itemType'] ?? '').toString(),
+      selectedOptionIndex: _asNullableInt(json['selectedOptionIndex']) ?? -1,
+      textAnswer: (json['textAnswer'] ?? '').toString(),
+      flagged: json['flagged'] == true,
+      answeredAt: json['answeredAt']?.toString(),
+      teacherScorePercent: _asNullableInt(json['teacherScorePercent']),
+      teacherFeedback: (json['teacherFeedback'] ?? '').toString(),
+    );
+  }
+}
+
+class StandalonePaperIntegrityEvent {
+  const StandalonePaperIntegrityEvent({
+    required this.eventType,
+    required this.detail,
+    required this.actionTaken,
+    required this.occurredAt,
+    required this.warningCountAfter,
+    required this.leaveCountAfter,
+  });
+
+  final String eventType;
+  final String detail;
+  final String actionTaken;
+  final String? occurredAt;
+  final int warningCountAfter;
+  final int leaveCountAfter;
+
+  factory StandalonePaperIntegrityEvent.fromJson(Map<String, dynamic> json) {
+    return StandalonePaperIntegrityEvent(
+      eventType: (json['eventType'] ?? '').toString(),
+      detail: (json['detail'] ?? '').toString(),
+      actionTaken: (json['actionTaken'] ?? '').toString(),
+      occurredAt: json['occurredAt']?.toString(),
+      warningCountAfter: _asInt(json['warningCountAfter']),
+      leaveCountAfter: _asInt(json['leaveCountAfter']),
+    );
+  }
+}
+
+class StandalonePaperSessionState {
+  const StandalonePaperSessionState({
+    required this.id,
+    required this.paperId,
+    required this.status,
+    required this.attemptNumber,
+    required this.startedAt,
+    required this.endsAt,
+    required this.submittedAt,
+    required this.lockedAt,
+    required this.resetAt,
+    required this.lastHeartbeatAt,
+    required this.currentItemIndex,
+    required this.warningCount,
+    required this.leaveCount,
+    required this.totalItems,
+    required this.answeredCount,
+    required this.autoScorePercent,
+    required this.reviewStatus,
+    required this.submittedReason,
+    required this.resultPackageId,
+    required this.sessionLogId,
+    required this.secondsRemaining,
+    required this.integrityEvents,
+    required this.responses,
+  });
+
+  final String id;
+  final String paperId;
+  final String status;
+  final int attemptNumber;
+  final String? startedAt;
+  final String? endsAt;
+  final String? submittedAt;
+  final String? lockedAt;
+  final String? resetAt;
+  final String? lastHeartbeatAt;
+  final int currentItemIndex;
+  final int warningCount;
+  final int leaveCount;
+  final int totalItems;
+  final int answeredCount;
+  final int autoScorePercent;
+  final String reviewStatus;
+  final String submittedReason;
+  final String resultPackageId;
+  final String sessionLogId;
+  final int? secondsRemaining;
+  final List<StandalonePaperIntegrityEvent> integrityEvents;
+  final List<StandalonePaperSessionResponse> responses;
+
+  bool get isActive => status == 'active';
+  bool get isLocked => status == 'locked';
+  bool get isSubmitted => status == 'submitted' || status == 'time_expired';
+  bool get isPendingReview => reviewStatus == 'pending_review';
+
+  factory StandalonePaperSessionState.fromJson(Map<String, dynamic> json) {
+    return StandalonePaperSessionState(
+      id: (json['id'] ?? '').toString(),
+      paperId: (json['paperId'] ?? '').toString(),
+      status: (json['status'] ?? '').toString(),
+      attemptNumber: _asNullableInt(json['attemptNumber']) ?? 1,
+      startedAt: json['startedAt']?.toString(),
+      endsAt: json['endsAt']?.toString(),
+      submittedAt: json['submittedAt']?.toString(),
+      lockedAt: json['lockedAt']?.toString(),
+      resetAt: json['resetAt']?.toString(),
+      lastHeartbeatAt: json['lastHeartbeatAt']?.toString(),
+      currentItemIndex: _asInt(json['currentItemIndex']),
+      warningCount: _asInt(json['warningCount']),
+      leaveCount: _asInt(json['leaveCount']),
+      totalItems: _asInt(json['totalItems']),
+      answeredCount: _asInt(json['answeredCount']),
+      autoScorePercent: _asInt(json['autoScorePercent']),
+      reviewStatus: (json['reviewStatus'] ?? '').toString(),
+      submittedReason: (json['submittedReason'] ?? '').toString(),
+      resultPackageId: (json['resultPackageId'] ?? '').toString(),
+      sessionLogId: (json['sessionLogId'] ?? '').toString(),
+      secondsRemaining: _asNullableInt(json['secondsRemaining']),
+      integrityEvents: (json['integrityEvents'] as List<dynamic>? ?? const [])
+          .map((item) => StandalonePaperIntegrityEvent.fromJson(_asMap(item)))
+          .toList(growable: false),
+      responses: (json['responses'] as List<dynamic>? ?? const [])
+          .map((item) => StandalonePaperSessionResponse.fromJson(_asMap(item)))
+          .toList(growable: false),
+    );
+  }
+}
+
+class StandalonePaperPlayerItem {
+  const StandalonePaperPlayerItem({
+    required this.itemIndex,
+    required this.itemType,
+    required this.learningText,
+    required this.prompt,
+    required this.options,
+    required this.minWordCount,
+  });
+
+  final int itemIndex;
+  final String itemType;
+  final String learningText;
+  final String prompt;
+  final List<String> options;
+  final int minWordCount;
+
+  factory StandalonePaperPlayerItem.fromJson(Map<String, dynamic> json) {
+    return StandalonePaperPlayerItem(
+      itemIndex: _asInt(json['itemIndex']),
+      itemType: (json['itemType'] ?? '').toString(),
+      learningText: (json['learningText'] ?? '').toString(),
+      prompt: (json['prompt'] ?? '').toString(),
+      options: _asStringList(json['options']),
+      minWordCount: _asInt(json['minWordCount']),
+    );
+  }
+}
+
+class StandalonePaperPlayerPaper {
+  const StandalonePaperPlayerPaper({
+    required this.id,
+    required this.paperKind,
+    required this.sessionType,
+    required this.title,
+    required this.teacherNote,
+    required this.sourceUnitText,
+    required this.targetDate,
+    required this.durationMinutes,
+    required this.subject,
+    required this.items,
+  });
+
+  final String id;
+  final String paperKind;
+  final String sessionType;
+  final String title;
+  final String teacherNote;
+  final String sourceUnitText;
+  final String targetDate;
+  final int durationMinutes;
+  final MissionSubject? subject;
+  final List<StandalonePaperPlayerItem> items;
+
+  bool get isExam => paperKind.trim().toUpperCase() == 'EXAM';
+
+  factory StandalonePaperPlayerPaper.fromJson(Map<String, dynamic> json) {
+    return StandalonePaperPlayerPaper(
+      id: (json['id'] ?? '').toString(),
+      paperKind: (json['paperKind'] ?? '').toString(),
+      sessionType: (json['sessionType'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      teacherNote: (json['teacherNote'] ?? '').toString(),
+      sourceUnitText: (json['sourceUnitText'] ?? '').toString(),
+      targetDate: (json['targetDate'] ?? '').toString(),
+      durationMinutes: _asInt(json['durationMinutes']),
+      subject: _asNullableMap(json['subject']) == null
+          ? null
+          : MissionSubject.fromJson(_asMap(json['subject'])),
+      items: (json['items'] as List<dynamic>? ?? const [])
+          .map((item) => StandalonePaperPlayerItem.fromJson(_asMap(item)))
+          .toList(growable: false),
+    );
+  }
+}
+
+class StartedStandalonePaperSession {
+  const StartedStandalonePaperSession({
+    required this.paper,
+    required this.session,
+    this.message = '',
+  });
+
+  final StandalonePaperPlayerPaper paper;
+  final StandalonePaperSessionState session;
+  final String message;
+
+  factory StartedStandalonePaperSession.fromJson(Map<String, dynamic> json) {
+    return StartedStandalonePaperSession(
+      paper: StandalonePaperPlayerPaper.fromJson(_asMap(json['paper'])),
+      session: StandalonePaperSessionState.fromJson(_asMap(json['session'])),
+      message: (json['message'] ?? '').toString(),
+    );
+  }
+}
+
+class StandalonePaperAvailability {
+  const StandalonePaperAvailability({
+    required this.id,
+    required this.paperKind,
+    required this.sessionType,
+    required this.title,
+    required this.teacherNote,
+    required this.targetDate,
+    required this.durationMinutes,
+    required this.status,
+    required this.subject,
+    required this.latestSession,
+  });
+
+  final String id;
+  final String paperKind;
+  final String sessionType;
+  final String title;
+  final String teacherNote;
+  final String targetDate;
+  final int durationMinutes;
+  final String status;
+  final MissionSubject? subject;
+  final StandalonePaperSessionState? latestSession;
+
+  bool get isExam => paperKind.trim().toUpperCase() == 'EXAM';
+
+  factory StandalonePaperAvailability.fromJson(Map<String, dynamic> json) {
+    return StandalonePaperAvailability(
+      id: (json['id'] ?? '').toString(),
+      paperKind: (json['paperKind'] ?? '').toString(),
+      sessionType: (json['sessionType'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      teacherNote: (json['teacherNote'] ?? '').toString(),
+      targetDate: (json['targetDate'] ?? '').toString(),
+      durationMinutes: _asInt(json['durationMinutes']),
+      status: (json['status'] ?? '').toString(),
+      subject: _asNullableMap(json['subject']) == null
+          ? null
+          : MissionSubject.fromJson(_asMap(json['subject'])),
+      latestSession: _asNullableMap(json['latestSession']) == null
+          ? null
+          : StandalonePaperSessionState.fromJson(_asMap(json['latestSession'])),
     );
   }
 }

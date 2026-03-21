@@ -863,6 +863,137 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<List<StandalonePaperAvailability>> fetchStudentStandalonePapers({
+    required String token,
+    required String studentId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/student/standalone-papers/$studentId',
+      token: token,
+    );
+    final papers = json['papers'] as List<dynamic>? ?? const [];
+
+    return papers
+        .map(
+          (item) => StandalonePaperAvailability.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<StartedStandalonePaperSession> startStandalonePaperSession({
+    required String token,
+    required String studentId,
+    required String paperId,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/student/standalone-papers/$paperId/start',
+      token: token,
+      body: {'studentId': studentId},
+    );
+
+    return StartedStandalonePaperSession.fromJson(json);
+  }
+
+  Future<StartedStandalonePaperSession> getStandalonePaperSession({
+    required String token,
+    required String studentId,
+    required String sessionId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/student/standalone-paper-sessions/$sessionId/$studentId',
+      token: token,
+    );
+
+    return StartedStandalonePaperSession.fromJson(json);
+  }
+
+  Future<StartedStandalonePaperSession> saveStandalonePaperSessionProgress({
+    required String token,
+    required String studentId,
+    required String sessionId,
+    required int itemIndex,
+    int? selectedOptionIndex,
+    String? textAnswer,
+    bool? flagged,
+    int? currentItemIndex,
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/student/standalone-paper-sessions/$sessionId/progress',
+      token: token,
+      body: {
+        'studentId': studentId,
+        'itemIndex': itemIndex,
+        ...?selectedOptionIndex == null
+            ? null
+            : {'selectedOptionIndex': selectedOptionIndex},
+        ...?textAnswer == null ? null : {'textAnswer': textAnswer},
+        ...?flagged == null ? null : {'flagged': flagged},
+        ...?currentItemIndex == null
+            ? null
+            : {'currentItemIndex': currentItemIndex},
+      },
+    );
+
+    return StartedStandalonePaperSession.fromJson(json);
+  }
+
+  Future<StartedStandalonePaperSession> recordStandalonePaperHeartbeat({
+    required String token,
+    required String studentId,
+    required String sessionId,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/student/standalone-paper-sessions/$sessionId/heartbeat',
+      token: token,
+      body: {'studentId': studentId},
+    );
+
+    return StartedStandalonePaperSession.fromJson(json);
+  }
+
+  Future<StartedStandalonePaperSession> recordStandalonePaperIntegrityEvent({
+    required String token,
+    required String studentId,
+    required String sessionId,
+    required String eventType,
+    String detail = '',
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/student/standalone-paper-sessions/$sessionId/integrity',
+      token: token,
+      body: {
+        'studentId': studentId,
+        'eventType': eventType,
+        if (detail.trim().isNotEmpty) 'detail': detail.trim(),
+      },
+    );
+
+    return StartedStandalonePaperSession.fromJson(json);
+  }
+
+  Future<StartedStandalonePaperSession> submitStandalonePaperSession({
+    required String token,
+    required String studentId,
+    required String sessionId,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/student/standalone-paper-sessions/$sessionId/submit',
+      token: token,
+      body: {'studentId': studentId},
+    );
+
+    return StartedStandalonePaperSession.fromJson(json);
+  }
+
   Future<StartedMission> startSession({
     required String token,
     required String studentId,
@@ -1269,6 +1400,7 @@ class FocusMissionApi {
     required String studentId,
     required String subjectId,
     required String paperKind,
+    required String sessionType,
     required List<int> fileBytes,
     required String fileName,
     String title = '',
@@ -1283,6 +1415,7 @@ class FocusMissionApi {
     request.fields['studentId'] = studentId.trim();
     request.fields['subjectId'] = subjectId.trim();
     request.fields['paperKind'] = paperKind.trim().toUpperCase();
+    request.fields['sessionType'] = sessionType.trim().toLowerCase();
     if (title.trim().isNotEmpty) {
       request.fields['title'] = title.trim();
     }
@@ -1311,6 +1444,7 @@ class FocusMissionApi {
     required String studentId,
     required String subjectId,
     required String paperKind,
+    required String sessionType,
     required String title,
     required String teacherNote,
     required String sourceUnitText,
@@ -1329,6 +1463,7 @@ class FocusMissionApi {
         'studentId': studentId,
         'subjectId': subjectId,
         'paperKind': paperKind.trim().toUpperCase(),
+        'sessionType': sessionType.trim().toLowerCase(),
         'title': title,
         'teacherNote': teacherNote,
         'sourceUnitText': sourceUnitText,
@@ -1350,6 +1485,7 @@ class FocusMissionApi {
   Future<StandalonePaperDraft> updateStandalonePaper({
     required String token,
     required String paperId,
+    required String sessionType,
     required String title,
     required String teacherNote,
     required String sourceUnitText,
@@ -1366,6 +1502,7 @@ class FocusMissionApi {
       token: token,
       body: {
         'title': title,
+        'sessionType': sessionType.trim().toLowerCase(),
         'teacherNote': teacherNote,
         'sourceUnitText': sourceUnitText,
         'sourceRawText': sourceRawText,
@@ -1391,6 +1528,86 @@ class FocusMissionApi {
       'DELETE',
       '/teacher/standalone-papers/$paperId',
       token: token,
+    );
+  }
+
+  Future<StandalonePaperDraft> publishStandalonePaper({
+    required String token,
+    required String paperId,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/standalone-papers/$paperId/publish',
+      token: token,
+    );
+    return StandalonePaperDraft.fromJson(
+      (json['paper'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<StandalonePaperDraft> unpublishStandalonePaper({
+    required String token,
+    required String paperId,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/standalone-papers/$paperId/unpublish',
+      token: token,
+    );
+    return StandalonePaperDraft.fromJson(
+      (json['paper'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<StandalonePaperSessionState?> fetchLatestStandalonePaperSession({
+    required String token,
+    required String paperId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/teacher/standalone-papers/$paperId/session',
+      token: token,
+    );
+    final session = json['session'];
+    if (session is! Map<dynamic, dynamic>) {
+      return null;
+    }
+    return StandalonePaperSessionState.fromJson(
+      session.cast<String, dynamic>(),
+    );
+  }
+
+  Future<StandalonePaperSessionState> resetStandalonePaperSession({
+    required String token,
+    required String sessionId,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/standalone-paper-sessions/$sessionId/reset',
+      token: token,
+    );
+    return StandalonePaperSessionState.fromJson(
+      (json['session'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<StandalonePaperSessionState> scoreStandalonePaperSession({
+    required String token,
+    required String sessionId,
+    required List<Map<String, dynamic>> reviews,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/standalone-paper-sessions/$sessionId/review',
+      token: token,
+      body: {'reviews': reviews},
+    );
+    return StandalonePaperSessionState.fromJson(
+      (json['session'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
     );
   }
 
