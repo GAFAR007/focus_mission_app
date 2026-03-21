@@ -2501,9 +2501,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     final taskFocusText = mission.taskCodes.isEmpty
         ? 'None selected'
         : mission.taskCodes.join(', ');
-    final sourceGuidance = mission.sourceUnitText.trim().isNotEmpty
-        ? mission.sourceUnitText.trim()
-        : mission.sourceRawText.trim();
+    final sourceGuidance = mission.sourceUnitText.trim();
 
     final buffer = StringBuffer()
       ..writeln('<!DOCTYPE html>')
@@ -2588,9 +2586,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     if (sourceGuidance.isNotEmpty) {
       buffer
         ..writeln('<section class="section-card">')
-        ..writeln('<h2>Source Guidance</h2>')
+        ..writeln('<h2>Unit Text</h2>')
         ..writeln(
-          '<p class="section-kicker">Reference text used when this mission was prepared.</p>',
+          '<p class="section-kicker">Reviewed unit text saved with this mission.</p>',
         )
         ..writeln(_buildManagementRichTextHtml(sourceGuidance))
         ..writeln('</section>');
@@ -2601,33 +2599,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           ? _buildManagementTeacherCopyEssayHtml(mission)
           : _buildManagementTeacherCopyQuestionHtml(mission),
     );
-
-    if (mission.sourceFileName.trim().isNotEmpty ||
-        mission.sourceFileType.trim().isNotEmpty) {
-      buffer
-        ..writeln('<section class="section-card footer-card">')
-        ..writeln('<h2>Draft Source</h2>')
-        ..writeln('<div class="meta-grid">');
-      if (mission.sourceFileName.trim().isNotEmpty) {
-        buffer.writeln(
-          _buildManagementMetaCardHtml(
-            label: 'Source File',
-            value: mission.sourceFileName.trim(),
-          ),
-        );
-      }
-      if (mission.sourceFileType.trim().isNotEmpty) {
-        buffer.writeln(
-          _buildManagementMetaCardHtml(
-            label: 'Source Type',
-            value: mission.sourceFileType.trim(),
-          ),
-        );
-      }
-      buffer
-        ..writeln('</div>')
-        ..writeln('</section>');
-    }
 
     buffer
       ..writeln('</main>')

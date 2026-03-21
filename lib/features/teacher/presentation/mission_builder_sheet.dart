@@ -1903,7 +1903,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     final includeAnswers = audience == _DraftExportAudience.teacher;
     final includeTeacherContext = audience == _DraftExportAudience.teacher;
     final draft = _draftMission;
-    final unitText = includeTeacherContext ? _unitTextForGroq.trim() : '';
+    final unitText = includeTeacherContext
+        ? _unitTextController.text.trim()
+        : '';
     final buffer = StringBuffer()
       ..writeln(
         'FOCUS MISSION ${_draftExportAudienceLabel(audience).toUpperCase()}',
@@ -1924,16 +1926,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       buffer.writeln(
         'Task Focus: ${_selectedTaskCodes.isEmpty ? 'None selected' : _selectedTaskCodes.join(', ')}',
       );
-    }
-
-    if (includeTeacherContext && (draft?.aiModel ?? '').trim().isNotEmpty) {
-      buffer.writeln('AI Model: ${draft!.aiModel!.trim()}');
-    }
-    if (includeTeacherContext && _resolvedSourceFileName.isNotEmpty) {
-      buffer.writeln('Source File: $_resolvedSourceFileName');
-    }
-    if (includeTeacherContext && _resolvedSourceFileType.isNotEmpty) {
-      buffer.writeln('Source Type: $_resolvedSourceFileType');
     }
 
     final teacherNote = _teacherNoteController.text.trim();
@@ -1973,14 +1965,15 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   String _buildDraftDownloadHtml({required _DraftExportAudience audience}) {
     final includeAnswers = audience == _DraftExportAudience.teacher;
     final includeTeacherContext = audience == _DraftExportAudience.teacher;
-    final draft = _draftMission;
     final audienceLabel = _draftExportAudienceLabel(audience);
     final title = _titleController.text.trim();
     final taskFocusText = _selectedTaskCodes.isEmpty
         ? 'None selected'
         : _selectedTaskCodes.join(', ');
     final teacherNote = _teacherNoteController.text.trim();
-    final unitText = includeTeacherContext ? _unitTextForGroq.trim() : '';
+    final unitText = includeTeacherContext
+        ? _unitTextController.text.trim()
+        : '';
     final summary = includeAnswers
         ? 'Teacher copy with answers, expected responses, and review notes.'
         : 'Student copy with the mission content only. Answers and teacher-only notes are removed.';
@@ -2085,39 +2078,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           audienceLabel: audienceLabel,
         ),
       );
-    }
-
-    if (includeTeacherContext &&
-        (_resolvedSourceFileName.isNotEmpty ||
-            (draft?.aiModel ?? '').trim().isNotEmpty)) {
-      buffer
-        ..writeln('<section class="section-card footer-card">')
-        ..writeln('<h2>Draft Source</h2>')
-        ..writeln('<div class="meta-grid">');
-      if (_resolvedSourceFileName.isNotEmpty) {
-        buffer.writeln(
-          _buildMetaCardHtml(
-            label: 'Source File',
-            value: _resolvedSourceFileName,
-          ),
-        );
-      }
-      if (_resolvedSourceFileType.isNotEmpty) {
-        buffer.writeln(
-          _buildMetaCardHtml(
-            label: 'Source Type',
-            value: _resolvedSourceFileType,
-          ),
-        );
-      }
-      if ((draft?.aiModel ?? '').trim().isNotEmpty) {
-        buffer.writeln(
-          _buildMetaCardHtml(label: 'AI Model', value: draft!.aiModel!.trim()),
-        );
-      }
-      buffer
-        ..writeln('</div>')
-        ..writeln('</section>');
     }
 
     buffer
