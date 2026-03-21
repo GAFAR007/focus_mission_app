@@ -1170,6 +1170,7 @@ class FocusMissionApi {
     required String sessionType,
     required List<int> fileBytes,
     required String fileName,
+    String uploadMode = 'ai_draft',
     String studentId = '',
     String targetDate = '',
     String title = '',
@@ -1188,6 +1189,9 @@ class FocusMissionApi {
     request.headers['Authorization'] = 'Bearer $token';
     request.fields['subjectId'] = subjectId;
     request.fields['sessionType'] = sessionType;
+    request.fields['uploadMode'] = uploadMode.trim().isEmpty
+        ? 'ai_draft'
+        : uploadMode.trim().toLowerCase();
     if (studentId.trim().isNotEmpty) {
       request.fields['studentId'] = studentId.trim();
     }

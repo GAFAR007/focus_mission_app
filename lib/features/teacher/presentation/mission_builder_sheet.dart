@@ -3527,6 +3527,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         targetDate: _dateKey(_resolvedTargetDate),
         fileBytes: bytes,
         fileName: file.name,
+        uploadMode: mode == _SourceUploadMode.populateDraft
+            ? 'populate_draft'
+            : 'ai_draft',
         title: _titleController.text.trim(),
         draftFormat: _draftFormat,
         essayMode: _draftFormat == 'ESSAY_BUILDER' ? _essayMode : '',
@@ -3546,9 +3549,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         _selectedSourceFileName = extracted.fileName;
         _selectedSourceFileType = extracted.mimeType;
         _rawUploadedSourceText = extracted.extractedText;
-        final hasAppliedTaskScope = _applyTaskFocusedUnitTextFromSource(
-          _selectedTaskCodes,
-        );
+        final hasAppliedTaskScope = mode == _SourceUploadMode.aiDraft
+            ? _applyTaskFocusedUnitTextFromSource(_selectedTaskCodes)
+            : false;
         final uploadedPrefilledMission = extracted.prefilledMission;
         final prefilledMission =
             uploadedPrefilledMission != null &&
@@ -3587,13 +3590,13 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           _applyDraft(prefilledMission);
           _createdDraftThisSession = true;
         } else {
-          if (!hasAppliedTaskScope) {
+          if (mode == _SourceUploadMode.aiDraft && !hasAppliedTaskScope) {
             _unitTextController.text = extracted.extractedText;
           }
 
           // WHY: The upload flow should save the teacher time by prefilling the
           // draft suggestion fields before any mission is generated.
-          if (!_hasDraft) {
+          if (!_hasDraft && mode == _SourceUploadMode.aiDraft) {
             _titleController.text = extracted.unitPlan.suggestedMissionTitle;
             _teacherNoteController.text =
                 extracted.unitPlan.suggestedTeacherNote;
