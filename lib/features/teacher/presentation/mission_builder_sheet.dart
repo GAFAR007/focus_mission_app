@@ -58,6 +58,8 @@ Future<MissionPayload?> showMissionBuilderSheet(
 
 enum _DraftExportAudience { teacher, student }
 
+enum _SourceUploadMode { aiDraft, populateDraft }
+
 class _MissionBuilderSheet extends StatefulWidget {
   const _MissionBuilderSheet({
     required this.session,
@@ -123,6 +125,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   bool _showFullRawUploadText = false;
   bool _isGenerating = false;
   bool _isExtractingSource = false;
+  _SourceUploadMode? _activeSourceUploadMode;
   bool _isReextractingSource = false;
   bool _isSaving = false;
   bool _createdDraftThisSession = false;
@@ -181,6 +184,14 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     }
     return null;
   }
+
+  bool get _isUploadingForAiDraft =>
+      _isExtractingSource &&
+      _activeSourceUploadMode == _SourceUploadMode.aiDraft;
+
+  bool get _isPopulatingDraftFromSource =>
+      _isExtractingSource &&
+      _activeSourceUploadMode == _SourceUploadMode.populateDraft;
 
   @override
   void initState() {
@@ -914,21 +925,61 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         const SizedBox(height: 8),
         Text(
           _isTheoryDraft
-              ? 'Upload a PDF, Word file, text file, or scanned image. If the file includes enough lesson detail, the draft will be populated with Learn First guidance and fast-focus theory questions.'
-              : 'Upload a PDF, Word file, text file, or scanned image. If the file includes enough lesson detail, the draft will be populated with Learn First guidance, questions, and the other draft fields teachers review.',
+              ? 'Choose how to use the uploaded file. One path sends the extracted lesson text to Groq to draft a theory check for you. The other path tries to populate the draft directly from the uploaded source.'
+              : 'Choose how to use the uploaded file. One path sends the extracted lesson text to Groq to draft the mission for you. The other path tries to populate the draft directly from the uploaded source questions and unit text.',
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
         ),
         const SizedBox(height: 12),
-        GradientButton(
-          label: _isExtractingSource
-              ? 'Reading file and building draft...'
-              : 'Upload PDF or source file',
-          colors: AppPalette.teacherGradient,
-          onPressed: _isExtractingSource || _isTargetDateInPast
-              ? () {}
-              : _pickAndExtractSource,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final stackButtons = constraints.maxWidth < 720;
+            final aiDraftButton = GradientButton(
+              label: _isUploadingForAiDraft
+                  ? 'Uploading for AI draft...'
+                  : 'Upload file for AI draft',
+              colors: AppPalette.teacherGradient,
+              onPressed: _isExtractingSource || _isTargetDateInPast
+                  ? () {}
+                  : () => _pickAndExtractSource(_SourceUploadMode.aiDraft),
+            );
+            final populateButton = GradientButton(
+              label: _isPopulatingDraftFromSource
+                  ? 'Populating draft from file...'
+                  : 'Populate draft from PDF',
+              colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+              onPressed: _isExtractingSource || _isTargetDateInPast
+                  ? () {}
+                  : () =>
+                        _pickAndExtractSource(_SourceUploadMode.populateDraft),
+            );
+
+            if (stackButtons) {
+              return Column(
+                children: [
+                  aiDraftButton,
+                  const SizedBox(height: 10),
+                  populateButton,
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                Expanded(child: aiDraftButton),
+                const SizedBox(width: 10),
+                Expanded(child: populateButton),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Upload file for AI draft extracts the lesson text and asks Groq to build the draft. Populate draft from PDF copies the detected questions, unit text, and draft fields directly when the file is structured enough.',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
         ),
         if (_hasDraft && _rawUploadedSourceText.trim().isEmpty) ...[
           const SizedBox(height: AppSpacing.item),
@@ -3430,8 +3481,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     return null;
   }
 
-  Future<void> _pickAndExtractSource() async {
+  Future<void> _pickAndExtractSource(_SourceUploadMode mode) async {
     try {
+      final hadDraftBeforeUpload = _draftMission != null;
       final result = await FilePicker.platform.pickFiles(
         withData: true,
         type: FileType.custom,
@@ -3462,6 +3514,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
       setState(() {
         _isExtractingSource = true;
+        _activeSourceUploadMode = mode;
         _errorMessage = null;
         _sourceUploadReadiness = null;
       });
@@ -3526,7 +3579,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               )
             : uploadedPrefilledMission;
 
-        if (prefilledMission != null) {
+        if (mode == _SourceUploadMode.populateDraft &&
+            prefilledMission != null) {
           // WHY: When the uploaded PDF already contains enough source material,
           // the sheet should drop the teacher straight into review instead of
           // forcing a second generate click.
@@ -3551,10 +3605,34 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         }
 
         _errorMessage =
-            extracted.draftReadiness.needsAttention && prefilledMission == null
+            extracted.draftReadiness.needsAttention &&
+                (mode != _SourceUploadMode.populateDraft ||
+                    prefilledMission == null)
             ? extracted.draftReadiness.summary
             : null;
       });
+
+      final canDraftWithAi =
+          !_isTargetDateInPast && _unitTextController.text.trim().length >= 80;
+      if (mode == _SourceUploadMode.aiDraft && canDraftWithAi) {
+        // WHY: The AI-draft upload path should feel like one action: upload
+        // once, then let Groq draft from the extracted lesson text immediately.
+        if (hadDraftBeforeUpload) {
+          await _regenerateDraftWithCurrentSelection(
+            showTaskFocusRefreshHint: false,
+          );
+        } else {
+          await _generateDraft();
+        }
+        return;
+      }
+
+      if (mode == _SourceUploadMode.aiDraft && !canDraftWithAi && mounted) {
+        setState(() {
+          _errorMessage =
+              'The upload was saved, but there is not enough lesson text yet for Groq to draft from it. Add more source detail or use Populate draft from PDF if the file already contains the questions.';
+        });
+      }
     } catch (error) {
       if (!mounted) {
         return;
@@ -3566,7 +3644,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       });
     } finally {
       if (mounted) {
-        setState(() => _isExtractingSource = false);
+        setState(() {
+          _isExtractingSource = false;
+          _activeSourceUploadMode = null;
+        });
       }
     }
   }
