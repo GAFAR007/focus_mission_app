@@ -981,6 +981,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
           builder: (_) => StandalonePaperPlayScreen(
             session: _session,
             paperId: paper.id,
+            initialAvailability: paper,
             api: _api,
           ),
         ),

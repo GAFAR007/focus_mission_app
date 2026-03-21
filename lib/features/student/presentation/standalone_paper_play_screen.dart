@@ -34,11 +34,13 @@ class StandalonePaperPlayScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.paperId,
+    this.initialAvailability,
     this.api,
   });
 
   final AuthSession session;
   final String paperId;
+  final StandalonePaperAvailability? initialAvailability;
   final FocusMissionApi? api;
 
   @override
@@ -72,6 +74,7 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
   bool _isIntegrityRequestRunning = false;
   bool _isSyncingSession = false;
   bool _immersiveModeEnabled = false;
+  bool _awaitingBeginConsent = false;
   String? _errorMessage;
   String _sessionMessage = '';
 
@@ -94,7 +97,12 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
     _api = widget.api ?? FocusMissionApi();
     _focusMonitor = createStandalonePaperFocusMonitor();
     WidgetsBinding.instance.addObserver(this);
-    _startOrResumePaper();
+    if (_shouldShowBeforeBeginGate(widget.initialAvailability)) {
+      _awaitingBeginConsent = true;
+      _isLoading = false;
+    } else {
+      _startOrResumePaper();
+    }
   }
 
   @override
@@ -128,6 +136,7 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
   Future<void> _startOrResumePaper() async {
     setState(() {
       _isLoading = true;
+      _awaitingBeginConsent = false;
       _errorMessage = null;
     });
 
@@ -632,6 +641,17 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
     return parsed.difference(_clockTick).inSeconds.clamp(0, 1 << 31);
   }
 
+  bool _shouldShowBeforeBeginGate(StandalonePaperAvailability? availability) {
+    if (availability == null) {
+      return false;
+    }
+    final latestSession = availability.latestSession;
+    if (latestSession == null) {
+      return true;
+    }
+    return latestSession.status.trim().toLowerCase() == 'reset_by_teacher';
+  }
+
   Future<bool> _handleBackNavigation() async {
     if (!_isSessionActive) {
       return true;
@@ -665,6 +685,14 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
       child: FocusScaffold(
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
+            : _awaitingBeginConsent &&
+                  widget.initialAvailability != null &&
+                  !_hasLoadedPaper
+            ? _StandaloneBeforeBeginShell(
+                paper: widget.initialAvailability!,
+                onBack: () => Navigator.of(context).pop(),
+                onBegin: _startOrResumePaper,
+              )
             : _errorMessage != null
             ? _StandalonePaperErrorState(
                 message: _errorMessage!,
@@ -1179,6 +1207,155 @@ class _StandalonePaperStatusShell extends StatelessWidget {
                       child: Text(secondaryLabel!),
                     ),
                   ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StandaloneBeforeBeginShell extends StatelessWidget {
+  const _StandaloneBeforeBeginShell({
+    required this.paper,
+    required this.onBack,
+    required this.onBegin,
+  });
+
+  final StandalonePaperAvailability paper;
+  final VoidCallback onBack;
+  final VoidCallback onBegin;
+
+  @override
+  Widget build(BuildContext context) {
+    final isExam = paper.isExam;
+    final timerLabel = paper.durationMinutes > 0
+        ? '${paper.durationMinutes} minute timer'
+        : 'No timer set';
+    final rules = isExam
+        ? <String>[
+            'Do not leave this page or switch apps after you begin.',
+            'If a timer is set, it keeps running until the exam ends.',
+            'Leaving the page or app locks the exam immediately.',
+            'Keep fullscreen on where possible during the exam.',
+          ]
+        : <String>[
+            'Do not leave this page after you begin.',
+            'If a timer is set, it keeps running until the test ends.',
+            'Leaving once gives a warning.',
+            'Leaving a second time locks the test.',
+          ];
+
+    return SafeArea(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.screen),
+            child: SoftPanel(
+              colors: isExam
+                  ? const [Color(0xFFFFFBF3), Color(0xFFFFF0D8)]
+                  : const [Color(0xFFF4FBFF), Color(0xFFE8F7FF)],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Before you begin',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    paper.title,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Read the rules before starting this ${isExam ? 'exam' : 'test'}. Once you press begin, the session starts for real.',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: AppPalette.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.item),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _StandalonePaperPill(
+                        label: isExam ? 'Exam mode' : 'Test mode',
+                      ),
+                      _StandalonePaperPill(
+                        label: paper.subject?.name ?? 'Subject',
+                      ),
+                      _StandalonePaperPill(
+                        label: _sessionTypeLabel(paper.sessionType),
+                      ),
+                      _StandalonePaperPill(label: timerLabel),
+                    ],
+                  ),
+                  if (paper.teacherNote.trim().isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.item),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.84),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        paper.teacherNote,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.navy,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: AppSpacing.section),
+                  ...rules.map(
+                    (rule) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 2),
+                            child: Icon(
+                              Icons.check_circle_outline_rounded,
+                              size: 20,
+                              color: AppPalette.navy,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              rule,
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.section),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      OutlinedButton(
+                        onPressed: onBack,
+                        child: const Text('Back'),
+                      ),
+                      GradientButton(
+                        label: 'I understand, begin',
+                        colors: isExam
+                            ? const [Color(0xFFF0B45D), Color(0xFFE58E3F)]
+                            : AppPalette.studentGradient,
+                        onPressed: onBegin,
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
