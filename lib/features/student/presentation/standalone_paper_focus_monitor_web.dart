@@ -14,6 +14,8 @@
 import 'dart:async';
 import 'dart:html' as html;
 
+export 'standalone_paper_focus_monitor_stub.dart'
+    show StandalonePaperFocusCallback, StandalonePaperFocusMonitor;
 import 'standalone_paper_focus_monitor_stub.dart';
 
 StandalonePaperFocusMonitor createStandalonePaperFocusMonitor() =>
