@@ -1,14 +1,15 @@
 /**
  * WHAT:
  * ManagementOverviewScreen provides a dedicated management workspace after
- * management users sign in, including user creation and result review.
+ * management users sign in, including student roster control and result
+ * review.
  * WHY:
  * Management users need their own section to monitor student delivery,
  * outcomes, and staff/student setup without being routed into mentor flows.
  * HOW:
- * Load mentor-compatible workspace data from the API, show management-focused
- * summary cards, allow creation of student/teacher accounts, and expose
- * subject-filtered result review for assigned students.
+ * Load management workspace data from the API, show management-focused summary
+ * cards, allow creation of student/teacher accounts, expose active/archived
+ * roster controls, and provide subject-filtered result review for students.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -106,10 +107,12 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _isSavingCertification = false;
   bool _isSavingTimetable = false;
   bool _isArchivingStudent = false;
+  String _studentStatusActionId = '';
   bool _showTimetableEditor = false;
   bool _showCertificationSetup = false;
   bool _showCreateUserPanel = false;
   bool _showCertificationProgressPanel = false;
+  bool _showStudentRosterPanel = false;
   bool _showTimetablePanel = false;
   bool _showStudentResultsPanel = false;
   bool _certificationEnabled = false;
@@ -129,6 +132,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       _isDownloadingResults ||
       _downloadingResultPackageId.isNotEmpty ||
       _downloadingTeacherCopyMissionId.isNotEmpty;
+
+  bool get _isAnyStudentStatusActionActive =>
+      _isArchivingStudent || _studentStatusActionId.isNotEmpty;
 
   @override
   void dispose() {
@@ -156,10 +162,12 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     final responses = await Future.wait([
       _api.fetchManagementCertificationSubjects(token: _session.token),
       _api.fetchManagementTeachers(token: _session.token),
+      _api.fetchManagementStudents(token: _session.token, status: 'archived'),
     ]);
     final certificationSubjects =
         responses[0] as List<SubjectCertificationSettings>;
     final teachers = responses[1] as List<TeacherSummary>;
+    final archivedStudents = responses[2] as List<StudentSummary>;
     _selectedStudentId = workspace.selectedStudent.id;
     _notificationInbox ??= workspace.notificationInbox;
     _syncCertificationEditor(certificationSubjects);
@@ -182,6 +190,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       certifications: certifications,
       certificationSubjects: certificationSubjects,
       teachers: teachers,
+      archivedStudents: archivedStudents,
     );
   }
 
@@ -668,6 +677,13 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         : 'Teacher account form with subject specialty is ready.';
   }
 
+  String _buildStudentRosterSummary({
+    required int activeCount,
+    required int archivedCount,
+  }) {
+    return '$activeCount active · $archivedCount archived';
+  }
+
   String _buildCertificationProgressSummary(
     List<SubjectCertificationSummary> certifications, {
     required String selectedSubject,
@@ -845,14 +861,14 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     alignment: WrapAlignment.end,
                     children: [
                       TextButton.icon(
-                        onPressed: _isArchivingStudent
+                        onPressed: _isAnyStudentStatusActionActive
                             ? null
                             : () => _openStudentPicker(workspace),
                         icon: const Icon(Icons.swap_horiz_rounded),
                         label: const Text('Switch student'),
                       ),
                       TextButton.icon(
-                        onPressed: _isArchivingStudent
+                        onPressed: _isAnyStudentStatusActionActive
                             ? null
                             : () => _archiveSelectedStudent(workspace),
                         icon: Icon(
@@ -868,6 +884,72 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFF9E4053),
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  colors: const [Color(0xFFF8FBFF), Color(0xFFE7F2FF)],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _ManagementExpandableHeader(
+                        title: 'Student roster',
+                        subtitle:
+                            'See every live learner at a glance and restore archived students when they should return to the active timetable.',
+                        summary: _buildStudentRosterSummary(
+                          activeCount: workspace.students.length,
+                          archivedCount: data.archivedStudents.length,
+                        ),
+                        isExpanded: _showStudentRosterPanel,
+                        onToggle: () => setState(
+                          () =>
+                              _showStudentRosterPanel = !_showStudentRosterPanel,
+                        ),
+                      ),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        child: !_showStudentRosterPanel
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AppSpacing.compact),
+                                  _ManagementStudentRosterSection(
+                                    title: 'Active students',
+                                    emptyMessage:
+                                        'No active students are available yet.',
+                                    students: workspace.students,
+                                    selectedStudentId: workspace.selectedStudent
+                                        .id,
+                                    actionStudentId: _studentStatusActionId,
+                                    active: true,
+                                    onOpen: _selectStudentContext,
+                                    onArchive: (student) => _archiveStudent(
+                                      student: student,
+                                      activeStudentCount:
+                                          workspace.students.length,
+                                      clearSelectedStudent:
+                                          student.id ==
+                                          workspace.selectedStudent.id,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.item),
+                                  _ManagementStudentRosterSection(
+                                    title: 'Archived students',
+                                    emptyMessage:
+                                        'No archived students need restoring right now.',
+                                    students: data.archivedStudents,
+                                    selectedStudentId:
+                                        workspace.selectedStudent.id,
+                                    actionStudentId: _studentStatusActionId,
+                                    active: false,
+                                    onUnarchive: _unarchiveStudent,
+                                  ),
+                                ],
+                              ),
                       ),
                     ],
                   ),
@@ -1813,6 +1895,26 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     });
   }
 
+  void _selectStudentContext(String studentId) {
+    if (!mounted || studentId.trim().isEmpty) {
+      return;
+    }
+
+    setState(() {
+      // WHY: Notifications and overview panels are student-specific, so
+      // switching learners must reset the dependent filters before reloading.
+      _selectedStudentId = studentId;
+      _selectedSubject = _allSubjectsFilterLabel;
+      _selectedResultDate = _allResultDatesFilterLabel;
+      _showTimetableEditor = false;
+      _showCertificationProgressPanel = false;
+      _showTimetablePanel = false;
+      _showStudentResultsPanel = false;
+      _notificationInbox = null;
+      _future = _loadWorkspace();
+    });
+  }
+
   Future<void> _openStudentPicker(MentorWorkspaceData workspace) async {
     final selectedStudentId = await showModalBottomSheet<String>(
       context: context,
@@ -1829,27 +1931,27 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       return;
     }
 
-    setState(() {
-      // WHY: Notifications and selected overview are student-specific, so
-      // the screen refreshes immediately after switching student context.
-      _selectedStudentId = selectedStudentId;
-      _selectedSubject = _allSubjectsFilterLabel;
-      _selectedResultDate = _allResultDatesFilterLabel;
-      _showTimetableEditor = false;
-      _showCertificationProgressPanel = false;
-      _showTimetablePanel = false;
-      _showStudentResultsPanel = false;
-      _notificationInbox = null;
-      _future = _loadWorkspace();
-    });
+    _selectStudentContext(selectedStudentId);
   }
 
   Future<void> _archiveSelectedStudent(MentorWorkspaceData workspace) async {
-    if (_isArchivingStudent) {
+    await _archiveStudent(
+      student: workspace.selectedStudent,
+      activeStudentCount: workspace.students.length,
+      clearSelectedStudent: true,
+    );
+  }
+
+  Future<void> _archiveStudent({
+    required StudentSummary student,
+    required int activeStudentCount,
+    bool clearSelectedStudent = false,
+  }) async {
+    if (_isAnyStudentStatusActionActive) {
       return;
     }
 
-    if (workspace.students.length <= 1) {
+    if (activeStudentCount <= 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -1860,7 +1962,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       return;
     }
 
-    final student = workspace.selectedStudent;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1885,7 +1986,13 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       return;
     }
 
-    setState(() => _isArchivingStudent = true);
+    setState(() {
+      if (clearSelectedStudent) {
+        _isArchivingStudent = true;
+      } else {
+        _studentStatusActionId = student.id;
+      }
+    });
     try {
       await _api.archiveManagementStudent(
         token: _session.token,
@@ -1897,15 +2004,16 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       }
 
       setState(() {
-        // WHY: Archiving removes the current learner from every active picker,
-        // so management must reload against the remaining active roster and
-        // clear student-specific filters tied to the archived record.
-        _selectedStudentId = '';
-        _selectedSubject = _allSubjectsFilterLabel;
-        _selectedResultDate = _allResultDatesFilterLabel;
-        _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
-        _notificationInbox = null;
-        _showTimetableEditor = false;
+        // WHY: Archive changes affect live pickers and roster sections, so the
+        // management workspace must refetch after every archive state change.
+        if (clearSelectedStudent) {
+          _selectedStudentId = '';
+          _selectedSubject = _allSubjectsFilterLabel;
+          _selectedResultDate = _allResultDatesFilterLabel;
+          _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
+          _notificationInbox = null;
+          _showTimetableEditor = false;
+        }
         _future = _loadWorkspace();
       });
 
@@ -1921,7 +2029,74 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       ).showSnackBar(SnackBar(content: Text(error.toString())));
     } finally {
       if (mounted) {
-        setState(() => _isArchivingStudent = false);
+        setState(() {
+          _isArchivingStudent = false;
+          _studentStatusActionId = '';
+        });
+      }
+    }
+  }
+
+  Future<void> _unarchiveStudent(StudentSummary student) async {
+    if (_isAnyStudentStatusActionActive) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Unarchive student?'),
+        content: Text(
+          'Restore ${student.name} to the active roster so management and timetable teachers can work with this learner again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Unarchive'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _studentStatusActionId = student.id);
+    try {
+      await _api.unarchiveManagementStudent(
+        token: _session.token,
+        studentId: student.id,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        // WHY: Restoring a learner changes the live active roster immediately,
+        // so the management dashboard must reload from the backend instead of
+        // trying to merge local archived snapshots.
+        _future = _loadWorkspace();
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${student.name} restored.')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _studentStatusActionId = '');
       }
     }
   }
@@ -3834,6 +4009,7 @@ class _ManagementScreenData {
     required this.certifications,
     required this.certificationSubjects,
     required this.teachers,
+    required this.archivedStudents,
   });
 
   final MentorWorkspaceData workspace;
@@ -3841,6 +4017,7 @@ class _ManagementScreenData {
   final List<SubjectCertificationSummary> certifications;
   final List<SubjectCertificationSettings> certificationSubjects;
   final List<TeacherSummary> teachers;
+  final List<StudentSummary> archivedStudents;
 }
 
 class _ManagementResultExportRow {
@@ -3880,6 +4057,211 @@ class _SelectedStudentCard extends StatelessWidget {
               '${student.name} · ${student.xp} XP · ${student.streak} day streak',
               style: Theme.of(context).textTheme.titleSmall,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManagementStudentRosterSection extends StatelessWidget {
+  const _ManagementStudentRosterSection({
+    required this.title,
+    required this.emptyMessage,
+    required this.students,
+    required this.selectedStudentId,
+    required this.actionStudentId,
+    required this.active,
+    this.onOpen,
+    this.onArchive,
+    this.onUnarchive,
+  });
+
+  final String title;
+  final String emptyMessage;
+  final List<StudentSummary> students;
+  final String selectedStudentId;
+  final String actionStudentId;
+  final bool active;
+  final ValueChanged<String>? onOpen;
+  final ValueChanged<StudentSummary>? onArchive;
+  final ValueChanged<StudentSummary>? onUnarchive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '$title (${students.length})',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (students.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.item),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.8),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            ),
+            child: Text(
+              emptyMessage,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+            ),
+          )
+        else
+          ...students.map(
+            (student) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _ManagementStudentRosterRow(
+                student: student,
+                isSelected: student.id == selectedStudentId,
+                isBusy: student.id == actionStudentId,
+                active: active,
+                onOpen: onOpen == null ? null : () => onOpen!(student.id),
+                onArchive:
+                    onArchive == null ? null : () => onArchive!(student),
+                onUnarchive: onUnarchive == null
+                    ? null
+                    : () => onUnarchive!(student),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ManagementStudentRosterRow extends StatelessWidget {
+  const _ManagementStudentRosterRow({
+    required this.student,
+    required this.isSelected,
+    required this.isBusy,
+    required this.active,
+    this.onOpen,
+    this.onArchive,
+    this.onUnarchive,
+  });
+
+  final StudentSummary student;
+  final bool isSelected;
+  final bool isBusy;
+  final bool active;
+  final VoidCallback? onOpen;
+  final VoidCallback? onArchive;
+  final VoidCallback? onUnarchive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(
+          color: isSelected ? AppPalette.primaryBlue : Colors.white,
+          width: isSelected ? 1.6 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: active
+                      ? AppPalette.primaryBlue.withValues(alpha: 0.12)
+                      : AppPalette.orange.withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  active ? Icons.school_rounded : Icons.archive_outlined,
+                  color: active ? AppPalette.primaryBlue : AppPalette.orange,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      student.name,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      active
+                          ? '${student.xp} XP · ${student.streak} day streak'
+                          : 'Archived student record',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isSelected && active)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppPalette.primaryBlue.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Selected',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.primaryBlue,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (active)
+                OutlinedButton.icon(
+                  onPressed: isSelected || isBusy ? null : onOpen,
+                  icon: const Icon(Icons.visibility_rounded),
+                  label: const Text('Open'),
+                ),
+              if (active)
+                TextButton.icon(
+                  onPressed: isBusy ? null : onArchive,
+                  icon: Icon(
+                    isBusy
+                        ? Icons.hourglass_top_rounded
+                        : Icons.archive_outlined,
+                  ),
+                  label: Text(isBusy ? 'Archiving...' : 'Archive'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF9E4053),
+                  ),
+                ),
+              if (!active)
+                FilledButton.icon(
+                  onPressed: isBusy ? null : onUnarchive,
+                  icon: Icon(
+                    isBusy ? Icons.hourglass_top_rounded : Icons.unarchive,
+                  ),
+                  label: Text(isBusy ? 'Restoring...' : 'Unarchive'),
+                ),
+            ],
           ),
         ],
       ),

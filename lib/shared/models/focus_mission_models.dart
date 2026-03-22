@@ -28,6 +28,8 @@ class AppUser {
     this.lastLoginAt,
     this.loginDayCount = 0,
     this.daysSinceFirstLogin = 0,
+    this.isArchived = false,
+    this.archivedAt,
     this.preferredDifficulty,
     this.assignedStudents = const [],
   });
@@ -47,6 +49,8 @@ class AppUser {
   final String? lastLoginAt;
   final int loginDayCount;
   final int daysSinceFirstLogin;
+  final bool isArchived;
+  final String? archivedAt;
   final String? preferredDifficulty;
   final List<String> assignedStudents;
 
@@ -66,6 +70,8 @@ class AppUser {
     String? lastLoginAt,
     int? loginDayCount,
     int? daysSinceFirstLogin,
+    bool? isArchived,
+    String? archivedAt,
     String? preferredDifficulty,
     List<String>? assignedStudents,
   }) {
@@ -85,6 +91,8 @@ class AppUser {
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
       loginDayCount: loginDayCount ?? this.loginDayCount,
       daysSinceFirstLogin: daysSinceFirstLogin ?? this.daysSinceFirstLogin,
+      isArchived: isArchived ?? this.isArchived,
+      archivedAt: archivedAt ?? this.archivedAt,
       preferredDifficulty: preferredDifficulty ?? this.preferredDifficulty,
       assignedStudents: assignedStudents ?? this.assignedStudents,
     );
@@ -107,6 +115,8 @@ class AppUser {
       lastLoginAt: json['lastLoginAt']?.toString(),
       loginDayCount: _asInt(json['loginDayCount']),
       daysSinceFirstLogin: _asInt(json['daysSinceFirstLogin']),
+      isArchived: json['isArchived'] == true,
+      archivedAt: json['archivedAt']?.toString(),
       preferredDifficulty: json['preferredDifficulty']?.toString(),
       assignedStudents: _asStringList(json['assignedStudents']),
     );
@@ -685,12 +695,16 @@ class StudentSummary {
     required this.name,
     required this.xp,
     required this.streak,
+    this.isArchived = false,
+    this.archivedAt,
   });
 
   final String id;
   final String name;
   final int xp;
   final int streak;
+  final bool isArchived;
+  final String? archivedAt;
 
   factory StudentSummary.fromJson(Map<String, dynamic> json) {
     return StudentSummary(
@@ -698,6 +712,8 @@ class StudentSummary {
       name: (json['name'] ?? '').toString(),
       xp: _asInt(json['xp']),
       streak: _asInt(json['streak']),
+      isArchived: json['isArchived'] == true,
+      archivedAt: json['archivedAt']?.toString(),
     );
   }
 }

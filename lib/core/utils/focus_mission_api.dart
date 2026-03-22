@@ -494,10 +494,14 @@ class FocusMissionApi {
 
   Future<List<StudentSummary>> fetchManagementStudents({
     required String token,
+    String status = 'active',
   }) async {
+    final normalizedStatus = status.trim().toLowerCase();
     final json = await _requestJson(
       'GET',
-      '/management/students',
+      normalizedStatus.isEmpty || normalizedStatus == 'active'
+          ? '/management/students'
+          : '/management/students?status=$normalizedStatus',
       token: token,
     );
     final students = json['students'] as List<dynamic>? ?? const [];
@@ -509,6 +513,22 @@ class FocusMissionApi {
           ),
         )
         .toList(growable: false);
+  }
+
+  Future<AppUser> unarchiveManagementStudent({
+    required String token,
+    required String studentId,
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/management/students/$studentId/unarchive',
+      token: token,
+    );
+
+    return AppUser.fromJson(
+      (json['student'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
   }
 
   Future<AppUser> archiveManagementStudent({
