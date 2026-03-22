@@ -112,7 +112,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _showCertificationSetup = false;
   bool _showCreateUserPanel = false;
   bool _showCertificationProgressPanel = false;
-  bool _showStudentRosterPanel = false;
   bool _showTimetablePanel = false;
   bool _showStudentResultsPanel = false;
   bool _certificationEnabled = false;
@@ -677,13 +676,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         : 'Teacher account form with subject specialty is ready.';
   }
 
-  String _buildStudentRosterSummary({
-    required int activeCount,
-    required int archivedCount,
-  }) {
-    return '$activeCount active · $archivedCount archived';
-  }
-
   String _buildCertificationProgressSummary(
     List<SubjectCertificationSummary> certifications, {
     required String selectedSubject,
@@ -870,6 +862,18 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                       TextButton.icon(
                         onPressed: _isAnyStudentStatusActionActive
                             ? null
+                            : () =>
+                                _openArchivedStudentsSheet(data.archivedStudents),
+                        icon: const Icon(Icons.unarchive_outlined),
+                        label: Text(
+                          data.archivedStudents.isEmpty
+                              ? 'View archived'
+                              : 'View archived (${data.archivedStudents.length})',
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: _isAnyStudentStatusActionActive
+                            ? null
                             : () => _archiveSelectedStudent(workspace),
                         icon: Icon(
                           _isArchivingStudent
@@ -884,72 +888,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFF9E4053),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                SoftPanel(
-                  colors: const [Color(0xFFF8FBFF), Color(0xFFE7F2FF)],
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _ManagementExpandableHeader(
-                        title: 'Student roster',
-                        subtitle:
-                            'See every live learner at a glance and restore archived students when they should return to the active timetable.',
-                        summary: _buildStudentRosterSummary(
-                          activeCount: workspace.students.length,
-                          archivedCount: data.archivedStudents.length,
-                        ),
-                        isExpanded: _showStudentRosterPanel,
-                        onToggle: () => setState(
-                          () =>
-                              _showStudentRosterPanel = !_showStudentRosterPanel,
-                        ),
-                      ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        child: !_showStudentRosterPanel
-                            ? const SizedBox.shrink()
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: AppSpacing.compact),
-                                  _ManagementStudentRosterSection(
-                                    title: 'Active students',
-                                    emptyMessage:
-                                        'No active students are available yet.',
-                                    students: workspace.students,
-                                    selectedStudentId: workspace.selectedStudent
-                                        .id,
-                                    actionStudentId: _studentStatusActionId,
-                                    active: true,
-                                    onOpen: _selectStudentContext,
-                                    onArchive: (student) => _archiveStudent(
-                                      student: student,
-                                      activeStudentCount:
-                                          workspace.students.length,
-                                      clearSelectedStudent:
-                                          student.id ==
-                                          workspace.selectedStudent.id,
-                                    ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.item),
-                                  _ManagementStudentRosterSection(
-                                    title: 'Archived students',
-                                    emptyMessage:
-                                        'No archived students need restoring right now.',
-                                    students: data.archivedStudents,
-                                    selectedStudentId:
-                                        workspace.selectedStudent.id,
-                                    actionStudentId: _studentStatusActionId,
-                                    active: false,
-                                    onUnarchive: _unarchiveStudent,
-                                  ),
-                                ],
-                              ),
                       ),
                     ],
                   ),
@@ -1844,7 +1782,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                         context,
                         icon: Icons.people_alt_outlined,
                         text:
-                            'Switch student to verify each learner has complete mission evidence.',
+                            'Use Switch student for the active roster and View archived when a learner needs restoring.',
                       ),
                     ],
                   ),
@@ -1932,6 +1870,23 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     }
 
     _selectStudentContext(selectedStudentId);
+  }
+
+  Future<void> _openArchivedStudentsSheet(
+    List<StudentSummary> archivedStudents,
+  ) async {
+    final selectedStudent = await showModalBottomSheet<StudentSummary>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) =>
+          _ArchivedStudentSheet(students: archivedStudents),
+    );
+
+    if (!mounted || selectedStudent == null) {
+      return;
+    }
+
+    await _unarchiveStudent(selectedStudent);
   }
 
   Future<void> _archiveSelectedStudent(MentorWorkspaceData workspace) async {
@@ -4064,211 +4019,6 @@ class _SelectedStudentCard extends StatelessWidget {
   }
 }
 
-class _ManagementStudentRosterSection extends StatelessWidget {
-  const _ManagementStudentRosterSection({
-    required this.title,
-    required this.emptyMessage,
-    required this.students,
-    required this.selectedStudentId,
-    required this.actionStudentId,
-    required this.active,
-    this.onOpen,
-    this.onArchive,
-    this.onUnarchive,
-  });
-
-  final String title;
-  final String emptyMessage;
-  final List<StudentSummary> students;
-  final String selectedStudentId;
-  final String actionStudentId;
-  final bool active;
-  final ValueChanged<String>? onOpen;
-  final ValueChanged<StudentSummary>? onArchive;
-  final ValueChanged<StudentSummary>? onUnarchive;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              '$title (${students.length})',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (students.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.item),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            ),
-            child: Text(
-              emptyMessage,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-            ),
-          )
-        else
-          ...students.map(
-            (student) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _ManagementStudentRosterRow(
-                student: student,
-                isSelected: student.id == selectedStudentId,
-                isBusy: student.id == actionStudentId,
-                active: active,
-                onOpen: onOpen == null ? null : () => onOpen!(student.id),
-                onArchive:
-                    onArchive == null ? null : () => onArchive!(student),
-                onUnarchive: onUnarchive == null
-                    ? null
-                    : () => onUnarchive!(student),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _ManagementStudentRosterRow extends StatelessWidget {
-  const _ManagementStudentRosterRow({
-    required this.student,
-    required this.isSelected,
-    required this.isBusy,
-    required this.active,
-    this.onOpen,
-    this.onArchive,
-    this.onUnarchive,
-  });
-
-  final StudentSummary student;
-  final bool isSelected;
-  final bool isBusy;
-  final bool active;
-  final VoidCallback? onOpen;
-  final VoidCallback? onArchive;
-  final VoidCallback? onUnarchive;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.item),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.84),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(
-          color: isSelected ? AppPalette.primaryBlue : Colors.white,
-          width: isSelected ? 1.6 : 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: active
-                      ? AppPalette.primaryBlue.withValues(alpha: 0.12)
-                      : AppPalette.orange.withValues(alpha: 0.14),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  active ? Icons.school_rounded : Icons.archive_outlined,
-                  color: active ? AppPalette.primaryBlue : AppPalette.orange,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      student.name,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      active
-                          ? '${student.xp} XP · ${student.streak} day streak'
-                          : 'Archived student record',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (isSelected && active)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppPalette.primaryBlue.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Selected',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppPalette.primaryBlue,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (active)
-                OutlinedButton.icon(
-                  onPressed: isSelected || isBusy ? null : onOpen,
-                  icon: const Icon(Icons.visibility_rounded),
-                  label: const Text('Open'),
-                ),
-              if (active)
-                TextButton.icon(
-                  onPressed: isBusy ? null : onArchive,
-                  icon: Icon(
-                    isBusy
-                        ? Icons.hourglass_top_rounded
-                        : Icons.archive_outlined,
-                  ),
-                  label: Text(isBusy ? 'Archiving...' : 'Archive'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF9E4053),
-                  ),
-                ),
-              if (!active)
-                FilledButton.icon(
-                  onPressed: isBusy ? null : onUnarchive,
-                  icon: Icon(
-                    isBusy ? Icons.hourglass_top_rounded : Icons.unarchive,
-                  ),
-                  label: Text(isBusy ? 'Restoring...' : 'Unarchive'),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _StudentPickerSheet extends StatelessWidget {
   const _StudentPickerSheet({
     required this.students,
@@ -4348,6 +4098,92 @@ class _StudentPickerSheet extends StatelessWidget {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ArchivedStudentSheet extends StatelessWidget {
+  const _ArchivedStudentSheet({required this.students});
+
+  final List<StudentSummary> students;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.screen,
+          AppSpacing.item,
+          AppSpacing.screen,
+          AppSpacing.section,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Archived Students',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: AppSpacing.compact),
+            Text(
+              'Restore an archived student to bring them back into the active management and timetable flow.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+            ),
+            const SizedBox(height: AppSpacing.item),
+            if (students.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.item),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                ),
+                child: Text(
+                  'No archived students are waiting to be restored.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              )
+            else
+              ...students.map(
+                (student) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Ink(
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.78),
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      border: Border.all(color: Colors.white),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.archive_outlined,
+                          color: AppPalette.textMuted,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            student.name,
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                        ),
+                        FilledButton.icon(
+                          onPressed: () =>
+                              Navigator.of(context).pop(student),
+                          icon: const Icon(Icons.unarchive_rounded),
+                          label: const Text('Unarchive'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
