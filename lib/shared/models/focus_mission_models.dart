@@ -17,6 +17,7 @@ class AppUser {
     required this.name,
     this.email,
     this.role,
+    this.yearGroup,
     this.subjectSpecialty,
     this.isPlaceholder = false,
     this.avatar,
@@ -38,6 +39,7 @@ class AppUser {
   final String name;
   final String? email;
   final String? role;
+  final String? yearGroup;
   final String? subjectSpecialty;
   final bool isPlaceholder;
   final String? avatar;
@@ -59,6 +61,7 @@ class AppUser {
     String? name,
     String? email,
     String? role,
+    String? yearGroup,
     String? subjectSpecialty,
     bool? isPlaceholder,
     String? avatar,
@@ -80,6 +83,7 @@ class AppUser {
       name: name ?? this.name,
       email: email ?? this.email,
       role: role ?? this.role,
+      yearGroup: yearGroup ?? this.yearGroup,
       subjectSpecialty: subjectSpecialty ?? this.subjectSpecialty,
       isPlaceholder: isPlaceholder ?? this.isPlaceholder,
       avatar: avatar ?? this.avatar,
@@ -104,6 +108,7 @@ class AppUser {
       name: (json['name'] ?? '').toString(),
       email: json['email']?.toString(),
       role: json['role']?.toString(),
+      yearGroup: json['yearGroup']?.toString(),
       subjectSpecialty: json['subjectSpecialty']?.toString(),
       isPlaceholder: json['isPlaceholder'] == true,
       avatar: json['avatar']?.toString(),
@@ -695,6 +700,7 @@ class StudentSummary {
     required this.name,
     required this.xp,
     required this.streak,
+    this.yearGroup = '',
     this.isArchived = false,
     this.archivedAt,
   });
@@ -703,6 +709,7 @@ class StudentSummary {
   final String name;
   final int xp;
   final int streak;
+  final String yearGroup;
   final bool isArchived;
   final String? archivedAt;
 
@@ -712,6 +719,7 @@ class StudentSummary {
       name: (json['name'] ?? '').toString(),
       xp: _asInt(json['xp']),
       streak: _asInt(json['streak']),
+      yearGroup: (json['yearGroup'] ?? '').toString(),
       isArchived: json['isArchived'] == true,
       archivedAt: json['archivedAt']?.toString(),
     );
@@ -2672,6 +2680,7 @@ class StudentCriteriaData {
         name: (studentJson['name'] ?? '').toString(),
         xp: _asInt(studentJson['xp']),
         streak: _asInt(studentJson['streak']),
+        yearGroup: (studentJson['yearGroup'] ?? '').toString(),
       ),
       criteria: (json['criteria'] as List<dynamic>? ?? const [])
           .map((item) => CriterionOverview.fromJson(_asMap(item)))

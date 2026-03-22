@@ -547,6 +547,24 @@ class FocusMissionApi {
     );
   }
 
+  Future<AppUser> updateManagementStudentYearGroup({
+    required String token,
+    required String studentId,
+    required String yearGroup,
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/management/students/$studentId/year-group',
+      token: token,
+      body: <String, dynamic>{'yearGroup': yearGroup.trim()},
+    );
+
+    return AppUser.fromJson(
+      (json['student'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
   Future<List<SubjectCertificationSummary>> fetchTeacherStudentCertification({
     required String token,
     required String studentId,
@@ -588,6 +606,24 @@ class FocusMissionApi {
 
     return SubjectCertificationSummary.fromJson(
       (json['certification'] as Map<dynamic, dynamic>).cast<String, dynamic>(),
+    );
+  }
+
+  Future<AppUser> updateTeacherStudentYearGroup({
+    required String token,
+    required String studentId,
+    required String yearGroup,
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/teacher/students/$studentId/year-group',
+      token: token,
+      body: <String, dynamic>{'yearGroup': yearGroup.trim()},
+    );
+
+    return AppUser.fromJson(
+      (json['student'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
     );
   }
 
@@ -738,6 +774,7 @@ class FocusMissionApi {
     required String email,
     required String password,
     String subjectSpecialty = '',
+    String yearGroup = '',
   }) async {
     final json = await _requestJson(
       'POST',
@@ -750,6 +787,9 @@ class FocusMissionApi {
         'password': password,
         if (subjectSpecialty.trim().isNotEmpty)
           'subjectSpecialty': subjectSpecialty.trim(),
+        if (role.trim().toLowerCase() == 'student' &&
+            yearGroup.trim().isNotEmpty)
+          'yearGroup': yearGroup.trim(),
       },
     );
 
@@ -764,12 +804,18 @@ class FocusMissionApi {
     required String name,
     required String email,
     required String password,
+    String yearGroup = '',
   }) async {
     final json = await _requestJson(
       'POST',
       '/teacher/students',
       token: token,
-      body: {'name': name, 'email': email, 'password': password},
+      body: {
+        'name': name,
+        'email': email,
+        'password': password,
+        if (yearGroup.trim().isNotEmpty) 'yearGroup': yearGroup.trim(),
+      },
     );
 
     return AppUser.fromJson(
@@ -1291,6 +1337,7 @@ class FocusMissionApi {
             name: overview.student.name,
             xp: overview.student.xp,
             streak: overview.student.streak,
+            yearGroup: (overview.student.yearGroup ?? '').trim(),
           ),
         )
         .toList(growable: false);

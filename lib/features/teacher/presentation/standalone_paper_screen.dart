@@ -29,7 +29,7 @@ class StandaloneTestScreen extends StatelessWidget {
   const StandaloneTestScreen({
     super.key,
     required this.session,
-    required this.student,
+    required this.students,
     required this.subject,
     required this.initialTargetDate,
     required this.initialSessionType,
@@ -37,7 +37,7 @@ class StandaloneTestScreen extends StatelessWidget {
   });
 
   final AuthSession session;
-  final StudentSummary student;
+  final List<StudentSummary> students;
   final SubjectSummary subject;
   final DateTime initialTargetDate;
   final String initialSessionType;
@@ -47,7 +47,7 @@ class StandaloneTestScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return StandalonePaperScreen(
       session: session,
-      student: student,
+      students: students,
       subject: subject,
       initialTargetDate: initialTargetDate,
       initialSessionType: initialSessionType,
@@ -61,7 +61,7 @@ class StandaloneExamScreen extends StatelessWidget {
   const StandaloneExamScreen({
     super.key,
     required this.session,
-    required this.student,
+    required this.students,
     required this.subject,
     required this.initialTargetDate,
     required this.initialSessionType,
@@ -69,7 +69,7 @@ class StandaloneExamScreen extends StatelessWidget {
   });
 
   final AuthSession session;
-  final StudentSummary student;
+  final List<StudentSummary> students;
   final SubjectSummary subject;
   final DateTime initialTargetDate;
   final String initialSessionType;
@@ -79,7 +79,7 @@ class StandaloneExamScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return StandalonePaperScreen(
       session: session,
-      student: student,
+      students: students,
       subject: subject,
       initialTargetDate: initialTargetDate,
       initialSessionType: initialSessionType,
@@ -93,7 +93,7 @@ class StandalonePaperScreen extends StatefulWidget {
   const StandalonePaperScreen({
     super.key,
     required this.session,
-    required this.student,
+    required this.students,
     required this.subject,
     required this.initialTargetDate,
     required this.initialSessionType,
@@ -102,7 +102,7 @@ class StandalonePaperScreen extends StatefulWidget {
   });
 
   final AuthSession session;
-  final StudentSummary student;
+  final List<StudentSummary> students;
   final SubjectSummary subject;
   final DateTime initialTargetDate;
   final String initialSessionType;
@@ -134,6 +134,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
   final List<_StandalonePaperItemController> _itemEditors = [];
   final Map<int, _TheoryReviewController> _theoryReviewControllers =
       <int, _TheoryReviewController>{};
+  final Map<String, String> _bulkPaperIdsByStudentId = <String, String>{};
 
   List<StandalonePaperDraft> _papers = const [];
   UploadedStandalonePaperDraft? _uploadedDraft;
@@ -153,11 +154,29 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
   bool _isRefreshingSession = false;
   bool _isResettingSession = false;
   bool _isScoringSession = false;
+  bool _bulkPublished = false;
   String? _errorMessage;
 
+  List<StudentSummary> get _selectedStudents => widget.students;
+  StudentSummary get _primaryStudent => widget.students.first;
+  bool get _isBulkMode => widget.students.length > 1;
   String get _paperKind => widget.paperKind.trim().toUpperCase();
   bool get _isExam => _paperKind == 'EXAM';
   String get _paperLabel => _isExam ? 'Exam' : 'Test';
+  bool get _hasSavedDraft => _isBulkMode
+      ? _bulkPaperIdsByStudentId.isNotEmpty &&
+            _bulkPaperIdsByStudentId.length == _selectedStudents.length
+      : _activePaperId.trim().isNotEmpty;
+  String get _targetStudentLabel => _isBulkMode
+      ? '${_selectedStudents.length} students'
+      : _primaryStudent.name;
+  String? get _sharedYearGroup {
+    final labels = _selectedStudents
+        .map((student) => student.yearGroup.trim())
+        .where((label) => label.isNotEmpty)
+        .toSet();
+    return labels.length == 1 ? labels.first : null;
+  }
 
   @override
   void initState() {
@@ -170,7 +189,11 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     _sessionType = _normalizeStandaloneSessionType(widget.initialSessionType);
     _targetDate = _dateOnly(widget.initialTargetDate);
     _resetDraft(keepTargetDate: true);
-    _loadPapers();
+    if (_isBulkMode) {
+      _isLoading = false;
+    } else {
+      _loadPapers();
+    }
   }
 
   @override
@@ -197,7 +220,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     try {
       final papers = await _api.fetchStandalonePapers(
         token: widget.session.token,
-        studentId: widget.student.id,
+        studentId: _primaryStudent.id,
         paperKind: _paperKind,
       );
 
@@ -227,6 +250,8 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     _unitTextController.clear();
     _durationController.text = '0';
     _activePaperId = '';
+    _bulkPaperIdsByStudentId.clear();
+    _bulkPublished = false;
     _uploadedDraft = null;
     _importReadiness = null;
     _latestSession = null;
@@ -279,7 +304,11 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
             : paper.items.map(_StandalonePaperItemController.fromItem),
       );
     _syncTheoryReviewControllers();
-    _loadLatestSessionForPaper(paper.id);
+    if (_isBulkMode) {
+      _latestSession = null;
+    } else {
+      _loadLatestSessionForPaper(paper.id);
+    }
   }
 
   Future<void> _pickAndPopulateDraft() async {
@@ -312,7 +341,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
 
       final uploaded = await _api.uploadStandalonePaperSourceDraft(
         token: widget.session.token,
-        studentId: widget.student.id,
+        studentId: _primaryStudent.id,
         subjectId: widget.subject.id,
         paperKind: _paperKind,
         sessionType: _sessionType,
@@ -437,10 +466,78 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
       final items = _itemEditors.map((editor) => editor.toItem()).toList();
       final durationMinutes =
           int.tryParse(_durationController.text.trim()) ?? 0;
+      if (_isBulkMode) {
+        final savedPaperIds = Map<String, String>.from(
+          _bulkPaperIdsByStudentId,
+        );
+        StandalonePaperDraft? firstSavedPaper;
+        for (final student in _selectedStudents) {
+          final existingPaperId = (savedPaperIds[student.id] ?? '').trim();
+          final saved = existingPaperId.isEmpty
+              ? await _api.createStandalonePaper(
+                  token: widget.session.token,
+                  studentId: student.id,
+                  subjectId: widget.subject.id,
+                  paperKind: _paperKind,
+                  sessionType: _sessionType,
+                  title: _titleController.text.trim(),
+                  teacherNote: _teacherNoteController.text.trim(),
+                  sourceUnitText: _unitTextController.text.trim(),
+                  sourceRawText: _rawUploadedSourceText.trim(),
+                  sourceFileName: _selectedSourceFileName.trim(),
+                  sourceFileType: _selectedSourceFileType.trim(),
+                  targetDate: _targetDateKey,
+                  durationMinutes: durationMinutes,
+                  items: items,
+                )
+              : await _api.updateStandalonePaper(
+                  token: widget.session.token,
+                  paperId: existingPaperId,
+                  sessionType: _sessionType,
+                  title: _titleController.text.trim(),
+                  teacherNote: _teacherNoteController.text.trim(),
+                  sourceUnitText: _unitTextController.text.trim(),
+                  sourceRawText: _rawUploadedSourceText.trim(),
+                  sourceFileName: _selectedSourceFileName.trim(),
+                  sourceFileType: _selectedSourceFileType.trim(),
+                  targetDate: _targetDateKey,
+                  durationMinutes: durationMinutes,
+                  items: items,
+                );
+          savedPaperIds[student.id] = saved.id;
+          firstSavedPaper ??= saved;
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _bulkPaperIdsByStudentId
+            ..clear()
+            ..addAll(savedPaperIds);
+          _bulkPublished = false;
+          _activePaperId =
+              firstSavedPaper?.id ?? savedPaperIds[_primaryStudent.id] ?? '';
+          if (firstSavedPaper != null) {
+            _applyPaper(firstSavedPaper);
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$_paperLabel draft saved for ${_selectedStudents.length} students.',
+            ),
+          ),
+        );
+        return;
+      }
+
       final saved = _activePaperId.trim().isEmpty
           ? await _api.createStandalonePaper(
               token: widget.session.token,
-              studentId: widget.student.id,
+              studentId: _primaryStudent.id,
               subjectId: widget.subject.id,
               paperKind: _paperKind,
               sessionType: _sessionType,
@@ -500,7 +597,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
   }
 
   Future<void> _deleteDraft() async {
-    if (_activePaperId.trim().isEmpty || _isDeleting) {
+    if ((!_hasSavedDraft && _activePaperId.trim().isEmpty) || _isDeleting) {
       return;
     }
 
@@ -510,6 +607,33 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     });
 
     try {
+      if (_isBulkMode) {
+        for (final paperId in _bulkPaperIdsByStudentId.values) {
+          if (paperId.trim().isEmpty) {
+            continue;
+          }
+          await _api.deleteStandalonePaper(
+            token: widget.session.token,
+            paperId: paperId,
+          );
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        setState(() => _resetDraft(keepTargetDate: true));
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$_paperLabel draft deleted for ${_selectedStudents.length} students.',
+            ),
+          ),
+        );
+        return;
+      }
+
       await _api.deleteStandalonePaper(
         token: widget.session.token,
         paperId: _activePaperId,
@@ -543,7 +667,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
   }
 
   Future<void> _publishDraft() async {
-    if (_activePaperId.trim().isEmpty || _isPublishing) {
+    if ((!_hasSavedDraft && _activePaperId.trim().isEmpty) || _isPublishing) {
       return;
     }
 
@@ -553,6 +677,32 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     });
 
     try {
+      if (_isBulkMode) {
+        for (final paperId in _bulkPaperIdsByStudentId.values) {
+          if (paperId.trim().isEmpty) {
+            continue;
+          }
+          await _api.publishStandalonePaper(
+            token: widget.session.token,
+            paperId: paperId,
+          );
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        setState(() => _bulkPublished = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$_paperLabel published for ${_selectedStudents.length} students in ${_sessionTypeLabel(_sessionType)}.',
+            ),
+          ),
+        );
+        return;
+      }
+
       final paper = await _api.publishStandalonePaper(
         token: widget.session.token,
         paperId: _activePaperId,
@@ -590,7 +740,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
   }
 
   Future<void> _unpublishDraft() async {
-    if (_activePaperId.trim().isEmpty || _isPublishing) {
+    if ((!_hasSavedDraft && _activePaperId.trim().isEmpty) || _isPublishing) {
       return;
     }
 
@@ -600,6 +750,32 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     });
 
     try {
+      if (_isBulkMode) {
+        for (final paperId in _bulkPaperIdsByStudentId.values) {
+          if (paperId.trim().isEmpty) {
+            continue;
+          }
+          await _api.unpublishStandalonePaper(
+            token: widget.session.token,
+            paperId: paperId,
+          );
+        }
+
+        if (!mounted) {
+          return;
+        }
+
+        setState(() => _bulkPublished = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$_paperLabel moved back to draft mode for ${_selectedStudents.length} students.',
+            ),
+          ),
+        );
+        return;
+      }
+
       final paper = await _api.unpublishStandalonePaper(
         token: widget.session.token,
         paperId: _activePaperId,
@@ -859,7 +1035,12 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
   }
 
   String _buildFileName({required bool includeAnswers}) {
-    final studentSlug = _sanitizeFileNameSegment(widget.student.name);
+    final studentSlug = _sanitizeFileNameSegment(
+      _isBulkMode
+          ? (_sharedYearGroup?.replaceAll(' ', '_') ??
+                '${_selectedStudents.length}_students')
+          : _primaryStudent.name,
+    );
     final subjectSlug = _sanitizeFileNameSegment(widget.subject.name);
     final kindSlug = _sanitizeFileNameSegment(_paperLabel);
     final dateSlug = _sanitizeFileNameSegment(_targetDateKey);
@@ -892,7 +1073,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
       )
       ..writeln('<div class="pill-row">')
       ..writeln(
-        '<span class="soft-pill">${_escapeHtml(widget.student.name)}</span>',
+        '<span class="soft-pill">${_escapeHtml(_targetStudentLabel)}</span>',
       )
       ..writeln(
         '<span class="soft-pill">${_escapeHtml(widget.subject.name)}</span>',
@@ -902,8 +1083,31 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
       ..writeln(
         '<span class="soft-pill">${_escapeHtml('${_itemEditors.length} items')}</span>',
       )
-      ..writeln('</div>')
-      ..writeln('</section>');
+      ..writeln('</div>');
+
+    if (_sharedYearGroup != null) {
+      buffer.writeln(
+        '<div class="pill-row"><span class="soft-pill">${_escapeHtml(_sharedYearGroup!)}</span></div>',
+      );
+    }
+
+    buffer.writeln('</section>');
+
+    if (_isBulkMode) {
+      buffer
+        ..writeln('<section class="section-card">')
+        ..writeln('<h2>Assigned Students</h2>')
+        ..writeln('<div class="pill-row">');
+      for (final student in _selectedStudents) {
+        final label = student.yearGroup.trim().isEmpty
+            ? student.name
+            : '${student.name} · ${student.yearGroup.trim()}';
+        buffer.writeln('<span class="soft-pill">${_escapeHtml(label)}</span>');
+      }
+      buffer
+        ..writeln('</div>')
+        ..writeln('</section>');
+    }
 
     if (_teacherNoteController.text.trim().isNotEmpty && includeAnswers) {
       buffer
@@ -1045,7 +1249,9 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
         break;
       }
     }
-    final isPublished = activePaper?.status.trim().toLowerCase() == 'published';
+    final isPublished = _isBulkMode
+        ? _bulkPublished
+        : activePaper?.status.trim().toLowerCase() == 'published';
     final latestSession = _latestSession;
 
     return FocusScaffold(
@@ -1084,7 +1290,9 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    _InfoPill(label: widget.student.name),
+                    _InfoPill(label: _targetStudentLabel),
+                    if (_sharedYearGroup != null)
+                      _InfoPill(label: _sharedYearGroup!),
                     _InfoPill(label: widget.subject.name),
                     _InfoPill(label: _paperLabel),
                     _InfoPill(label: _sessionTypeLabel(_sessionType)),
@@ -1092,19 +1300,30 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                   ],
                 ),
               ),
+              if (_isBulkMode) ...[
+                const SizedBox(height: AppSpacing.compact),
+                Text(
+                  'Targets: ${_selectedStudents.map((student) => student.name).join(', ')}',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+                ),
+              ],
               const SizedBox(height: AppSpacing.section),
-              _DraftListPanel(
-                title: 'Saved $_paperLabel drafts',
-                isLoading: _isLoading,
-                papers: _papers,
-                activePaperId: _activePaperId,
-                emptyMessage:
-                    'No standalone $_paperLabel drafts yet. Populate one from PDF or build it manually below.',
-                onOpenPaper: _applyPaper,
-                onCreateNew: () =>
-                    setState(() => _resetDraft(keepTargetDate: true)),
-              ),
-              const SizedBox(height: AppSpacing.section),
+              if (!_isBulkMode) ...[
+                _DraftListPanel(
+                  title: 'Saved $_paperLabel drafts',
+                  isLoading: _isLoading,
+                  papers: _papers,
+                  activePaperId: _activePaperId,
+                  emptyMessage:
+                      'No standalone $_paperLabel drafts yet. Populate one from PDF or build it manually below.',
+                  onOpenPaper: _applyPaper,
+                  onCreateNew: () =>
+                      setState(() => _resetDraft(keepTargetDate: true)),
+                ),
+                const SizedBox(height: AppSpacing.section),
+              ],
               if (_errorMessage != null && _errorMessage!.trim().isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.item),
@@ -1119,7 +1338,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                 isDeleting: _isDeleting,
                 isImporting: _isImporting,
                 isPublishing: _isPublishing,
-                hasSavedDraft: _activePaperId.trim().isNotEmpty,
+                hasSavedDraft: _hasSavedDraft,
                 isPublished: isPublished,
                 onPopulate: _pickAndPopulateDraft,
                 onSave: _saveDraft,
@@ -1130,7 +1349,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                 onDownloadStudent: () => _downloadCopy(includeAnswers: false),
               ),
               const SizedBox(height: AppSpacing.section),
-              if (_activePaperId.trim().isNotEmpty)
+              if (!_isBulkMode && _activePaperId.trim().isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.section),
                   child: _StandaloneSessionPanel(

@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/student_year_groups.dart';
 import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
@@ -26,6 +27,7 @@ import '../../../shared/widgets/notification_panel.dart';
 import '../../../shared/widgets/profile_avatar_button.dart';
 import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
+import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import 'criterion_review_sheet.dart';
 import 'mission_builder_sheet.dart';
@@ -96,6 +98,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   String _selectedStudentId = '';
   String _selectedResultSubject = _allTeacherResultSubjectsFilterLabel;
   String _selectedResultDate = _allTeacherResultDatesFilterLabel;
+  String _createStudentYearGroup = '';
+  String _selectedStudentYearGroup = '';
 
   String _selectedLesson = 'Morning';
   String _selectedBehaviour = 'No Issues';
@@ -114,6 +118,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   final Set<String> _sendingResultMissionIds = <String>{};
   bool _showCreateStudentPanel = false;
   bool _isCreatingStudent = false;
+  bool _isSavingStudentYearGroup = false;
   bool _isSavingTeacherTimetable = false;
   bool _showTeacherTimetableEditor = false;
   bool _isAssignedMissionsExpanded = false;
@@ -141,6 +146,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       selectedStudentId: _selectedStudentId,
     );
     _selectedStudentId = workspace.selectedStudent.id;
+    _selectedStudentYearGroup = workspace.selectedStudent.yearGroup.trim();
     final resultSubjectFilters = _buildStudentResultSubjectFilters(
       workspace.studentResults,
     );
@@ -417,6 +423,19 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       ),
                     ],
                   ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                StudentYearGroupPanel(
+                  title: 'Student year group',
+                  subtitle:
+                      'Teachers can keep the learner year current here so profile context and grouped Test/Exam targeting stay accurate.',
+                  selectedYearGroup: _selectedStudentYearGroup,
+                  onChanged: (value) => setState(
+                    () => _selectedStudentYearGroup = (value ?? '').trim(),
+                  ),
+                  onSave: () => _saveSelectedStudentYearGroup(workspace),
+                  isSaving: _isSavingStudentYearGroup,
+                  saveLabel: 'Save year group',
                 ),
                 AnimatedSize(
                   duration: const Duration(milliseconds: 220),
@@ -984,6 +1003,28 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                     return null;
                   },
                 ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _createStudentYearGroup,
+                  decoration: const InputDecoration(labelText: 'Year group'),
+                  items: <DropdownMenuItem<String>>[
+                    const DropdownMenuItem<String>(
+                      value: '',
+                      child: Text('Not set yet'),
+                    ),
+                    ...kStudentYearGroupOptions.map(
+                      (yearGroup) => DropdownMenuItem<String>(
+                        value: yearGroup,
+                        child: Text(yearGroup),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(
+                      () => _createStudentYearGroup = (value ?? '').trim(),
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -1322,6 +1363,50 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     });
   }
 
+  Future<void> _saveSelectedStudentYearGroup(
+    TeacherWorkspaceData workspace,
+  ) async {
+    if (_isSavingStudentYearGroup) {
+      return;
+    }
+
+    setState(() => _isSavingStudentYearGroup = true);
+    try {
+      await _api.updateTeacherStudentYearGroup(
+        token: _session.token,
+        studentId: workspace.selectedStudent.id,
+        yearGroup: _selectedStudentYearGroup,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _reloadTeacherWorkspaceForStudent(workspace.selectedStudent.id);
+      });
+
+      final savedLabel = _selectedStudentYearGroup.trim().isEmpty
+          ? 'Year group cleared.'
+          : '${workspace.selectedStudent.name} is now in ${_selectedStudentYearGroup.trim()}.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(savedLabel)));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingStudentYearGroup = false);
+      }
+    }
+  }
+
   Future<void> _createTeacherStudent() async {
     if (!_createStudentFormKey.currentState!.validate() || _isCreatingStudent) {
       return;
@@ -1334,6 +1419,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         name: _studentNameController.text.trim(),
         email: _studentEmailController.text.trim(),
         password: _studentPasswordController.text,
+        yearGroup: _createStudentYearGroup,
       );
 
       if (!mounted) {
@@ -1346,6 +1432,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         _studentNameController.clear();
         _studentEmailController.clear();
         _studentPasswordController.clear();
+        _createStudentYearGroup = '';
         _session = _session.copyWith(
           user: _session.user.copyWith(
             assignedStudents: {
@@ -1917,13 +2004,27 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         _resolvedLessonForTeacher(schedule).trim().toLowerCase() == 'afternoon'
         ? 'afternoon'
         : 'morning';
+    final selectedStudents = await showModalBottomSheet<List<StudentSummary>>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => _StandalonePaperStudentSelectionSheet(
+        students: workspace.students,
+        initialStudentId: workspace.selectedStudent.id,
+        paperLabel: paperKind.trim().toUpperCase() == 'EXAM' ? 'Exam' : 'Test',
+      ),
+    );
+
+    if (!mounted || selectedStudents == null || selectedStudents.isEmpty) {
+      return;
+    }
 
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => paperKind.trim().toUpperCase() == 'EXAM'
             ? StandaloneExamScreen(
                 session: _session,
-                student: workspace.selectedStudent,
+                students: selectedStudents,
                 subject: subject,
                 initialTargetDate: _selectedLessonDate,
                 initialSessionType: initialSessionType,
@@ -1931,7 +2032,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
               )
             : StandaloneTestScreen(
                 session: _session,
-                student: workspace.selectedStudent,
+                students: selectedStudents,
                 subject: subject,
                 initialTargetDate: _selectedLessonDate,
                 initialSessionType: initialSessionType,
@@ -3811,11 +3912,27 @@ class _StudentPickerCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    '${student.name} · ${student.xp} XP',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyLarge?.copyWith(color: AppPalette.navy),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${student.name} · ${student.xp} XP',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyLarge?.copyWith(color: AppPalette.navy),
+                      ),
+                      if (student.yearGroup.trim().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          student.yearGroup.trim(),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppPalette.textMuted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 const Icon(
@@ -3896,7 +4013,12 @@ class _StudentPickerSheet extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '${student.name} · ${student.xp} XP',
+                            [
+                              student.name,
+                              '${student.xp} XP',
+                              if (student.yearGroup.trim().isNotEmpty)
+                                student.yearGroup.trim(),
+                            ].join(' · '),
                             style: Theme.of(context).textTheme.bodyLarge,
                           ),
                         ),
@@ -3912,6 +4034,219 @@ class _StudentPickerSheet extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StandalonePaperStudentSelectionSheet extends StatefulWidget {
+  const _StandalonePaperStudentSelectionSheet({
+    required this.students,
+    required this.initialStudentId,
+    required this.paperLabel,
+  });
+
+  final List<StudentSummary> students;
+  final String initialStudentId;
+  final String paperLabel;
+
+  @override
+  State<_StandalonePaperStudentSelectionSheet> createState() =>
+      _StandalonePaperStudentSelectionSheetState();
+}
+
+class _StandalonePaperStudentSelectionSheetState
+    extends State<_StandalonePaperStudentSelectionSheet> {
+  late final Set<String> _selectedStudentIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedStudentIds = <String>{
+      if (widget.initialStudentId.trim().isNotEmpty) widget.initialStudentId,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedStudent = widget.students.firstWhere(
+      (student) => student.id == widget.initialStudentId,
+      orElse: () => widget.students.first,
+    );
+    final yearGroups =
+        widget.students
+            .map((student) => student.yearGroup.trim())
+            .where((yearGroup) => yearGroup.isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+
+    return SafeArea(
+      child: FractionallySizedBox(
+        heightFactor: 0.88,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.screen,
+            AppSpacing.item,
+            AppSpacing.screen,
+            AppSpacing.section,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Choose students',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.compact),
+              Text(
+                'Build one shared ${widget.paperLabel} draft for one learner, a whole year group, or your full assigned class.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+              ),
+              const SizedBox(height: AppSpacing.item),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ActionChip(
+                    label: const Text('Current student only'),
+                    onPressed: () => setState(() {
+                      _selectedStudentIds
+                        ..clear()
+                        ..add(selectedStudent.id);
+                    }),
+                  ),
+                  ActionChip(
+                    label: const Text('All assigned students'),
+                    onPressed: () => setState(() {
+                      _selectedStudentIds
+                        ..clear()
+                        ..addAll(widget.students.map((student) => student.id));
+                    }),
+                  ),
+                  ...yearGroups.map(
+                    (yearGroup) => ActionChip(
+                      label: Text('All $yearGroup'),
+                      onPressed: () => setState(() {
+                        // WHY: Teachers often prepare one paper for an entire
+                        // class year, so this shortcut keeps bulk selection
+                        // quick instead of forcing checkbox-by-checkbox taps.
+                        _selectedStudentIds
+                          ..clear()
+                          ..addAll(
+                            widget.students
+                                .where(
+                                  (student) =>
+                                      student.yearGroup.trim() == yearGroup,
+                                )
+                                .map((student) => student.id),
+                          );
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.item),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: widget.students.length,
+                  separatorBuilder: (_, _) =>
+                      const SizedBox(height: AppSpacing.compact),
+                  itemBuilder: (context, index) {
+                    final student = widget.students[index];
+                    final isSelected = _selectedStudentIds.contains(student.id);
+                    final subtitle = [
+                      '${student.xp} XP',
+                      if (student.yearGroup.trim().isNotEmpty)
+                        student.yearGroup.trim(),
+                    ].join(' · ');
+                    return InkWell(
+                      onTap: () => setState(() {
+                        if (isSelected) {
+                          _selectedStudentIds.remove(student.id);
+                        } else {
+                          _selectedStudentIds.add(student.id);
+                        }
+                      }),
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      child: Ink(
+                        padding: const EdgeInsets.all(AppSpacing.item),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.82),
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusMd,
+                          ),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppPalette.primaryBlue
+                                : Colors.white,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isSelected
+                                  ? Icons.check_circle_rounded
+                                  : Icons.radio_button_unchecked_rounded,
+                              color: isSelected
+                                  ? AppPalette.primaryBlue
+                                  : AppPalette.textMuted,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    student.name,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    subtitle,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: AppPalette.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: AppSpacing.item),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _selectedStudentIds.isEmpty
+                      ? null
+                      : () {
+                          final selectedStudents = widget.students
+                              .where(
+                                (student) =>
+                                    _selectedStudentIds.contains(student.id),
+                              )
+                              .toList(growable: false);
+                          Navigator.of(context).pop(selectedStudents);
+                        },
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: Text(
+                    _selectedStudentIds.isEmpty
+                        ? 'Select at least one student'
+                        : 'Continue with ${_selectedStudentIds.length} student${_selectedStudentIds.length == 1 ? '' : 's'}',
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

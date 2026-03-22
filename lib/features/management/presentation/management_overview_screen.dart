@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/student_year_groups.dart';
 import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
@@ -26,6 +27,7 @@ import '../../../shared/widgets/profile_avatar_button.dart';
 import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
+import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import '../../teacher/presentation/result_report_screen.dart';
 
@@ -99,6 +101,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   String _selectedMorningRoom = _timetableRoomOptions.first;
   String _selectedAfternoonRoom = _timetableRoomOptions.first;
   String _createRole = 'student';
+  String _createStudentYearGroup = '';
+  String _selectedStudentYearGroup = '';
   NotificationInboxData? _notificationInbox;
   bool _isCreatingUser = false;
   bool _isDownloadingResults = false;
@@ -107,6 +111,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _isSavingCertification = false;
   bool _isSavingTimetable = false;
   bool _isArchivingStudent = false;
+  bool _isSavingStudentYearGroup = false;
   String _studentStatusActionId = '';
   bool _showTimetableEditor = false;
   bool _showCertificationSetup = false;
@@ -168,6 +173,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     final teachers = responses[1] as List<TeacherSummary>;
     final archivedStudents = responses[2] as List<StudentSummary>;
     _selectedStudentId = workspace.selectedStudent.id;
+    _selectedStudentYearGroup = workspace.selectedStudent.yearGroup.trim();
     _notificationInbox ??= workspace.notificationInbox;
     _syncCertificationEditor(certificationSubjects);
     _syncTimetableEditor(
@@ -862,8 +868,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                       TextButton.icon(
                         onPressed: _isAnyStudentStatusActionActive
                             ? null
-                            : () =>
-                                _openArchivedStudentsSheet(data.archivedStudents),
+                            : () => _openArchivedStudentsSheet(
+                                data.archivedStudents,
+                              ),
                         icon: const Icon(Icons.unarchive_outlined),
                         label: Text(
                           data.archivedStudents.isEmpty
@@ -891,6 +898,20 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                       ),
                     ],
                   ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                StudentYearGroupPanel(
+                  title: 'Student year group',
+                  subtitle:
+                      'Management can keep the learner year current here so profiles, class context, and grouped Test/Exam targeting stay correct.',
+                  selectedYearGroup: _selectedStudentYearGroup,
+                  onChanged: (value) => setState(
+                    () => _selectedStudentYearGroup = (value ?? '').trim(),
+                  ),
+                  onSave: () =>
+                      _saveSelectedStudentYearGroup(workspace.selectedStudent),
+                  isSaving: _isSavingStudentYearGroup,
+                  saveLabel: 'Save year group',
                 ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
@@ -1249,9 +1270,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                           label: 'Teacher',
                                           icon: Icons.menu_book_rounded,
                                           selected: _createRole == 'teacher',
-                                          onTap: () => setState(
-                                            () => _createRole = 'teacher',
-                                          ),
+                                          onTap: () => setState(() {
+                                            _createRole = 'teacher';
+                                            _createStudentYearGroup = '';
+                                          }),
                                         ),
                                       ),
                                     ],
@@ -1305,6 +1327,35 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                             return null;
                                           },
                                         ),
+                                        if (_createRole == 'student') ...[
+                                          const SizedBox(height: 12),
+                                          DropdownButtonFormField<String>(
+                                            initialValue:
+                                                _createStudentYearGroup,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Year group',
+                                            ),
+                                            items: <DropdownMenuItem<String>>[
+                                              const DropdownMenuItem<String>(
+                                                value: '',
+                                                child: Text('Not set yet'),
+                                              ),
+                                              ...kStudentYearGroupOptions.map(
+                                                (yearGroup) =>
+                                                    DropdownMenuItem<String>(
+                                                      value: yearGroup,
+                                                      child: Text(yearGroup),
+                                                    ),
+                                              ),
+                                            ],
+                                            onChanged: (value) {
+                                              setState(
+                                                () => _createStudentYearGroup =
+                                                    (value ?? '').trim(),
+                                              );
+                                            },
+                                          ),
+                                        ],
                                         if (_createRole == 'teacher') ...[
                                           const SizedBox(height: 12),
                                           TextFormField(
@@ -1878,8 +1929,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     final selectedStudent = await showModalBottomSheet<StudentSummary>(
       context: context,
       showDragHandle: true,
-      builder: (context) =>
-          _ArchivedStudentSheet(students: archivedStudents),
+      builder: (context) => _ArchivedStudentSheet(students: archivedStudents),
     );
 
     if (!mounted || selectedStudent == null) {
@@ -2088,6 +2138,48 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     );
   }
 
+  Future<void> _saveSelectedStudentYearGroup(StudentSummary student) async {
+    if (_isSavingStudentYearGroup) {
+      return;
+    }
+
+    setState(() => _isSavingStudentYearGroup = true);
+    try {
+      await _api.updateManagementStudentYearGroup(
+        token: _session.token,
+        studentId: student.id,
+        yearGroup: _selectedStudentYearGroup,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _selectedStudentId = student.id;
+        _future = _loadWorkspace();
+      });
+
+      final savedLabel = _selectedStudentYearGroup.trim().isEmpty
+          ? 'Year group cleared.'
+          : '${student.name} is now in ${_selectedStudentYearGroup.trim()}.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(savedLabel)));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingStudentYearGroup = false);
+      }
+    }
+  }
+
   Future<void> _createManagedUser() async {
     if (!_createUserFormKey.currentState!.validate() || _isCreatingUser) {
       return;
@@ -2102,6 +2194,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
         subjectSpecialty: _subjectSpecialtyController.text.trim(),
+        yearGroup: _createRole == 'student' ? _createStudentYearGroup : '',
       );
 
       if (!mounted) {
@@ -2115,6 +2208,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         _emailController.clear();
         _passwordController.clear();
         _subjectSpecialtyController.clear();
+        _createStudentYearGroup = '';
         if (createdUser.role == 'student') {
           final nextAssignedStudents = {
             ..._session.user.assignedStudents,
@@ -4008,9 +4102,24 @@ class _SelectedStudentCard extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              '${student.name} · ${student.xp} XP · ${student.streak} day streak',
-              style: Theme.of(context).textTheme.titleSmall,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${student.name} · ${student.xp} XP · ${student.streak} day streak',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                if (student.yearGroup.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    student.yearGroup.trim(),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -4083,7 +4192,12 @@ class _StudentPickerSheet extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '${student.name} · ${student.xp} XP',
+                            [
+                              student.name,
+                              '${student.xp} XP',
+                              if (student.yearGroup.trim().isNotEmpty)
+                                student.yearGroup.trim(),
+                            ].join(' · '),
                             style: Theme.of(context).textTheme.bodyLarge,
                           ),
                         ),
@@ -4169,13 +4283,16 @@ class _ArchivedStudentSheet extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            student.name,
+                            [
+                              student.name,
+                              if (student.yearGroup.trim().isNotEmpty)
+                                student.yearGroup.trim(),
+                            ].join(' · '),
                             style: Theme.of(context).textTheme.bodyLarge,
                           ),
                         ),
                         FilledButton.icon(
-                          onPressed: () =>
-                              Navigator.of(context).pop(student),
+                          onPressed: () => Navigator.of(context).pop(student),
                           icon: const Icon(Icons.unarchive_rounded),
                           label: const Text('Unarchive'),
                         ),

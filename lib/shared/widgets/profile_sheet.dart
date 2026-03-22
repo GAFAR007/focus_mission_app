@@ -166,6 +166,20 @@ class _ProfileSheetState extends State<_ProfileSheet> {
                                                 if ((widget
                                                             .session
                                                             .user
+                                                            .yearGroup ??
+                                                        '')
+                                                    .trim()
+                                                    .isNotEmpty)
+                                                  _MetaPill(
+                                                    label: widget
+                                                        .session
+                                                        .user
+                                                        .yearGroup!
+                                                        .trim(),
+                                                  ),
+                                                if ((widget
+                                                            .session
+                                                            .user
                                                             .subjectSpecialty ??
                                                         '')
                                                     .isNotEmpty)
