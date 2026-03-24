@@ -4572,39 +4572,41 @@ class _SubjectFilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Ink(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: selected
-              ? const LinearGradient(
-                  colors: [AppPalette.primaryBlue, AppPalette.aqua],
-                )
-              : null,
-          color: selected ? null : AppPalette.surface.withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected
-                ? Colors.transparent
-                : AppPalette.sky.withValues(alpha: 0.76),
+    final borderRadius = BorderRadius.circular(999);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: borderRadius,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            // WHY: the selected state must stay visibly filled on pale panels.
+            color: selected ? AppPalette.navy : AppPalette.surface,
+            borderRadius: borderRadius,
+            border: Border.all(
+              color: selected
+                  ? AppPalette.navy
+                  : AppPalette.sky.withValues(alpha: 0.82),
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: AppPalette.shadow.withValues(alpha: 0.18),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ]
+                : null,
           ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: AppPalette.shadow.withValues(alpha: 0.16),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: selected ? Colors.white : AppPalette.navy,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: selected ? Colors.white : AppPalette.navy,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
+            ),
           ),
         ),
       ),
