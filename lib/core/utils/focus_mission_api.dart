@@ -525,6 +525,27 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<List<TargetSummary>> fetchManagementStudentTargets({
+    required String token,
+    required String studentId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/management/students/$studentId/targets',
+      token: token,
+    );
+    final targets = (json['targets'] as List<dynamic>? ?? const [])
+        .cast<dynamic>();
+
+    return targets
+        .map(
+          (item) => TargetSummary.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<ManagementDayPlan> fetchManagementStudentDayPlan({
     required String token,
     required String studentId,

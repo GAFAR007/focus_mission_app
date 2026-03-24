@@ -36,6 +36,7 @@ import '../../teacher/presentation/result_report_screen.dart';
 
 const _allSubjectsFilterLabel = 'All subjects';
 const _allResultDatesFilterLabel = 'All dates';
+const _allTargetDatesFilterLabel = 'All dates';
 const _allCertificationSubjectsFilterLabel = 'All certification subjects';
 const List<String> _managementWeekdayOptions = <String>[
   'Monday',
@@ -95,6 +96,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   String _selectedStudentId = '';
   String _selectedSubject = _allSubjectsFilterLabel;
   String _selectedResultDate = _allResultDatesFilterLabel;
+  String _selectedTargetDate = _allTargetDatesFilterLabel;
   String _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
   String _selectedCertificationEditorSubjectId = '';
   String _selectedTimetableDay = _managementWeekdayOptions.first;
@@ -110,7 +112,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   NotificationInboxData? _notificationInbox;
   bool _isCreatingUser = false;
   bool _isDownloadingResults = false;
+  bool _isDownloadingTargets = false;
   String _downloadingResultPackageId = '';
+  String _downloadingTargetId = '';
   String _downloadingTeacherCopyMissionId = '';
   bool _isSavingCertification = false;
   bool _isSavingTimetable = false;
@@ -123,6 +127,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _showCertificationProgressPanel = false;
   bool _showTimetablePanel = false;
   bool _showStudentResultsPanel = false;
+  bool _showStudentTargetsPanel = false;
   bool _certificationEnabled = false;
   AppUser? _lastCreatedUser;
   final Set<String> _selectedCertificationTaskCodes = <String>{};
@@ -145,6 +150,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
   bool get _isAnyManagementDownloadActive =>
       _isDownloadingResults ||
+      _isDownloadingTargets ||
+      _downloadingTargetId.isNotEmpty ||
       _downloadingResultPackageId.isNotEmpty ||
       _downloadingTeacherCopyMissionId.isNotEmpty;
 
@@ -166,23 +173,30 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       mentorSession: _session,
       selectedStudentId: _selectedStudentId,
     );
-    final recentResults = await _api.fetchManagementStudentResults(
-      token: _session.token,
-      studentId: workspace.selectedStudent.id,
-    );
-    final certifications = await _api.fetchManagementStudentCertification(
-      token: _session.token,
-      studentId: workspace.selectedStudent.id,
-    );
     final responses = await Future.wait([
+      _api.fetchManagementStudentResults(
+        token: _session.token,
+        studentId: workspace.selectedStudent.id,
+      ),
+      _api.fetchManagementStudentTargets(
+        token: _session.token,
+        studentId: workspace.selectedStudent.id,
+      ),
+      _api.fetchManagementStudentCertification(
+        token: _session.token,
+        studentId: workspace.selectedStudent.id,
+      ),
       _api.fetchManagementCertificationSubjects(token: _session.token),
       _api.fetchManagementTeachers(token: _session.token),
       _api.fetchManagementStudents(token: _session.token, status: 'archived'),
     ]);
+    final recentResults = responses[0] as List<ResultHistoryItem>;
+    final targets = responses[1] as List<TargetSummary>;
+    final certifications = responses[2] as List<SubjectCertificationSummary>;
     final certificationSubjects =
-        responses[0] as List<SubjectCertificationSettings>;
-    final teachers = responses[1] as List<TeacherSummary>;
-    final archivedStudents = responses[2] as List<StudentSummary>;
+        responses[3] as List<SubjectCertificationSettings>;
+    final teachers = responses[4] as List<TeacherSummary>;
+    final archivedStudents = responses[5] as List<StudentSummary>;
     _selectedStudentId = workspace.selectedStudent.id;
     _selectedStudentYearGroup = workspace.selectedStudent.yearGroup.trim();
     _notificationInbox ??= workspace.notificationInbox;
@@ -200,9 +214,14 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     if (!resultDateFilters.contains(_selectedResultDate)) {
       _selectedResultDate = _allResultDatesFilterLabel;
     }
+    final targetDateFilters = _buildTargetDateFilters(targets);
+    if (!targetDateFilters.contains(_selectedTargetDate)) {
+      _selectedTargetDate = _allTargetDatesFilterLabel;
+    }
     return _ManagementScreenData(
       workspace: workspace,
       recentResults: recentResults,
+      targets: targets,
       certifications: certifications,
       certificationSubjects: certificationSubjects,
       teachers: teachers,
@@ -757,6 +776,50 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return '$resultLabel · $subjectLabel · $dateLabel';
   }
 
+  List<String> _buildTargetDateFilters(List<TargetSummary> targets) {
+    final dates = <String>{};
+
+    for (final target in targets) {
+      final dateKey = target.awardDateKey.trim();
+      if (dateKey.isNotEmpty) {
+        dates.add(dateKey);
+      }
+    }
+
+    final sortedDates = dates.toList(growable: false)
+      ..sort((left, right) => right.compareTo(left));
+    return <String>[_allTargetDatesFilterLabel, ...sortedDates];
+  }
+
+  List<TargetSummary> _filterTargets(
+    List<TargetSummary> targets, {
+    required String dateKey,
+  }) {
+    return targets
+        .where((target) {
+          return dateKey == _allTargetDatesFilterLabel ||
+              target.awardDateKey.trim() == dateKey;
+        })
+        .toList(growable: false);
+  }
+
+  String _buildStudentTargetsSummary({
+    required List<TargetSummary> filteredTargets,
+    required String selectedDate,
+  }) {
+    final targetLabel =
+        '${filteredTargets.length} target${filteredTargets.length == 1 ? '' : 's'}';
+    final dateLabel = selectedDate == _allTargetDatesFilterLabel
+        ? 'All dates'
+        : selectedDate;
+    final awardedXp = filteredTargets.fold<int>(
+      0,
+      (total, target) => total + target.xpAwarded,
+    );
+
+    return '$targetLabel · $dateLabel · $awardedXp XP';
+  }
+
   @override
   Widget build(BuildContext context) {
     return FocusScaffold(
@@ -780,6 +843,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           final inbox = _notificationInbox ?? workspace.notificationInbox;
           final subjectFilters = _buildSubjectFilters(data.recentResults);
           final resultDateFilters = _buildResultDateFilters(data.recentResults);
+          final targetDateFilters = _buildTargetDateFilters(data.targets);
           final selectedSubject = subjectFilters.contains(_selectedSubject)
               ? _selectedSubject
               : _allSubjectsFilterLabel;
@@ -787,10 +851,18 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
               resultDateFilters.contains(_selectedResultDate)
               ? _selectedResultDate
               : _allResultDatesFilterLabel;
+          final selectedTargetDate =
+              targetDateFilters.contains(_selectedTargetDate)
+              ? _selectedTargetDate
+              : _allTargetDatesFilterLabel;
           final filteredResults = _filterResults(
             data.recentResults,
             subject: selectedSubject,
             dateKey: selectedResultDate,
+          );
+          final filteredTargets = _filterTargets(
+            data.targets,
+            dateKey: selectedTargetDate,
           );
           final certificationFilters = _buildCertificationFilters(
             data.certifications,
@@ -972,6 +1044,210 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             colors: const [AppPalette.sun, AppPalette.orange],
                           ),
                         ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  colors: const [Color(0xFFF9FCFF), Color(0xFFEDF6FF)],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _ManagementExpandableHeader(
+                        title: 'Student Targets',
+                        subtitle:
+                            'Review daily target outcomes, switch the target date, and export target results for this learner.',
+                        summary: _buildStudentTargetsSummary(
+                          filteredTargets: filteredTargets,
+                          selectedDate: selectedTargetDate,
+                        ),
+                        isExpanded: _showStudentTargetsPanel,
+                        onToggle: () => setState(
+                          () => _showStudentTargetsPanel =
+                              !_showStudentTargetsPanel,
+                        ),
+                      ),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        child: !_showStudentTargetsPanel
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AppSpacing.compact),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final compact =
+                                          constraints.maxWidth < 760;
+                                      final dateFilter =
+                                          DropdownButtonFormField<String>(
+                                            initialValue: selectedTargetDate,
+                                            decoration:
+                                                _managementFieldDecoration(
+                                                  labelText: 'Target date',
+                                                ),
+                                            items: targetDateFilters
+                                                .map(
+                                                  (dateLabel) =>
+                                                      DropdownMenuItem<String>(
+                                                        value: dateLabel,
+                                                        child: Text(dateLabel),
+                                                      ),
+                                                )
+                                                .toList(growable: false),
+                                            onChanged: (value) {
+                                              if (value == null) {
+                                                return;
+                                              }
+                                              setState(
+                                                () =>
+                                                    _selectedTargetDate = value,
+                                              );
+                                            },
+                                          );
+                                      final targetCount = Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppPalette.surface.withValues(
+                                            alpha: 0.96,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: AppPalette.sky.withValues(
+                                              alpha: 0.7,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '${filteredTargets.length} daily target${filteredTargets.length == 1 ? '' : 's'}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: AppPalette.navy,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                      );
+                                      final downloadButton = FilledButton.icon(
+                                        style: _managementFilledActionStyle(
+                                          context,
+                                        ),
+                                        onPressed:
+                                            filteredTargets.isEmpty ||
+                                                _isAnyManagementDownloadActive
+                                            ? null
+                                            : () => _downloadFilteredTargets(
+                                                student:
+                                                    workspace.selectedStudent,
+                                                targets: filteredTargets,
+                                              ),
+                                        icon: Icon(
+                                          _isDownloadingTargets
+                                              ? Icons.hourglass_top_rounded
+                                              : Icons.download_rounded,
+                                        ),
+                                        label: Text(
+                                          _isDownloadingTargets
+                                              ? 'Preparing target export...'
+                                              : 'Download target results',
+                                        ),
+                                      );
+
+                                      if (compact) {
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            dateFilter,
+                                            const SizedBox(height: 10),
+                                            targetCount,
+                                            const SizedBox(height: 10),
+                                            Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: downloadButton,
+                                            ),
+                                          ],
+                                        );
+                                      }
+
+                                      return Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Expanded(child: dateFilter),
+                                          const SizedBox(width: 12),
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 10,
+                                            ),
+                                            child: targetCount,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          downloadButton,
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: AppSpacing.item),
+                                  if (filteredTargets.isEmpty)
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.item,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppPalette.surface.withValues(
+                                          alpha: 0.94,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.radiusMd,
+                                        ),
+                                        border: Border.all(
+                                          color: AppPalette.sky.withValues(
+                                            alpha: 0.68,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        data.targets.isEmpty
+                                            ? 'No target results were found for this student yet.'
+                                            : 'No targets match this date filter.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    )
+                                  else
+                                    ...filteredTargets.map(
+                                      (target) => Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: AppSpacing.compact,
+                                        ),
+                                        child: _ManagementTargetCard(
+                                          target: target,
+                                          isDownloading:
+                                              _downloadingTargetId == target.id,
+                                          onDownload:
+                                              _isAnyManagementDownloadActive
+                                              ? null
+                                              : () => _downloadTargetResult(
+                                                  student:
+                                                      workspace.selectedStudent,
+                                                  target: target,
+                                                ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                       ),
                     ],
                   ),
@@ -1972,9 +2248,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       _selectedStudentId = studentId;
       _selectedSubject = _allSubjectsFilterLabel;
       _selectedResultDate = _allResultDatesFilterLabel;
+      _selectedTargetDate = _allTargetDatesFilterLabel;
       _showTimetableEditor = false;
       _showCertificationProgressPanel = false;
       _showTimetablePanel = false;
+      _showStudentTargetsPanel = false;
       _showStudentResultsPanel = false;
       _notificationInbox = null;
       _future = _loadWorkspace();
@@ -2092,9 +2370,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           _selectedStudentId = '';
           _selectedSubject = _allSubjectsFilterLabel;
           _selectedResultDate = _allResultDatesFilterLabel;
+          _selectedTargetDate = _allTargetDatesFilterLabel;
           _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
           _notificationInbox = null;
           _showTimetableEditor = false;
+          _showStudentTargetsPanel = false;
         }
         _future = _loadWorkspace();
       });
@@ -2301,9 +2581,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           _selectedStudentId = createdUser.id;
           _selectedSubject = _allSubjectsFilterLabel;
           _selectedResultDate = _allResultDatesFilterLabel;
+          _selectedTargetDate = _allTargetDatesFilterLabel;
           _showTimetableEditor = false;
           _showCertificationProgressPanel = false;
           _showTimetablePanel = false;
+          _showStudentTargetsPanel = false;
           _showStudentResultsPanel = false;
           _notificationInbox = null;
           _future = _loadWorkspace();
@@ -2445,6 +2727,104 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return _formatManagementMissionDate(
       mission.publishedAt ?? mission.createdAt,
     );
+  }
+
+  Future<void> _downloadFilteredTargets({
+    required StudentSummary student,
+    required List<TargetSummary> targets,
+  }) async {
+    if (_isAnyManagementDownloadActive || targets.isEmpty) {
+      return;
+    }
+
+    setState(() => _isDownloadingTargets = true);
+    try {
+      final downloaded = await downloadTextFile(
+        fileName: _buildManagementTargetsFileName(student: student),
+        content: _buildManagementTargetsHtml(
+          student: student,
+          targets: targets,
+        ),
+        mimeType: 'text/html;charset=utf-8',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            downloaded
+                ? 'Downloaded ${targets.length} target result${targets.length == 1 ? '' : 's'}.'
+                : 'Download is not available on this device yet.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isDownloadingTargets = false);
+      }
+    }
+  }
+
+  Future<void> _downloadTargetResult({
+    required StudentSummary student,
+    required TargetSummary target,
+  }) async {
+    if (_isAnyManagementDownloadActive) {
+      return;
+    }
+
+    setState(() => _downloadingTargetId = target.id);
+    try {
+      final downloaded = await downloadTextFile(
+        fileName: _buildManagementTargetResultFileName(
+          student: student,
+          target: target,
+        ),
+        content: _buildManagementTargetsHtml(
+          student: student,
+          targets: [target],
+        ),
+        mimeType: 'text/html;charset=utf-8',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final targetTitle = target.title.trim().isEmpty
+          ? 'target'
+          : target.title.trim();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            downloaded
+                ? 'Downloaded $targetTitle result.'
+                : 'Download is not available on this device yet.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingTargetId = '');
+      }
+    }
   }
 
   Future<void> _downloadFilteredResults({
@@ -2632,6 +3012,24 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     );
   }
 
+  String _buildManagementTargetsFileName({required StudentSummary student}) {
+    final studentSlug = _sanitizeManagementFileName(student.name);
+    final dateSlug = _selectedTargetDate == _allTargetDatesFilterLabel
+        ? 'all-dates'
+        : _sanitizeManagementFileName(_selectedTargetDate);
+    return '${studentSlug}_target-results_$dateSlug.html';
+  }
+
+  String _buildManagementTargetResultFileName({
+    required StudentSummary student,
+    required TargetSummary target,
+  }) {
+    final studentSlug = _sanitizeManagementFileName(student.name);
+    final targetSlug = _sanitizeManagementFileName(target.title);
+    final dateSlug = _sanitizeManagementFileName(target.awardDateKey);
+    return '${studentSlug}_${dateSlug}_${targetSlug}_target-result.html';
+  }
+
   String _buildManagementResultsFileName({required StudentSummary student}) {
     final studentSlug = _sanitizeManagementFileName(student.name);
     final subjectSlug = _selectedSubject == _allSubjectsFilterLabel
@@ -2668,6 +3066,160 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       _resultDateKeyForMission(mission),
     );
     return '${studentSlug}_${subjectSlug}_${dateSlug}_${missionSlug}_teacher-copy.html';
+  }
+
+  String _buildManagementTargetsHtml({
+    required StudentSummary student,
+    required List<TargetSummary> targets,
+  }) {
+    final sortedTargets = [...targets]
+      ..sort((left, right) {
+        final dateCompare = right.awardDateKey.compareTo(left.awardDateKey);
+        if (dateCompare != 0) {
+          return dateCompare;
+        }
+        final typeCompare = _managementTargetTypeLabel(
+          left,
+        ).compareTo(_managementTargetTypeLabel(right));
+        if (typeCompare != 0) {
+          return typeCompare;
+        }
+        return left.title.compareTo(right.title);
+      });
+    final uniqueDateCount = sortedTargets
+        .map((target) => target.awardDateKey.trim())
+        .where((dateKey) => dateKey.isNotEmpty)
+        .toSet()
+        .length;
+    final totalXp = sortedTargets.fold<int>(
+      0,
+      (total, target) => total + target.xpAwarded,
+    );
+
+    final buffer = StringBuffer()
+      ..writeln('<!DOCTYPE html>')
+      ..writeln('<html lang="en">')
+      ..writeln('<head>')
+      ..writeln('<meta charset="utf-8" />')
+      ..writeln(
+        '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+      )
+      ..writeln(
+        '<title>${_escapeManagementHtml(student.name)} target results</title>',
+      )
+      ..writeln('<style>${_buildManagementResultsStyles()}</style>')
+      ..writeln('</head>')
+      ..writeln('<body>')
+      ..writeln('<main class="page">')
+      ..writeln('<section class="hero">')
+      ..writeln('<span class="copy-chip">Management Target Export</span>')
+      ..writeln(
+        '<h1>${_escapeManagementHtml(student.name)} target results</h1>',
+      )
+      ..writeln(
+        '<p class="hero-summary">Daily target outcomes exported from the management workspace.</p>',
+      )
+      ..writeln('<div class="meta-grid">')
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Targets',
+          value: '${sortedTargets.length}',
+        ),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(label: 'Dates', value: '$uniqueDateCount'),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(label: 'Target XP', value: '$totalXp XP'),
+      )
+      ..writeln(
+        _buildManagementMetaCardHtml(
+          label: 'Filter',
+          value: _selectedTargetDate == _allTargetDatesFilterLabel
+              ? 'All dates'
+              : _selectedTargetDate,
+        ),
+      )
+      ..writeln('</div>')
+      ..writeln('</section>');
+
+    final groupedByDate = <String, List<TargetSummary>>{};
+    for (final target in sortedTargets) {
+      final dateKey = target.awardDateKey.trim().isEmpty
+          ? 'No date'
+          : target.awardDateKey.trim();
+      groupedByDate.putIfAbsent(dateKey, () => <TargetSummary>[]).add(target);
+    }
+
+    for (final entry in groupedByDate.entries) {
+      final targetsForDate = entry.value;
+      final dateXp = targetsForDate.fold<int>(
+        0,
+        (total, target) => total + target.xpAwarded,
+      );
+      buffer
+        ..writeln('<section class="date-group">')
+        ..writeln('<h2>${_escapeManagementHtml(entry.key)}</h2>')
+        ..writeln(
+          '<p class="hero-summary">${targetsForDate.length} target${targetsForDate.length == 1 ? '' : 's'} · $dateXp XP</p>',
+        );
+      for (final target in targetsForDate) {
+        final description = target.description.trim();
+        buffer
+          ..writeln('<article class="result-card">')
+          ..writeln('<div class="result-header">')
+          ..writeln('<div>')
+          ..writeln('<h4>${_escapeManagementHtml(target.title)}</h4>')
+          ..writeln(
+            '<p class="result-subtitle">${_escapeManagementHtml(_managementTargetTypeLabel(target))} · ${_escapeManagementHtml(_managementTargetStatusLabel(target))}</p>',
+          )
+          ..writeln('</div>')
+          ..writeln(
+            '<span class="result-pill">${_escapeManagementHtml('${target.stars}/3 stars · ${target.xpAwarded} XP')}</span>',
+          )
+          ..writeln('</div>');
+        if (description.isNotEmpty) {
+          buffer.writeln('<p>${_escapeManagementHtml(description)}</p>');
+        }
+        buffer
+          ..writeln('<div class="meta-grid compact">')
+          ..writeln(
+            _buildManagementMetaCardHtml(
+              label: 'Difficulty',
+              value: _managementTitleCase(target.difficulty),
+            ),
+          )
+          ..writeln(
+            _buildManagementMetaCardHtml(
+              label: 'Status',
+              value: _managementTargetStatusLabel(target),
+            ),
+          )
+          ..writeln(
+            _buildManagementMetaCardHtml(
+              label: 'Target type',
+              value: _managementTargetTypeLabel(target),
+            ),
+          )
+          ..writeln(
+            _buildManagementMetaCardHtml(
+              label: 'Award date',
+              value: target.awardDateKey.trim().isEmpty
+                  ? 'No date'
+                  : target.awardDateKey.trim(),
+            ),
+          )
+          ..writeln('</div>')
+          ..writeln('</article>');
+      }
+      buffer.writeln('</section>');
+    }
+
+    buffer
+      ..writeln('</main>')
+      ..writeln('</body>')
+      ..writeln('</html>');
+    return buffer.toString();
   }
 
   String _buildManagementResultsHtml({
@@ -3447,6 +3999,38 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return '<div class="meta-card"><span class="meta-label">${_escapeManagementHtml(label)}</span><strong class="meta-value">${_escapeManagementHtml(value)}</strong></div>';
   }
 
+  String _managementTargetTypeLabel(TargetSummary target) {
+    switch (target.targetType.trim()) {
+      case 'fixed_daily_mission':
+        return 'Fixed Daily Mission';
+      case 'fixed_assessment':
+        return 'Fixed Assessment';
+      default:
+        return 'Custom';
+    }
+  }
+
+  String _managementTargetStatusLabel(TargetSummary target) {
+    return _managementTitleCase(target.status.replaceAll('_', ' '));
+  }
+
+  String _managementTitleCase(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return 'Not set';
+    }
+
+    return trimmed
+        .split(RegExp(r'\s+'))
+        .map((word) {
+          if (word.isEmpty) {
+            return word;
+          }
+          return '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}';
+        })
+        .join(' ');
+  }
+
   String _buildManagementResultsStyles() {
     return '''
       :root {
@@ -4132,6 +4716,7 @@ class _ManagementScreenData {
   const _ManagementScreenData({
     required this.workspace,
     required this.recentResults,
+    required this.targets,
     required this.certifications,
     required this.certificationSubjects,
     required this.teachers,
@@ -4140,6 +4725,7 @@ class _ManagementScreenData {
 
   final MentorWorkspaceData workspace;
   final List<ResultHistoryItem> recentResults;
+  final List<TargetSummary> targets;
   final List<SubjectCertificationSummary> certifications;
   final List<SubjectCertificationSettings> certificationSubjects;
   final List<TeacherSummary> teachers;
@@ -4998,6 +5584,204 @@ class _TimetableRoomSelection {
 
   final String morningRoom;
   final String afternoonRoom;
+}
+
+class _ManagementTargetCard extends StatelessWidget {
+  const _ManagementTargetCard({
+    required this.target,
+    required this.onDownload,
+    this.isDownloading = false,
+  });
+
+  final TargetSummary target;
+  final VoidCallback? onDownload;
+  final bool isDownloading;
+
+  String _targetTypeLabel() {
+    switch (target.targetType.trim()) {
+      case 'fixed_daily_mission':
+        return 'Fixed daily mission';
+      case 'fixed_assessment':
+        return 'Fixed assessment';
+      default:
+        return 'Custom';
+    }
+  }
+
+  String _statusLabel() {
+    final normalized = target.status.replaceAll('_', ' ').trim();
+    if (normalized.isEmpty) {
+      return 'Not set';
+    }
+    return normalized
+        .split(RegExp(r'\s+'))
+        .map(
+          (word) => word.isEmpty
+              ? word
+              : '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
+        )
+        .join(' ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final description = target.description.trim();
+    final dateLabel = target.awardDateKey.trim().isEmpty
+        ? 'No date'
+        : target.awardDateKey.trim();
+    final difficulty = target.difficulty.trim().isEmpty
+        ? 'Not set'
+        : '${target.difficulty[0].toUpperCase()}${target.difficulty.substring(1).toLowerCase()}';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: AppPalette.sky.withValues(alpha: 0.52)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      target.title.trim().isEmpty
+                          ? 'Untitled target'
+                          : target.title.trim(),
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _ManagementMiniPill(
+                          label: _targetTypeLabel(),
+                          backgroundColor: AppPalette.sky.withValues(
+                            alpha: 0.2,
+                          ),
+                        ),
+                        _ManagementMiniPill(
+                          label: _statusLabel(),
+                          backgroundColor: AppPalette.sun.withValues(
+                            alpha: 0.18,
+                          ),
+                        ),
+                        _ManagementMiniPill(
+                          label: '${target.stars}/3 stars',
+                          backgroundColor: AppPalette.mint.withValues(
+                            alpha: 0.16,
+                          ),
+                        ),
+                        _ManagementMiniPill(
+                          label: '${target.xpAwarded} XP',
+                          backgroundColor: AppPalette.primaryBlue.withValues(
+                            alpha: 0.12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppPalette.surface.withValues(alpha: 0.96),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppPalette.sky.withValues(alpha: 0.68),
+                  ),
+                ),
+                child: Text(
+                  dateLabel,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                ),
+              ),
+            ],
+          ),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              description,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            'Difficulty · $difficulty',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: 220,
+              child: OutlinedButton.icon(
+                style: _managementOutlinedActionStyle(
+                  context,
+                  backgroundColor: AppPalette.surface.withValues(alpha: 0.98),
+                ),
+                onPressed: onDownload,
+                icon: Icon(
+                  isDownloading
+                      ? Icons.hourglass_top_rounded
+                      : Icons.download_rounded,
+                ),
+                label: Text(
+                  isDownloading ? 'Preparing...' : 'Download target result',
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManagementMiniPill extends StatelessWidget {
+  const _ManagementMiniPill({
+    required this.label,
+    required this.backgroundColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+      ),
+    );
+  }
 }
 
 class _ManagementResultCard extends StatelessWidget {
