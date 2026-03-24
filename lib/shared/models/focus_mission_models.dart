@@ -288,6 +288,75 @@ class TodaySchedule {
   }
 }
 
+class ManagementPlannedSession {
+  const ManagementPlannedSession({
+    required this.sessionType,
+    required this.hasScheduledLesson,
+    required this.missions,
+    this.subject,
+    this.teacher,
+  });
+
+  final String sessionType;
+  final bool hasScheduledLesson;
+  final SubjectSummary? subject;
+  final TeacherSummary? teacher;
+  final List<MissionPayload> missions;
+
+  factory ManagementPlannedSession.fromJson(Map<String, dynamic> json) {
+    return ManagementPlannedSession(
+      sessionType: (json['sessionType'] ?? '').toString(),
+      hasScheduledLesson: json['hasScheduledLesson'] == true,
+      subject: _asNullableMap(json['subject']) == null
+          ? null
+          : SubjectSummary.fromJson(_asMap(json['subject'])),
+      teacher: _asNullableMap(json['teacher']) == null
+          ? null
+          : TeacherSummary.fromJson(_asMap(json['teacher'])),
+      missions: (json['missions'] as List<dynamic>? ?? const [])
+          .map((item) => MissionPayload.fromJson(_asMap(item)))
+          .toList(growable: false),
+    );
+  }
+}
+
+class ManagementDayPlan {
+  const ManagementDayPlan({
+    required this.dateKey,
+    required this.weekday,
+    required this.hasTimetableEntry,
+    required this.room,
+    required this.morning,
+    required this.afternoon,
+    this.student,
+  });
+
+  final String dateKey;
+  final String weekday;
+  final bool hasTimetableEntry;
+  final String room;
+  final AppUser? student;
+  final ManagementPlannedSession morning;
+  final ManagementPlannedSession afternoon;
+
+  int get totalMissionCount =>
+      morning.missions.length + afternoon.missions.length;
+
+  factory ManagementDayPlan.fromJson(Map<String, dynamic> json) {
+    return ManagementDayPlan(
+      dateKey: (json['dateKey'] ?? '').toString(),
+      weekday: (json['weekday'] ?? '').toString(),
+      hasTimetableEntry: json['hasTimetableEntry'] == true,
+      room: (json['room'] ?? '').toString(),
+      student: _asNullableMap(json['student']) == null
+          ? null
+          : AppUser.fromJson(_asMap(json['student'])),
+      morning: ManagementPlannedSession.fromJson(_asMap(json['morning'])),
+      afternoon: ManagementPlannedSession.fromJson(_asMap(json['afternoon'])),
+    );
+  }
+}
+
 class StudentDashboardData {
   const StudentDashboardData({
     required this.student,

@@ -31,6 +31,7 @@ import '../../../shared/widgets/stat_chip.dart';
 import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import '../../auth/presentation/role_selection_screen.dart';
+import 'management_day_plan_screen.dart';
 import '../../teacher/presentation/result_report_screen.dart';
 
 const _allSubjectsFilterLabel = 'All subjects';
@@ -869,6 +870,12 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     runSpacing: 8,
                     alignment: WrapAlignment.end,
                     children: [
+                      TextButton.icon(
+                        onPressed: () =>
+                            _openStudentDayPlan(workspace.selectedStudent),
+                        icon: const Icon(Icons.today_rounded),
+                        label: const Text('View day plan'),
+                      ),
                       TextButton.icon(
                         onPressed: _isAnyStudentStatusActionActive
                             ? null
@@ -1906,6 +1913,18 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (_) => const RoleSelectionScreen()),
       (_) => false,
+    );
+  }
+
+  Future<void> _openStudentDayPlan(StudentSummary student) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ManagementDayPlanScreen(
+          session: _session,
+          student: student,
+          initialDate: _selectedTimetableDate,
+        ),
+      ),
     );
   }
 
