@@ -1472,6 +1472,7 @@ class FocusMissionApi {
     required String fileName,
     String title = '',
     String targetDate = '',
+    String importKind = '',
   }) async {
     final request = http.MultipartRequest(
       'POST',
@@ -1488,6 +1489,9 @@ class FocusMissionApi {
     }
     if (targetDate.trim().isNotEmpty) {
       request.fields['targetDate'] = targetDate.trim();
+    }
+    if (importKind.trim().isNotEmpty) {
+      request.fields['importKind'] = importKind.trim().toUpperCase();
     }
     request.files.add(
       http.MultipartFile.fromBytes('sourceFile', fileBytes, filename: fileName),

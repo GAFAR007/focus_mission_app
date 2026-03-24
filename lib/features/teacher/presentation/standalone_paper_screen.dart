@@ -155,6 +155,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
   bool _isResettingSession = false;
   bool _isScoringSession = false;
   bool _bulkPublished = false;
+  String? _pendingImportKind;
   String? _errorMessage;
 
   List<StudentSummary> get _selectedStudents => widget.students;
@@ -311,7 +312,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     }
   }
 
-  Future<void> _pickAndPopulateDraft() async {
+  Future<void> _pickAndPopulateDraftForKind(String importKind) async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -335,6 +336,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
 
       setState(() {
         _isImporting = true;
+        _pendingImportKind = _normalizeImportKind(importKind);
         _errorMessage = null;
         _importReadiness = null;
       });
@@ -349,12 +351,14 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
         fileName: file.name,
         title: _titleController.text.trim(),
         targetDate: _targetDateKey,
+        importKind: importKind,
       );
 
       if (!mounted) {
         return;
       }
 
+      String? appendMessage;
       setState(() {
         _uploadedDraft = uploaded;
         _importReadiness = uploaded.draftReadiness;
@@ -362,11 +366,20 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
         _selectedSourceFileName = uploaded.fileName;
         _selectedSourceFileType = uploaded.mimeType;
         if (uploaded.prefilledPaper != null) {
-          _applyPaper(uploaded.prefilledPaper!, clearImportState: false);
+          appendMessage = _appendImportedPaper(
+            uploaded.prefilledPaper!,
+            importKind: _normalizeImportKind(importKind),
+          );
         } else {
           _errorMessage = uploaded.draftReadiness.summary;
         }
       });
+
+      if (appendMessage != null && mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(appendMessage!)));
+      }
     } catch (error) {
       if (!mounted) {
         return;
@@ -377,9 +390,178 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
       });
     } finally {
       if (mounted) {
-        setState(() => _isImporting = false);
+        setState(() {
+          _isImporting = false;
+          _pendingImportKind = null;
+        });
       }
     }
+  }
+
+  String? _appendImportedPaper(
+    StandalonePaperDraft importedPaper, {
+    required String importKind,
+  }) {
+    final importedItems = importedPaper.items;
+    if (importedItems.isEmpty) {
+      _errorMessage =
+          'No ${_importKindLabel(importKind)} items were found to append.';
+      return null;
+    }
+
+    final existingItems = _itemEditors.map((editor) => editor.toItem()).toList();
+    final hasMeaningfulExistingItems = _hasMeaningfulDraftItems();
+    final mergedItems = hasMeaningfulExistingItems
+        ? <StandalonePaperItem>[...existingItems, ...importedItems]
+        : importedItems;
+
+    if (mergedItems.length > 60) {
+      _errorMessage =
+          'This $_paperLabel would grow to ${mergedItems.length} items. Standalone papers can hold up to 60 items.';
+      return null;
+    }
+
+    final mergedUnitText = _mergeImportedTextSections(
+      _unitTextController.text,
+      importedPaper.sourceUnitText,
+    );
+    final mergedRawText = _mergeImportedTextSections(
+      _rawUploadedSourceText,
+      importedPaper.sourceRawText,
+    );
+
+    if (!hasMeaningfulExistingItems &&
+        (_titleController.text.trim().isEmpty ||
+            _titleController.text.trim() == '${widget.subject.name} $_paperLabel')) {
+      _titleController.text = importedPaper.title.trim().isEmpty
+          ? '${widget.subject.name} $_paperLabel'
+          : importedPaper.title;
+    }
+
+    if (_teacherNoteController.text.trim().isEmpty &&
+        importedPaper.teacherNote.trim().isNotEmpty) {
+      _teacherNoteController.text = importedPaper.teacherNote;
+    }
+
+    _unitTextController.text = mergedUnitText;
+    _rawUploadedSourceText = mergedRawText;
+    _selectedSourceFileName = _mergeImportedSourceFileNames(
+      _selectedSourceFileName,
+      importedPaper.sourceFileName,
+    );
+    _selectedSourceFileType = _mergeImportedSourceFileTypes(
+      _selectedSourceFileType,
+      importedPaper.sourceFileType,
+    );
+
+    for (final editor in _itemEditors) {
+      editor.dispose();
+    }
+    _itemEditors
+      ..clear()
+      ..addAll(
+        mergedItems.map(_StandalonePaperItemController.fromItem),
+      );
+    _syncTheoryReviewControllers();
+
+    _errorMessage = null;
+    return '${importedItems.length} ${_importKindLabel(importKind)} item${importedItems.length == 1 ? '' : 's'} added. Total ${mergedItems.length} items.';
+  }
+
+  bool _hasMeaningfulDraftItems() {
+    for (final editor in _itemEditors) {
+      if (_itemEditorHasContent(editor)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _itemEditorHasContent(_StandalonePaperItemController editor) {
+    if (editor.learningTextController.text.trim().isNotEmpty ||
+        editor.promptController.text.trim().isNotEmpty ||
+        editor.expectedAnswerController.text.trim().isNotEmpty ||
+        editor.acceptedAnswersController.text.trim().isNotEmpty ||
+        editor.explanationController.text.trim().isNotEmpty) {
+      return true;
+    }
+
+    if (editor.itemType == 'OBJECTIVE') {
+      return editor.optionControllers.any(
+        (controller) => controller.text.trim().isNotEmpty,
+      );
+    }
+
+    return false;
+  }
+
+  String _normalizeImportKind(String value) {
+    final normalized = value.trim().toUpperCase();
+    if (normalized == 'ESSAY' || normalized == 'FILL_GAP') {
+      return 'FILL_GAP';
+    }
+    if (normalized == 'THEORY') {
+      return 'THEORY';
+    }
+    return 'OBJECTIVE';
+  }
+
+  String _importKindLabel(String value) {
+    switch (_normalizeImportKind(value)) {
+      case 'THEORY':
+        return 'theory';
+      case 'FILL_GAP':
+        return 'essay';
+      default:
+        return 'objective';
+    }
+  }
+
+  String _mergeImportedTextSections(String existing, String incoming) {
+    final current = existing.trim();
+    final next = incoming.trim();
+
+    if (current.isEmpty) {
+      return next;
+    }
+    if (next.isEmpty || current.contains(next)) {
+      return current;
+    }
+    if (next.contains(current)) {
+      return next;
+    }
+
+    return '$current\n\n$next';
+  }
+
+  String _mergeImportedSourceFileNames(String existing, String incoming) {
+    final current = existing.trim();
+    final next = incoming.trim();
+
+    if (current.isEmpty) {
+      return next;
+    }
+    if (next.isEmpty || current == next) {
+      return current;
+    }
+
+    final parts = <String>{...current.split(' | ').map((value) => value.trim()).where((value) => value.isNotEmpty)};
+    parts.add(next);
+    return parts.join(' | ');
+  }
+
+  String _mergeImportedSourceFileTypes(String existing, String incoming) {
+    final current = existing.trim();
+    final next = incoming.trim();
+
+    if (current.isEmpty) {
+      return next;
+    }
+    if (next.isEmpty || current == next) {
+      return current;
+    }
+
+    return 'mixed';
   }
 
   Future<void> _pickTargetDate() async {
@@ -1337,10 +1519,13 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                 isSaving: _isSaving,
                 isDeleting: _isDeleting,
                 isImporting: _isImporting,
+                pendingImportKind: _pendingImportKind ?? '',
                 isPublishing: _isPublishing,
                 hasSavedDraft: _hasSavedDraft,
                 isPublished: isPublished,
-                onPopulate: _pickAndPopulateDraft,
+                onPopulateObjective: () => _pickAndPopulateDraftForKind('OBJECTIVE'),
+                onPopulateTheory: () => _pickAndPopulateDraftForKind('THEORY'),
+                onPopulateEssay: () => _pickAndPopulateDraftForKind('ESSAY'),
                 onSave: _saveDraft,
                 onPublish: _publishDraft,
                 onUnpublish: _unpublishDraft,
@@ -1929,10 +2114,13 @@ class _ActionPanel extends StatelessWidget {
     required this.isSaving,
     required this.isDeleting,
     required this.isImporting,
+    required this.pendingImportKind,
     required this.isPublishing,
     required this.hasSavedDraft,
     required this.isPublished,
-    required this.onPopulate,
+    required this.onPopulateObjective,
+    required this.onPopulateTheory,
+    required this.onPopulateEssay,
     required this.onSave,
     required this.onPublish,
     required this.onUnpublish,
@@ -1945,10 +2133,13 @@ class _ActionPanel extends StatelessWidget {
   final bool isSaving;
   final bool isDeleting;
   final bool isImporting;
+  final String pendingImportKind;
   final bool isPublishing;
   final bool hasSavedDraft;
   final bool isPublished;
-  final VoidCallback onPopulate;
+  final VoidCallback onPopulateObjective;
+  final VoidCallback onPopulateTheory;
+  final VoidCallback onPopulateEssay;
   final VoidCallback onSave;
   final VoidCallback onPublish;
   final VoidCallback onUnpublish;
@@ -1964,12 +2155,35 @@ class _ActionPanel extends StatelessWidget {
         spacing: 12,
         runSpacing: 12,
         children: [
-          GradientButton(
-            label: isImporting
-                ? 'Populating from PDF...'
-                : 'Populate draft with PDF',
-            colors: AppPalette.teacherGradient,
-            onPressed: isImporting ? () {} : onPopulate,
+          _ImportActionCard(
+            title: isImporting && pendingImportKind == 'OBJECTIVE'
+                ? 'Importing...'
+                : 'Populate objective',
+            subtitle: 'Append structured A/B/C/D items to this draft.',
+            icon: Icons.quiz_outlined,
+            colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+            active: isImporting && pendingImportKind == 'OBJECTIVE',
+            onTap: isImporting ? null : onPopulateObjective,
+          ),
+          _ImportActionCard(
+            title: isImporting && pendingImportKind == 'THEORY'
+                ? 'Importing...'
+                : 'Populate theory',
+            subtitle: 'Append written theory items to this draft.',
+            icon: Icons.short_text_rounded,
+            colors: const [AppPalette.mint, AppPalette.aqua],
+            active: isImporting && pendingImportKind == 'THEORY',
+            onTap: isImporting ? null : onPopulateTheory,
+          ),
+          _ImportActionCard(
+            title: isImporting && pendingImportKind == 'FILL_GAP'
+                ? 'Importing...'
+                : 'Populate essay',
+            subtitle: 'Append essay/fill-gap items to this draft.',
+            icon: Icons.edit_note_rounded,
+            colors: const [AppPalette.sun, AppPalette.orange],
+            active: isImporting && pendingImportKind == 'FILL_GAP',
+            onTap: isImporting ? null : onPopulateEssay,
           ),
           GradientButton(
             label: isSaving ? 'Saving draft...' : 'Save $paperLabel draft',
@@ -2011,6 +2225,133 @@ class _ActionPanel extends StatelessWidget {
               label: Text(isDeleting ? 'Deleting...' : 'Delete draft'),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _ImportActionCard extends StatelessWidget {
+  const _ImportActionCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.colors,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> colors;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          constraints: const BoxConstraints(
+            minWidth: 248,
+            maxWidth: 320,
+            minHeight: 92,
+          ),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: enabled
+                ? LinearGradient(
+                    colors: active
+                        ? colors
+                        : [
+                            Colors.white.withValues(alpha: 0.9),
+                            Colors.white.withValues(alpha: 0.78),
+                          ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : LinearGradient(
+                    colors: [
+                      AppPalette.sky.withValues(alpha: 0.28),
+                      Colors.white.withValues(alpha: 0.68),
+                    ],
+                  ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: active
+                  ? colors.first.withValues(alpha: 0.44)
+                  : AppPalette.sky.withValues(alpha: 0.32),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: (active ? colors.first : AppPalette.primaryBlue)
+                    .withValues(alpha: enabled ? 0.14 : 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: active
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : AppPalette.sky.withValues(alpha: enabled ? 0.24 : 0.16),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  icon,
+                  color: active
+                      ? Colors.white
+                      : enabled
+                      ? AppPalette.navy
+                      : AppPalette.textMuted,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: active
+                            ? Colors.white
+                            : enabled
+                            ? AppPalette.navy
+                            : AppPalette.textMuted,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: active
+                            ? Colors.white.withValues(alpha: 0.92)
+                            : AppPalette.textMuted,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
