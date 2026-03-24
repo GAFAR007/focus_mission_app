@@ -48,6 +48,7 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
   late DateTime _selectedDate;
   late Future<ManagementDayPlan> _future;
   String _downloadingTeacherCopyMissionId = '';
+  String _downloadingStudentCopyMissionId = '';
 
   @override
   void initState() {
@@ -159,16 +160,22 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
                     plan: plan.morning,
                     downloadingTeacherCopyMissionId:
                         _downloadingTeacherCopyMissionId,
+                    downloadingStudentCopyMissionId:
+                        _downloadingStudentCopyMissionId,
                     onOpenTeacherCopy: _openTeacherCopyPreview,
                     onDownloadTeacherCopy: _downloadMissionTeacherCopy,
+                    onDownloadStudentCopy: _downloadMissionStudentCopy,
                   ),
                   const SizedBox(height: AppSpacing.item),
                   _PlannedSessionPanel(
                     plan: plan.afternoon,
                     downloadingTeacherCopyMissionId:
                         _downloadingTeacherCopyMissionId,
+                    downloadingStudentCopyMissionId:
+                        _downloadingStudentCopyMissionId,
                     onOpenTeacherCopy: _openTeacherCopyPreview,
                     onDownloadTeacherCopy: _downloadMissionTeacherCopy,
+                    onDownloadStudentCopy: _downloadMissionStudentCopy,
                   ),
                 ],
               ],
@@ -281,6 +288,58 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
       }
     }
   }
+
+  Future<void> _downloadMissionStudentCopy(MissionPayload mission) async {
+    final missionId = mission.id.trim();
+    if (missionId.isEmpty || _downloadingStudentCopyMissionId.isNotEmpty) {
+      return;
+    }
+
+    setState(() => _downloadingStudentCopyMissionId = missionId);
+    try {
+      final downloaded = await downloadTextFile(
+        fileName: _buildStudentCopyFileName(
+          student: widget.student,
+          mission: mission,
+          selectedDate: _selectedDate,
+        ),
+        content: _buildStudentCopyHtml(
+          student: widget.student,
+          mission: mission,
+          selectedDate: _selectedDate,
+        ),
+        mimeType: 'text/html;charset=utf-8',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final missionTitle = mission.title.trim().isEmpty
+          ? 'mission'
+          : mission.title.trim();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            downloaded
+                ? 'Downloaded $missionTitle student copy.'
+                : 'Download is not available on this device yet.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingStudentCopyMissionId = '');
+      }
+    }
+  }
 }
 
 class _ManagementDayPlanHeader extends StatelessWidget {
@@ -335,14 +394,18 @@ class _PlannedSessionPanel extends StatelessWidget {
   const _PlannedSessionPanel({
     required this.plan,
     required this.downloadingTeacherCopyMissionId,
+    required this.downloadingStudentCopyMissionId,
     required this.onOpenTeacherCopy,
     required this.onDownloadTeacherCopy,
+    required this.onDownloadStudentCopy,
   });
 
   final ManagementPlannedSession plan;
   final String downloadingTeacherCopyMissionId;
+  final String downloadingStudentCopyMissionId;
   final ValueChanged<MissionPayload> onOpenTeacherCopy;
   final ValueChanged<MissionPayload> onDownloadTeacherCopy;
+  final ValueChanged<MissionPayload> onDownloadStudentCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -426,8 +489,12 @@ class _PlannedSessionPanel extends StatelessWidget {
                   isDownloadingTeacherCopy:
                       downloadingTeacherCopyMissionId.trim() ==
                       mission.id.trim(),
+                  isDownloadingStudentCopy:
+                      downloadingStudentCopyMissionId.trim() ==
+                      mission.id.trim(),
                   onOpenTeacherCopy: () => onOpenTeacherCopy(mission),
                   onDownloadTeacherCopy: () => onDownloadTeacherCopy(mission),
+                  onDownloadStudentCopy: () => onDownloadStudentCopy(mission),
                 ),
               ),
             ),
@@ -442,14 +509,18 @@ class _PlannedMissionTile extends StatelessWidget {
   const _PlannedMissionTile({
     required this.mission,
     required this.isDownloadingTeacherCopy,
+    required this.isDownloadingStudentCopy,
     required this.onOpenTeacherCopy,
     required this.onDownloadTeacherCopy,
+    required this.onDownloadStudentCopy,
   });
 
   final MissionPayload mission;
   final bool isDownloadingTeacherCopy;
+  final bool isDownloadingStudentCopy;
   final VoidCallback onOpenTeacherCopy;
   final VoidCallback onDownloadTeacherCopy;
+  final VoidCallback onDownloadStudentCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -526,7 +597,7 @@ class _PlannedMissionTile extends StatelessWidget {
                         label: Text(
                           isDownloadingTeacherCopy
                               ? 'Preparing...'
-                              : 'Download HTML',
+                              : 'Download teacher copy',
                         ),
                       ),
                     )
@@ -544,7 +615,57 @@ class _PlannedMissionTile extends StatelessWidget {
                         label: Text(
                           isDownloadingTeacherCopy
                               ? 'Preparing...'
-                              : 'Download HTML',
+                              : 'Download teacher copy',
+                        ),
+                      ),
+                    );
+              final studentCopyButton = stackButtons
+                  ? SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: _managementDayPlanOutlinedActionStyle(
+                          context,
+                          backgroundColor: AppPalette.mint.withValues(
+                            alpha: 0.12,
+                          ),
+                          borderColor: AppPalette.mint.withValues(alpha: 0.36),
+                        ),
+                        onPressed: isDownloadingStudentCopy
+                            ? null
+                            : onDownloadStudentCopy,
+                        icon: Icon(
+                          isDownloadingStudentCopy
+                              ? Icons.hourglass_top_rounded
+                              : Icons.assignment_rounded,
+                        ),
+                        label: Text(
+                          isDownloadingStudentCopy
+                              ? 'Preparing...'
+                              : 'Download student copy',
+                        ),
+                      ),
+                    )
+                  : Expanded(
+                      child: OutlinedButton.icon(
+                        style: _managementDayPlanOutlinedActionStyle(
+                          context,
+                          backgroundColor: AppPalette.mint.withValues(
+                            alpha: 0.12,
+                          ),
+                          borderColor: AppPalette.mint.withValues(alpha: 0.36),
+                        ),
+                        onPressed: isDownloadingStudentCopy
+                            ? null
+                            : onDownloadStudentCopy,
+                        icon: Icon(
+                          isDownloadingStudentCopy
+                              ? Icons.hourglass_top_rounded
+                              : Icons.assignment_rounded,
+                        ),
+                        label: Text(
+                          isDownloadingStudentCopy
+                              ? 'Preparing...'
+                              : 'Download student copy',
                         ),
                       ),
                     );
@@ -555,6 +676,8 @@ class _PlannedMissionTile extends StatelessWidget {
                     openButton,
                     const SizedBox(height: 10),
                     downloadButton,
+                    const SizedBox(height: 10),
+                    studentCopyButton,
                   ],
                 );
               }
@@ -564,6 +687,8 @@ class _PlannedMissionTile extends StatelessWidget {
                   openButton,
                   const SizedBox(width: 10),
                   downloadButton,
+                  const SizedBox(width: 10),
+                  studentCopyButton,
                 ],
               );
             },
@@ -1263,6 +1388,24 @@ String _buildTeacherCopyFileName({
   return '${studentSlug}_${subjectSlug}_${dateSlug}_${missionSlug}_teacher-copy.html';
 }
 
+String _buildStudentCopyFileName({
+  required StudentSummary student,
+  required MissionPayload mission,
+  required DateTime selectedDate,
+}) {
+  final studentSlug = _sanitizeTeacherCopyFileName(student.name);
+  final subjectSlug = _sanitizeTeacherCopyFileName(
+    (mission.subject?.name ?? 'subject').trim(),
+  );
+  final missionSlug = _sanitizeTeacherCopyFileName(mission.title);
+  final dateSlug = _sanitizeTeacherCopyFileName(
+    mission.availableOnDate?.trim().isNotEmpty == true
+        ? mission.availableOnDate!.trim()
+        : _dateKeyForTeacherCopy(selectedDate),
+  );
+  return '${studentSlug}_${subjectSlug}_${dateSlug}_${missionSlug}_student-copy.html';
+}
+
 String _buildTeacherCopyHtml({
   required StudentSummary student,
   required MissionPayload mission,
@@ -1364,6 +1507,76 @@ String _buildTeacherCopyHtml({
   return buffer.toString();
 }
 
+String _buildStudentCopyHtml({
+  required StudentSummary student,
+  required MissionPayload mission,
+  required DateTime selectedDate,
+}) {
+  final subjectName = (mission.subject?.name ?? 'No subject').trim();
+  final buffer = StringBuffer()
+    ..writeln('<!DOCTYPE html>')
+    ..writeln('<html lang="en">')
+    ..writeln('<head>')
+    ..writeln('<meta charset="utf-8" />')
+    ..writeln(
+      '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    )
+    ..writeln(
+      '<title>${_escapeTeacherCopyHtml('${mission.title} · Student Copy')}</title>',
+    )
+    ..writeln('<style>${_buildTeacherCopyStyles()}</style>')
+    ..writeln('</head>')
+    ..writeln('<body>')
+    ..writeln('<main class="page">')
+    ..writeln('<section class="hero">')
+    ..writeln('<span class="copy-chip">Student Copy</span>')
+    ..writeln('<h1>${_escapeTeacherCopyHtml(mission.title)}</h1>')
+    ..writeln(
+      '<p class="hero-summary">Student-ready mission copy without answers or teacher-only guidance.</p>',
+    )
+    ..writeln('<div class="meta-grid">')
+    ..writeln(_buildTeacherCopyMetaCard(label: 'Student', value: student.name))
+    ..writeln(_buildTeacherCopyMetaCard(label: 'Subject', value: subjectName))
+    ..writeln(
+      _buildTeacherCopyMetaCard(
+        label: 'Session',
+        value: mission.sessionType.toUpperCase(),
+      ),
+    )
+    ..writeln(
+      _buildTeacherCopyMetaCard(
+        label: 'Mission Date',
+        value: _formatTeacherCopyDate(mission.availableOnDate, selectedDate),
+      ),
+    )
+    ..writeln(
+      _buildTeacherCopyMetaCard(
+        label: 'Format',
+        value: _managementDraftFormatLabel(mission.draftFormat),
+      ),
+    )
+    ..writeln('</div>')
+    ..writeln('</section>')
+    ..writeln('<section class="section-card">')
+    ..writeln('<h2>Student Copy</h2>')
+    ..writeln(
+      '<p class="section-kicker">Use this version with the learner. It keeps the mission clean and answer-free.</p>',
+    )
+    ..writeln('</section>');
+
+  buffer.writeln(
+    mission.draftFormat.trim().toUpperCase() == 'ESSAY_BUILDER'
+        ? _buildStudentCopyEssayHtml(mission)
+        : _buildStudentCopyQuestionHtml(mission),
+  );
+
+  buffer
+    ..writeln('</main>')
+    ..writeln('</body>')
+    ..writeln('</html>');
+  return buffer.toString();
+}
+
 String _buildTeacherCopyQuestionHtml(MissionPayload mission) {
   if (mission.questions.isEmpty) {
     return '<section class="section-card"><h2>Questions</h2><p class="section-kicker">No question content was saved for this mission.</p></section>';
@@ -1454,6 +1667,75 @@ String _buildTeacherCopyQuestionHtml(MissionPayload mission) {
   return buffer.toString();
 }
 
+String _buildStudentCopyQuestionHtml(MissionPayload mission) {
+  if (mission.questions.isEmpty) {
+    return '<section class="section-card"><h2>Questions</h2><p class="section-kicker">No question content was saved for this mission.</p></section>';
+  }
+
+  final isTheory = mission.draftFormat.trim().toUpperCase() == 'THEORY';
+  final buffer = StringBuffer()
+    ..writeln('<section class="section-card">')
+    ..writeln('<h2>${isTheory ? 'Theory Questions' : 'Questions'}</h2>')
+    ..writeln(
+      '<p class="section-kicker">${isTheory ? 'Student-ready theory prompts without teacher answers.' : 'Student-ready question set without answer keys.'}</p>',
+    );
+
+  for (final entry in mission.questions.asMap().entries) {
+    final question = entry.value;
+    buffer
+      ..writeln('<article class="question-card">')
+      ..writeln('<div class="question-top">')
+      ..writeln(
+        '<span class="question-pill">Question ${entry.key + 1}</span><span class="copy-pill">Student Copy</span>',
+      )
+      ..writeln('</div>');
+
+    if (question.learningText.trim().isNotEmpty) {
+      buffer
+        ..writeln('<div class="field-label">Learn First</div>')
+        ..writeln(_buildTeacherCopyRichTextHtml(question.learningText));
+    }
+
+    buffer
+      ..writeln('<div class="field-label">Prompt</div>')
+      ..writeln(_buildTeacherCopyRichTextHtml(question.prompt));
+
+    if (isTheory) {
+      if (question.minWordCount > 0) {
+        buffer.writeln(
+          '<div class="pill-row"><span class="soft-pill">Minimum Words: ${question.minWordCount}</span></div>',
+        );
+      }
+      buffer
+        ..writeln('<div class="answer-card">')
+        ..writeln('<div class="field-label">Write Your Answer</div>')
+        ..writeln(
+          '<p class="section-kicker">Respond in your own words using the learning text and prompt.</p>',
+        )
+        ..writeln('</div>')
+        ..writeln('</article>');
+      continue;
+    }
+
+    buffer
+      ..writeln('<div class="field-label">Options</div>')
+      ..writeln('<ul class="option-list">');
+    for (final optionEntry in question.options.asMap().entries) {
+      final optionIndex = optionEntry.key;
+      final optionLabel = String.fromCharCode(65 + optionIndex);
+      buffer.writeln(
+        '<li class="option-row"><span class="option-badge">$optionLabel</span><span>${_escapeTeacherCopyHtml(optionEntry.value)}</span></li>',
+      );
+    }
+    buffer
+      ..writeln('</ul>')
+      ..writeln('</article>');
+  }
+
+  buffer.writeln('</section>');
+  return buffer.toString();
+}
+
 String _buildTeacherCopyEssayHtml(MissionPayload mission) {
   final draft = mission.essayBuilderDraft;
   if (draft == null) {
@@ -1536,6 +1818,88 @@ String _buildTeacherCopyEssayHtml(MissionPayload mission) {
         ..writeln(
           '<p class="answer-inline"><strong>Correct Answer:</strong> ${_escapeTeacherCopyHtml('${blank.correctOption}) ${blank.options[blank.correctOption] ?? ''}')}</p>',
         )
+        ..writeln('</div>');
+    }
+
+    buffer.writeln('</article>');
+  }
+
+  buffer.writeln('</section>');
+  return buffer.toString();
+}
+
+String _buildStudentCopyEssayHtml(MissionPayload mission) {
+  final draft = mission.essayBuilderDraft;
+  if (draft == null) {
+    return '<section class="section-card"><h2>Essay Builder</h2><p class="section-kicker">Essay builder draft is missing for this mission.</p></section>';
+  }
+
+  final buffer = StringBuffer()
+    ..writeln('<section class="section-card">')
+    ..writeln('<h2>Essay Builder</h2>')
+    ..writeln(
+      '<p class="section-kicker">Student-ready essay builder worksheet without answer keys.</p>',
+    )
+    ..writeln('<div class="pill-row">')
+    ..writeln(
+      '<span class="soft-pill">Target Words: ${draft.targets.targetWordMin}-${draft.targets.targetWordMax}</span>',
+    )
+    ..writeln(
+      '<span class="soft-pill">Target Sentences: ${draft.targets.targetSentenceCount}</span>',
+    )
+    ..writeln('</div>');
+
+  for (final entry in draft.sentences.asMap().entries) {
+    final sentence = entry.value;
+    final blankParts = sentence.parts.where((part) => part.isBlank).toList();
+    buffer
+      ..writeln('<article class="question-card">')
+      ..writeln('<div class="question-top">')
+      ..writeln(
+        '<span class="question-pill">Sentence ${entry.key + 1}</span><span class="copy-pill">Student Copy</span>',
+      )
+      ..writeln('</div>')
+      ..writeln(
+        '<h3 class="sentence-role">${_escapeTeacherCopyHtml(sentence.role)}</h3>',
+      );
+
+    if (sentence.learnFirst.bullets.isNotEmpty) {
+      buffer
+        ..writeln('<div class="field-label">Learn First</div>')
+        ..writeln('<ul class="bullet-list">');
+      for (final bullet in sentence.learnFirst.bullets) {
+        if (bullet.trim().isEmpty) {
+          continue;
+        }
+        buffer.writeln('<li>${_escapeTeacherCopyHtml(bullet.trim())}</li>');
+      }
+      buffer.writeln('</ul>');
+    }
+
+    buffer
+      ..writeln('<div class="field-label">Sentence Preview</div>')
+      ..writeln(
+        '<p class="sentence-preview">${_escapeTeacherCopyHtml(_managementSentencePreviewText(sentence))}</p>',
+      );
+
+    for (final blankEntry in blankParts.asMap().entries) {
+      final blank = blankEntry.value;
+      buffer
+        ..writeln('<div class="blank-card">')
+        ..writeln('<div class="blank-head">Blank ${blankEntry.key + 1}</div>');
+      if (blank.hint.trim().isNotEmpty) {
+        buffer.writeln(
+          '<p class="blank-hint">${_escapeTeacherCopyHtml(blank.hint.trim())}</p>',
+        );
+      }
+      buffer.writeln('<ul class="option-list">');
+      for (final label in const ['A', 'B', 'C', 'D']) {
+        buffer.writeln(
+          '<li class="option-row"><span class="option-badge">$label</span><span>${_escapeTeacherCopyHtml(blank.options[label] ?? '')}</span></li>',
+        );
+      }
+      buffer
+        ..writeln('</ul>')
         ..writeln('</div>');
     }
 
@@ -1838,13 +2202,21 @@ ButtonStyle _managementDayPlanFilledActionStyle(BuildContext context) {
   );
 }
 
-ButtonStyle _managementDayPlanOutlinedActionStyle(BuildContext context) {
+ButtonStyle _managementDayPlanOutlinedActionStyle(
+  BuildContext context, {
+  Color? backgroundColor,
+  Color? borderColor,
+}) {
   return OutlinedButton.styleFrom(
     minimumSize: const Size(0, 46),
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    backgroundColor: AppPalette.surface.withValues(alpha: 0.96),
+    backgroundColor:
+        backgroundColor ?? AppPalette.surface.withValues(alpha: 0.96),
     foregroundColor: AppPalette.navy,
-    side: BorderSide(color: AppPalette.sky.withValues(alpha: 0.84), width: 1.2),
+    side: BorderSide(
+      color: borderColor ?? AppPalette.sky.withValues(alpha: 0.84),
+      width: 1.2,
+    ),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
     textStyle: Theme.of(
       context,
