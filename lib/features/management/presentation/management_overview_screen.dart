@@ -1129,7 +1129,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                       initialValue:
                                           selectedCertificationSettings
                                               ?.subjectId,
-                                      decoration: const InputDecoration(
+                                      decoration: _managementFieldDecoration(
                                         labelText: 'Subject',
                                       ),
                                       items: data.certificationSubjects
@@ -1168,7 +1168,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                     const SizedBox(height: 12),
                                     TextField(
                                       controller: _certificationLabelController,
-                                      decoration: const InputDecoration(
+                                      decoration: _managementFieldDecoration(
                                         labelText: 'Certificate label',
                                         hintText: 'Course Certification',
                                       ),
@@ -1303,10 +1303,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                       children: [
                                         TextFormField(
                                           controller: _nameController,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Full name',
-                                            hintText: 'Enter full name',
-                                          ),
+                                          decoration:
+                                              _managementFieldDecoration(
+                                                labelText: 'Full name',
+                                                hintText: 'Enter full name',
+                                              ),
                                           validator: (value) {
                                             if ((value ?? '').trim().isEmpty) {
                                               return 'Enter a name.';
@@ -1317,10 +1318,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                         const SizedBox(height: 12),
                                         TextFormField(
                                           controller: _emailController,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Email',
-                                            hintText: 'name@school.org',
-                                          ),
+                                          decoration:
+                                              _managementFieldDecoration(
+                                                labelText: 'Email',
+                                                hintText: 'name@school.org',
+                                              ),
                                           validator: (value) {
                                             final email = (value ?? '').trim();
                                             if (email.isEmpty ||
@@ -1334,10 +1336,12 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                         TextFormField(
                                           controller: _passwordController,
                                           obscureText: true,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Password',
-                                            hintText: 'At least 8 characters',
-                                          ),
+                                          decoration:
+                                              _managementFieldDecoration(
+                                                labelText: 'Password',
+                                                hintText:
+                                                    'At least 8 characters',
+                                              ),
                                           validator: (value) {
                                             if ((value ?? '').length < 8) {
                                               return 'Use at least 8 characters.';
@@ -1350,9 +1354,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                           DropdownButtonFormField<String>(
                                             initialValue:
                                                 _createStudentYearGroup,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Year group',
-                                            ),
+                                            decoration:
+                                                _managementFieldDecoration(
+                                                  labelText: 'Year group',
+                                                ),
                                             items: <DropdownMenuItem<String>>[
                                               const DropdownMenuItem<String>(
                                                 value: '',
@@ -1379,7 +1384,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                           TextFormField(
                                             controller:
                                                 _subjectSpecialtyController,
-                                            decoration: const InputDecoration(
+                                            decoration: _managementFieldDecoration(
                                               labelText: 'Subject specialty',
                                               hintText:
                                                   'English, Science, Business',
@@ -1668,9 +1673,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                       final dateFilter =
                                           DropdownButtonFormField<String>(
                                             initialValue: selectedResultDate,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Result date',
-                                            ),
+                                            decoration:
+                                                _managementFieldDecoration(
+                                                  labelText: 'Result date',
+                                                ),
                                             items: resultDateFilters
                                                 .map(
                                                   (dateLabel) =>
@@ -1690,39 +1696,58 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                               );
                                             },
                                           );
-                                      final downloadButton = SizedBox(
-                                        width: compact ? double.infinity : null,
-                                        child: FilledButton.icon(
-                                          onPressed:
-                                              filteredResults.isEmpty ||
-                                                  _isAnyManagementDownloadActive
-                                              ? null
-                                              : () => _downloadFilteredResults(
-                                                  student:
-                                                      workspace.selectedStudent,
-                                                  missions: filteredResults,
-                                                ),
-                                          icon: Icon(
-                                            _isAnyManagementDownloadActive
-                                                ? Icons.hourglass_top_rounded
-                                                : Icons.download_rounded,
-                                          ),
-                                          label: Text(
-                                            _isAnyManagementDownloadActive
-                                                ? 'Preparing download...'
-                                                : 'Download filtered results',
-                                          ),
+                                      final downloadButton = FilledButton.icon(
+                                        style: _managementFilledActionStyle(
+                                          context,
+                                        ),
+                                        onPressed:
+                                            filteredResults.isEmpty ||
+                                                _isAnyManagementDownloadActive
+                                            ? null
+                                            : () => _downloadFilteredResults(
+                                                student:
+                                                    workspace.selectedStudent,
+                                                missions: filteredResults,
+                                              ),
+                                        icon: Icon(
+                                          _isAnyManagementDownloadActive
+                                              ? Icons.hourglass_top_rounded
+                                              : Icons.download_rounded,
+                                        ),
+                                        label: Text(
+                                          _isAnyManagementDownloadActive
+                                              ? 'Preparing download...'
+                                              : 'Download filtered results',
                                         ),
                                       );
-                                      final resultCount = Text(
-                                        '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                              color: AppPalette.textMuted,
-                                              fontWeight: FontWeight.w700,
+                                      final resultCount = Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppPalette.surface.withValues(
+                                            alpha: 0.96,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
+                                          border: Border.all(
+                                            color: AppPalette.sky.withValues(
+                                              alpha: 0.7,
                                             ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: AppPalette.navy,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
                                       );
 
                                       if (compact) {
@@ -1734,7 +1759,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                             const SizedBox(height: 10),
                                             resultCount,
                                             const SizedBox(height: 10),
-                                            downloadButton,
+                                            Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: downloadButton,
+                                            ),
                                           ],
                                         );
                                       }
@@ -1747,7 +1775,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                           const SizedBox(width: 12),
                                           Padding(
                                             padding: const EdgeInsets.only(
-                                              bottom: 12,
+                                              bottom: 10,
                                             ),
                                             child: resultCount,
                                           ),
@@ -1765,11 +1793,16 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                         AppSpacing.item,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.78,
+                                        color: AppPalette.surface.withValues(
+                                          alpha: 0.94,
                                         ),
                                         borderRadius: BorderRadius.circular(
                                           AppSpacing.radiusMd,
+                                        ),
+                                        border: Border.all(
+                                          color: AppPalette.sky.withValues(
+                                            alpha: 0.68,
+                                          ),
                                         ),
                                       ),
                                       child: Text(
@@ -4373,8 +4406,15 @@ class _ManagementExpandableHeader extends StatelessWidget {
     final toggleAffordance = Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
+        color: isExpanded
+            ? AppPalette.primaryBlue.withValues(alpha: 0.14)
+            : AppPalette.surface.withValues(alpha: 0.94),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isExpanded
+              ? AppPalette.primaryBlue.withValues(alpha: 0.32)
+              : AppPalette.sky.withValues(alpha: 0.7),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -4481,8 +4521,9 @@ class _ManagementSectionSummary extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.8),
+        color: AppPalette.surface.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppPalette.sky.withValues(alpha: 0.68)),
       ),
       child: Text(
         summary,
@@ -4542,13 +4583,28 @@ class _SubjectFilterChip extends StatelessWidget {
                   colors: [AppPalette.primaryBlue, AppPalette.aqua],
                 )
               : null,
-          color: selected ? null : Colors.white.withValues(alpha: 0.78),
+          color: selected ? null : AppPalette.surface.withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? Colors.transparent
+                : AppPalette.sky.withValues(alpha: 0.76),
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: AppPalette.shadow.withValues(alpha: 0.16),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: Text(
           label,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: selected ? Colors.white : AppPalette.navy,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
           ),
         ),
       ),
@@ -4784,7 +4840,9 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
               initialValue: selectedMorningSubjectId.isNotEmpty
                   ? selectedMorningSubjectId
                   : null,
-              decoration: const InputDecoration(labelText: 'Morning subject'),
+              decoration: _managementFieldDecoration(
+                labelText: 'Morning subject',
+              ),
               items: subjectOptions
                   .map(
                     (subject) => DropdownMenuItem<String>(
@@ -4801,7 +4859,7 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
                 'management-inline-$selectedDayKey-morning-teacher',
               ),
               initialValue: selectedMorningTeacherId,
-              decoration: const InputDecoration(
+              decoration: _managementFieldDecoration(
                 labelText: 'Morning teacher',
                 helperText: 'Optional, but helps mission ownership stay clear.',
               ),
@@ -4829,7 +4887,9 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
               initialValue: selectedAfternoonSubjectId.isNotEmpty
                   ? selectedAfternoonSubjectId
                   : null,
-              decoration: const InputDecoration(labelText: 'Afternoon subject'),
+              decoration: _managementFieldDecoration(
+                labelText: 'Afternoon subject',
+              ),
               items: subjectOptions
                   .map(
                     (subject) => DropdownMenuItem<String>(
@@ -4846,7 +4906,7 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
                 'management-inline-$selectedDayKey-afternoon-teacher',
               ),
               initialValue: selectedAfternoonTeacherId,
-              decoration: const InputDecoration(
+              decoration: _managementFieldDecoration(
                 labelText: 'Afternoon teacher',
                 helperText:
                     'Optional, but helps afternoon missions route to the correct teacher.',
@@ -4873,7 +4933,7 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
             DropdownButtonFormField<String>(
               key: ValueKey('management-inline-$selectedDayKey-morning-room'),
               initialValue: selectedMorningRoom,
-              decoration: const InputDecoration(labelText: 'Morning room'),
+              decoration: _managementFieldDecoration(labelText: 'Morning room'),
               items: roomOptions
                   .map(
                     (room) => DropdownMenuItem<String>(
@@ -4888,7 +4948,9 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
             DropdownButtonFormField<String>(
               key: ValueKey('management-inline-$selectedDayKey-afternoon-room'),
               initialValue: selectedAfternoonRoom,
-              decoration: const InputDecoration(labelText: 'Afternoon room'),
+              decoration: _managementFieldDecoration(
+                labelText: 'Afternoon room',
+              ),
               items: roomOptions
                   .map(
                     (room) => DropdownMenuItem<String>(
@@ -5013,8 +5075,11 @@ class _ManagementResultCard extends StatelessWidget {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: AppPalette.sky.withValues(alpha: 0.35),
+                  color: AppPalette.sky.withValues(alpha: 0.24),
                   borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppPalette.primaryBlue.withValues(alpha: 0.18),
+                  ),
                 ),
                 child: Text(
                   subjectName,
@@ -5051,91 +5116,55 @@ class _ManagementResultCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.compact),
           LayoutBuilder(
             builder: (context, constraints) {
-              final stackButtons = constraints.maxWidth < 720;
-              final viewButton = stackButtons
-                  ? SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: onView,
-                        icon: const Icon(Icons.visibility_rounded),
-                        label: const Text('View Result'),
-                      ),
-                    )
-                  : Expanded(
-                      child: FilledButton.icon(
-                        onPressed: onView,
-                        icon: const Icon(Icons.visibility_rounded),
-                        label: const Text('View Result'),
-                      ),
-                    );
-              final downloadButton = stackButtons
-                  ? SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: hasResultPackage && !downloadsLocked
-                            ? onDownload
-                            : null,
-                        icon: Icon(
-                          isDownloading
-                              ? Icons.hourglass_top_rounded
-                              : Icons.download_rounded,
-                        ),
-                        label: Text(
-                          isDownloading ? 'Preparing...' : 'Download Result',
-                        ),
-                      ),
-                    )
-                  : Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: hasResultPackage && !downloadsLocked
-                            ? onDownload
-                            : null,
-                        icon: Icon(
-                          isDownloading
-                              ? Icons.hourglass_top_rounded
-                              : Icons.download_rounded,
-                        ),
-                        label: Text(
-                          isDownloading ? 'Preparing...' : 'Download Result',
-                        ),
-                      ),
-                    );
-              final teacherCopyButton = stackButtons
-                  ? SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: downloadsLocked || !mission.hasTeacherCopy
-                            ? null
-                            : onDownloadTeacherCopy,
-                        icon: Icon(
-                          isDownloadingTeacherCopy
-                              ? Icons.hourglass_top_rounded
-                              : Icons.description_rounded,
-                        ),
-                        label: Text(
-                          isDownloadingTeacherCopy
-                              ? 'Preparing...'
-                              : 'Teacher Copy',
-                        ),
-                      ),
-                    )
-                  : Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: downloadsLocked || !mission.hasTeacherCopy
-                            ? null
-                            : onDownloadTeacherCopy,
-                        icon: Icon(
-                          isDownloadingTeacherCopy
-                              ? Icons.hourglass_top_rounded
-                              : Icons.description_rounded,
-                        ),
-                        label: Text(
-                          isDownloadingTeacherCopy
-                              ? 'Preparing...'
-                              : 'Teacher Copy',
-                        ),
-                      ),
-                    );
+              final stackButtons = constraints.maxWidth < 520;
+              final actionWidth = stackButtons ? double.infinity : 196.0;
+              final viewButton = SizedBox(
+                width: actionWidth,
+                child: FilledButton.icon(
+                  style: _managementFilledActionStyle(context),
+                  onPressed: onView,
+                  icon: const Icon(Icons.visibility_rounded),
+                  label: const Text('View Result'),
+                ),
+              );
+              final downloadButton = SizedBox(
+                width: actionWidth,
+                child: OutlinedButton.icon(
+                  style: _managementOutlinedActionStyle(context),
+                  onPressed: hasResultPackage && !downloadsLocked
+                      ? onDownload
+                      : null,
+                  icon: Icon(
+                    isDownloading
+                        ? Icons.hourglass_top_rounded
+                        : Icons.download_rounded,
+                  ),
+                  label: Text(
+                    isDownloading ? 'Preparing...' : 'Download Result',
+                  ),
+                ),
+              );
+              final teacherCopyButton = SizedBox(
+                width: actionWidth,
+                child: OutlinedButton.icon(
+                  style: _managementOutlinedActionStyle(
+                    context,
+                    backgroundColor: AppPalette.sky.withValues(alpha: 0.18),
+                    borderColor: AppPalette.primaryBlue.withValues(alpha: 0.34),
+                  ),
+                  onPressed: downloadsLocked || !mission.hasTeacherCopy
+                      ? null
+                      : onDownloadTeacherCopy,
+                  icon: Icon(
+                    isDownloadingTeacherCopy
+                        ? Icons.hourglass_top_rounded
+                        : Icons.description_rounded,
+                  ),
+                  label: Text(
+                    isDownloadingTeacherCopy ? 'Preparing...' : 'Teacher Copy',
+                  ),
+                ),
+              );
 
               if (stackButtons) {
                 return Column(
@@ -5149,14 +5178,10 @@ class _ManagementResultCard extends StatelessWidget {
                 );
               }
 
-              return Row(
-                children: [
-                  viewButton,
-                  const SizedBox(width: 12),
-                  downloadButton,
-                  const SizedBox(width: 12),
-                  teacherCopyButton,
-                ],
+              return Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                children: [viewButton, downloadButton, teacherCopyButton],
               );
             },
           ),
@@ -5175,6 +5200,69 @@ String _formatManagementMissionDate(String? value) {
     return value;
   }
   return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+}
+
+InputDecoration _managementFieldDecoration({
+  required String labelText,
+  String? hintText,
+  String? helperText,
+}) {
+  final baseBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+    borderSide: BorderSide(color: AppPalette.sky.withValues(alpha: 0.72)),
+  );
+  return InputDecoration(
+    labelText: labelText,
+    hintText: hintText,
+    helperText: helperText,
+    filled: true,
+    fillColor: AppPalette.surface.withValues(alpha: 0.96),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+    border: baseBorder,
+    enabledBorder: baseBorder,
+    disabledBorder: baseBorder.copyWith(
+      borderSide: BorderSide(color: AppPalette.sky.withValues(alpha: 0.42)),
+    ),
+    focusedBorder: baseBorder.copyWith(
+      borderSide: const BorderSide(color: AppPalette.primaryBlue, width: 1.6),
+    ),
+  );
+}
+
+ButtonStyle _managementFilledActionStyle(BuildContext context) {
+  return FilledButton.styleFrom(
+    minimumSize: const Size(0, 46),
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+    backgroundColor: AppPalette.navy,
+    foregroundColor: Colors.white,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    textStyle: Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+  );
+}
+
+ButtonStyle _managementOutlinedActionStyle(
+  BuildContext context, {
+  Color? backgroundColor,
+  Color? borderColor,
+  Color? foregroundColor,
+}) {
+  return OutlinedButton.styleFrom(
+    minimumSize: const Size(0, 46),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    backgroundColor:
+        backgroundColor ?? AppPalette.surface.withValues(alpha: 0.96),
+    foregroundColor: foregroundColor ?? AppPalette.navy,
+    side: BorderSide(
+      color: borderColor ?? AppPalette.sky.withValues(alpha: 0.84),
+      width: 1.2,
+    ),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    textStyle: Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+  );
 }
 
 class _LoadingState extends StatelessWidget {

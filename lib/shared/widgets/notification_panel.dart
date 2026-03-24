@@ -64,10 +64,7 @@ class NotificationPanel extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
+                    Text(title, style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
@@ -84,14 +81,17 @@ class NotificationPanel extends StatelessWidget {
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.72),
+                  color: AppPalette.surface.withValues(alpha: 0.95),
                   borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppPalette.sun.withValues(alpha: 0.34),
+                  ),
                 ),
                 child: Text(
                   unreadCount == 0 ? 'All read' : '$unreadCount unread',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppPalette.navy,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
                 ),
               ),
             ],
@@ -102,14 +102,17 @@ class NotificationPanel extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.item),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.75),
+                color: AppPalette.surface.withValues(alpha: 0.95),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(
+                  color: AppPalette.sun.withValues(alpha: 0.24),
+                ),
               ),
               child: Text(
                 emptyMessage,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppPalette.textMuted,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
               ),
             )
           else
@@ -129,10 +132,7 @@ class NotificationPanel extends StatelessWidget {
 }
 
 class _NotificationCard extends StatelessWidget {
-  const _NotificationCard({
-    required this.notification,
-    required this.onTap,
-  });
+  const _NotificationCard({required this.notification, required this.onTap});
 
   final AppNotification notification;
   final VoidCallback onTap;
@@ -182,9 +182,9 @@ class _NotificationCard extends StatelessWidget {
                       ),
                       child: Text(
                         'New',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppPalette.navy,
-                        ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
                       ),
                     ),
                   if ((notification.createdAt ?? '').isNotEmpty)
@@ -260,9 +260,9 @@ class _MiniPill extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: AppPalette.navy,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
       ),
     );
   }

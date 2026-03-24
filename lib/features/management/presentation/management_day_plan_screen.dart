@@ -496,6 +496,7 @@ class _PlannedMissionTile extends StatelessWidget {
                   ? SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
+                        style: _managementDayPlanFilledActionStyle(context),
                         onPressed: onOpenTeacherCopy,
                         icon: const Icon(Icons.visibility_rounded),
                         label: const Text('Open teacher copy'),
@@ -503,6 +504,7 @@ class _PlannedMissionTile extends StatelessWidget {
                     )
                   : Expanded(
                       child: FilledButton.icon(
+                        style: _managementDayPlanFilledActionStyle(context),
                         onPressed: onOpenTeacherCopy,
                         icon: const Icon(Icons.visibility_rounded),
                         label: const Text('Open teacher copy'),
@@ -512,6 +514,7 @@ class _PlannedMissionTile extends StatelessWidget {
                   ? SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
+                        style: _managementDayPlanOutlinedActionStyle(context),
                         onPressed: isDownloadingTeacherCopy
                             ? null
                             : onDownloadTeacherCopy,
@@ -529,6 +532,7 @@ class _PlannedMissionTile extends StatelessWidget {
                     )
                   : Expanded(
                       child: OutlinedButton.icon(
+                        style: _managementDayPlanOutlinedActionStyle(context),
                         onPressed: isDownloadingTeacherCopy
                             ? null
                             : onDownloadTeacherCopy,
@@ -732,6 +736,7 @@ class _ManagementTeacherCopySheet extends StatelessWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton(
+                      style: _managementDayPlanOutlinedActionStyle(context),
                       onPressed: () => Navigator.of(context).pop(),
                       child: const Text('Close'),
                     ),
@@ -739,6 +744,7 @@ class _ManagementTeacherCopySheet extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton.icon(
+                      style: _managementDayPlanFilledActionStyle(context),
                       onPressed: isDownloading ? null : onDownload,
                       icon: Icon(
                         isDownloading
@@ -1805,8 +1811,9 @@ class _MiniPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
+        color: AppPalette.surface.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppPalette.sky.withValues(alpha: 0.68)),
       ),
       child: Text(
         label,
@@ -1816,6 +1823,33 @@ class _MiniPill extends StatelessWidget {
       ),
     );
   }
+}
+
+ButtonStyle _managementDayPlanFilledActionStyle(BuildContext context) {
+  return FilledButton.styleFrom(
+    minimumSize: const Size(0, 46),
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+    backgroundColor: AppPalette.navy,
+    foregroundColor: Colors.white,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    textStyle: Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+  );
+}
+
+ButtonStyle _managementDayPlanOutlinedActionStyle(BuildContext context) {
+  return OutlinedButton.styleFrom(
+    minimumSize: const Size(0, 46),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    backgroundColor: AppPalette.surface.withValues(alpha: 0.96),
+    foregroundColor: AppPalette.navy,
+    side: BorderSide(color: AppPalette.sky.withValues(alpha: 0.84), width: 1.2),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    textStyle: Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+  );
 }
 
 class _RoundHeaderButton extends StatelessWidget {

@@ -57,7 +57,7 @@ class StudentYearGroupPanel extends StatelessWidget {
           DropdownButtonFormField<String>(
             key: ValueKey<String>(selectedYearGroup.trim()),
             initialValue: selectedYearGroup.trim(),
-            decoration: const InputDecoration(labelText: 'Year group'),
+            decoration: _yearGroupFieldDecoration(),
             items: <DropdownMenuItem<String>>[
               const DropdownMenuItem<String>(
                 value: '',
@@ -73,9 +73,21 @@ class StudentYearGroupPanel extends StatelessWidget {
             onChanged: onChanged,
           ),
           const SizedBox(height: AppSpacing.item),
-          SizedBox(
-            width: double.infinity,
+          Align(
+            alignment: Alignment.centerLeft,
             child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 46),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 14,
+                ),
+                backgroundColor: AppPalette.navy,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
               onPressed: isSaving ? null : onSave,
               icon: Icon(
                 isSaving ? Icons.hourglass_top_rounded : Icons.save_rounded,
@@ -87,4 +99,22 @@ class StudentYearGroupPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+InputDecoration _yearGroupFieldDecoration() {
+  final baseBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+    borderSide: BorderSide(color: AppPalette.sky.withValues(alpha: 0.72)),
+  );
+  return InputDecoration(
+    labelText: 'Year group',
+    filled: true,
+    fillColor: AppPalette.surface.withValues(alpha: 0.96),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+    border: baseBorder,
+    enabledBorder: baseBorder,
+    focusedBorder: baseBorder.copyWith(
+      borderSide: const BorderSide(color: AppPalette.primaryBlue, width: 1.6),
+    ),
+  );
 }
