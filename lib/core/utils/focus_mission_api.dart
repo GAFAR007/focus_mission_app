@@ -94,6 +94,39 @@ class FocusMissionApi {
     return AuthSession.fromJson(json);
   }
 
+  Future<AppUser> fetchCurrentUser({required String token}) async {
+    final json = await _requestJson('GET', '/auth/me', token: token);
+
+    return AppUser.fromJson(
+      (json['user'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<String> requestPasswordResetCode({required String email}) async {
+    final json = await _requestJson(
+      'POST',
+      '/auth/password-reset/request',
+      body: {'email': email},
+    );
+
+    return (json['message'] ?? '').toString();
+  }
+
+  Future<AuthSession> confirmPasswordReset({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/auth/password-reset/confirm',
+      body: {'email': email, 'code': code, 'newPassword': newPassword},
+    );
+
+    return AuthSession.fromJson(json);
+  }
+
   Future<List<DemoAccount>> fetchDemoAccounts({required UserRole role}) async {
     final json = await _requestJson(
       'GET',

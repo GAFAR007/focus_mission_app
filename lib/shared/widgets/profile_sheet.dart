@@ -25,21 +25,30 @@ Future<AppUser?> showProfileSheet(
   BuildContext context, {
   required AuthSession session,
   FocusMissionApi? api,
+  Future<void> Function()? onSignOut,
 }) {
   return showModalBottomSheet<AppUser>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) =>
-        _ProfileSheet(session: session, api: api ?? FocusMissionApi()),
+    builder: (_) => _ProfileSheet(
+      session: session,
+      api: api ?? FocusMissionApi(),
+      onSignOut: onSignOut,
+    ),
   );
 }
 
 class _ProfileSheet extends StatefulWidget {
-  const _ProfileSheet({required this.session, required this.api});
+  const _ProfileSheet({
+    required this.session,
+    required this.api,
+    this.onSignOut,
+  });
 
   final AuthSession session;
   final FocusMissionApi api;
+  final Future<void> Function()? onSignOut;
 
   @override
   State<_ProfileSheet> createState() => _ProfileSheetState();
@@ -304,6 +313,17 @@ class _ProfileSheetState extends State<_ProfileSheet> {
                       colors: AppPalette.progressGradient,
                       onPressed: _isSaving ? () {} : _saveProfile,
                     ),
+                    if (widget.onSignOut != null) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _isSaving ? null : _signOut,
+                          icon: const Icon(Icons.logout_rounded),
+                          label: const Text('Sign out'),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -365,6 +385,11 @@ class _ProfileSheetState extends State<_ProfileSheet> {
         setState(() => _isSaving = false);
       }
     }
+  }
+
+  Future<void> _signOut() async {
+    Navigator.of(context).pop();
+    await widget.onSignOut?.call();
   }
 
   int _journeyDayValue(AppUser user) {

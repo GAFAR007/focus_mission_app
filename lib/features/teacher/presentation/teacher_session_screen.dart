@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/student_year_groups.dart';
+import '../../../core/utils/auth_session_store.dart';
 import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
@@ -29,6 +30,7 @@ import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
+import '../../auth/presentation/role_selection_screen.dart';
 import 'criterion_review_sheet.dart';
 import 'mission_builder_sheet.dart';
 import 'result_report_screen.dart';
@@ -86,6 +88,7 @@ class TeacherSessionScreen extends StatefulWidget {
 
 class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   final FocusMissionApi _api = FocusMissionApi();
+  final AuthSessionStore _sessionStore = AuthSessionStore();
   final GlobalKey<FormState> _createStudentFormKey = GlobalKey<FormState>();
   final TextEditingController _notesController = TextEditingController();
   final TextEditingController _studentNameController = TextEditingController();
@@ -1352,15 +1355,29 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       context,
       session: _session,
       api: _api,
+      onSignOut: _signOut,
     );
 
     if (updatedUser == null || !mounted) {
       return;
     }
 
+    final nextSession = _session.copyWith(user: updatedUser);
+    await _sessionStore.saveSession(nextSession);
     setState(() {
-      _session = _session.copyWith(user: updatedUser);
+      _session = nextSession;
     });
+  }
+
+  Future<void> _signOut() async {
+    await _sessionStore.clearSession();
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const RoleSelectionScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _saveSelectedStudentYearGroup(

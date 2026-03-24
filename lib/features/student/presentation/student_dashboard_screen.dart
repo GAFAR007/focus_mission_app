@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/utils/auth_session_store.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
@@ -28,6 +29,7 @@ import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/progress_hero_card.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
+import '../../auth/presentation/role_selection_screen.dart';
 import 'flexible_learning_helper_sheet.dart';
 import 'mission_play_screen.dart';
 import 'standalone_paper_play_screen.dart';
@@ -49,6 +51,7 @@ enum _DailyWelcomeAction { helper, missions, close }
 
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   final FocusMissionApi _api = FocusMissionApi();
+  final AuthSessionStore _sessionStore = AuthSessionStore();
   static const String _shownSubjectBonusStorageKey =
       'shown_subject_bonus_keys_v1';
   static const String _shownDailyWelcomeStorageKey =
@@ -881,16 +884,30 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       context,
       session: _session,
       api: _api,
+      onSignOut: _signOut,
     );
 
     if (updatedUser == null || !mounted) {
       return;
     }
 
+    final nextSession = _session.copyWith(user: updatedUser);
+    await _sessionStore.saveSession(nextSession);
     setState(() {
-      _session = _session.copyWith(user: updatedUser);
+      _session = nextSession;
     });
     _refreshData();
+  }
+
+  Future<void> _signOut() async {
+    await _sessionStore.clearSession();
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const RoleSelectionScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _openSubjectReport(StudentSubjectReportSummary summary) async {

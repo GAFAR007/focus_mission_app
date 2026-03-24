@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/seed_credentials.dart';
+import '../../../core/utils/auth_session_store.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/models/user_role.dart';
@@ -27,6 +28,7 @@ import '../../management/presentation/management_overview_screen.dart';
 import '../../mentor/presentation/mentor_overview_screen.dart';
 import '../../student/presentation/student_dashboard_screen.dart';
 import '../../teacher/presentation/teacher_session_screen.dart';
+import 'password_reset_sheet.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.role});
@@ -39,18 +41,21 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final FocusMissionApi _api = FocusMissionApi();
+  final AuthSessionStore _sessionStore = AuthSessionStore();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   late final TextEditingController _emailController;
   late final TextEditingController _passwordController;
   late final Future<List<DemoAccount>> _demoAccountsFuture;
 
   bool _isSubmitting = false;
+  bool _canRequestPasswordReset = false;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
     _emailController = TextEditingController();
+    _emailController.addListener(_handleEmailChanged);
     // WHY: Password should never be auto-filled so sign-in always requires
     // explicit user entry.
     _passwordController = TextEditingController();
@@ -59,6 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _emailController.removeListener(_handleEmailChanged);
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -174,6 +180,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
                             return null;
                           },
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _canRequestPasswordReset
+                                    ? 'Wrong password 3 times? Use email reset.'
+                                    : 'Reset by email becomes available after 3 wrong password attempts.',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: AppPalette.textMuted),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _canRequestPasswordReset
+                                  ? _openPasswordReset
+                                  : null,
+                              child: const Text('Reset password'),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -300,7 +326,20 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _emailController.text = account.email;
       _passwordController.clear();
+      _canRequestPasswordReset = false;
       _errorMessage = null;
+    });
+  }
+
+  void _handleEmailChanged() {
+    if (!_canRequestPasswordReset) {
+      return;
+    }
+
+    setState(() {
+      // WHY: Reset eligibility is tied to the email that produced the repeated
+      // failed logins, so changing the email should hide the recovery CTA.
+      _canRequestPasswordReset = false;
     });
   }
 
@@ -322,27 +361,59 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
+      await _sessionStore.saveSession(session);
 
       if (!mounted) {
         return;
       }
 
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => _destinationForSession(session),
-        ),
-      );
+      await _openAuthenticatedDestination(session);
     } catch (error) {
       if (!mounted) {
         return;
       }
 
-      setState(() => _errorMessage = error.toString());
+      final message = error.toString();
+      setState(() {
+        _errorMessage = message;
+        _canRequestPasswordReset = _errorSupportsReset(message);
+      });
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
       }
     }
+  }
+
+  Future<void> _openPasswordReset() async {
+    final session = await showPasswordResetSheet(
+      context,
+      colors: widget.role.colors,
+      initialEmail: _emailController.text.trim(),
+      api: _api,
+    );
+
+    if (session == null || !mounted) {
+      return;
+    }
+
+    await _sessionStore.saveSession(session);
+    if (!mounted) {
+      return;
+    }
+
+    await _openAuthenticatedDestination(session);
+  }
+
+  Future<void> _openAuthenticatedDestination(AuthSession session) async {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(builder: (_) => _destinationForSession(session)),
+    );
+  }
+
+  bool _errorSupportsReset(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('reset code');
   }
 
   Widget _destinationForSession(AuthSession session) {

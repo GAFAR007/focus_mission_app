@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/utils/auth_session_store.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
@@ -24,6 +25,7 @@ import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
+import '../../auth/presentation/role_selection_screen.dart';
 
 class MentorOverviewScreen extends StatefulWidget {
   const MentorOverviewScreen({super.key, required this.session});
@@ -36,6 +38,7 @@ class MentorOverviewScreen extends StatefulWidget {
 
 class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
   final FocusMissionApi _api = FocusMissionApi();
+  final AuthSessionStore _sessionStore = AuthSessionStore();
 
   late AuthSession _session;
   late Future<MentorWorkspaceData> _future;
@@ -544,15 +547,29 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
       context,
       session: _session,
       api: _api,
+      onSignOut: _signOut,
     );
 
     if (updatedUser == null || !mounted) {
       return;
     }
 
+    final nextSession = _session.copyWith(user: updatedUser);
+    await _sessionStore.saveSession(nextSession);
     setState(() {
-      _session = _session.copyWith(user: updatedUser);
+      _session = nextSession;
     });
+  }
+
+  Future<void> _signOut() async {
+    await _sessionStore.clearSession();
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => const RoleSelectionScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _openStudentPicker(MentorWorkspaceData workspace) async {
