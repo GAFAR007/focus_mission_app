@@ -22,7 +22,6 @@ import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/soft_panel.dart';
-import '../../../shared/widgets/stat_chip.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
 
 class ManagementDayPlanScreen extends StatefulWidget {
@@ -119,31 +118,11 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
                   date: _selectedDate,
                 ),
                 const SizedBox(height: AppSpacing.item),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    StatChip(
-                      value: '${plan.totalMissionCount}',
-                      label: 'Published',
-                      colors: const [AppPalette.primaryBlue, AppPalette.aqua],
-                    ),
-                    StatChip(
-                      value: '${plan.morning.missions.length}',
-                      label: 'Morning',
-                      colors: const [AppPalette.sun, AppPalette.orange],
-                    ),
-                    StatChip(
-                      value: '${plan.afternoon.missions.length}',
-                      label: 'Afternoon',
-                      colors: const [AppPalette.mint, AppPalette.aqua],
-                    ),
-                    StatChip(
-                      value: plan.room.trim().isEmpty ? 'No room' : plan.room,
-                      label: 'Room',
-                      colors: const [AppPalette.sky, AppPalette.primaryBlue],
-                    ),
-                  ],
+                _DayPlanSummaryStrip(
+                  totalMissionCount: plan.totalMissionCount,
+                  morningMissionCount: plan.morning.missions.length,
+                  afternoonMissionCount: plan.afternoon.missions.length,
+                  room: plan.room,
                 ),
                 const SizedBox(height: AppSpacing.item),
                 if (!plan.hasTimetableEntry)
@@ -386,6 +365,185 @@ class _ManagementDayPlanHeader extends StatelessWidget {
           label: const Text('Change date'),
         ),
       ],
+    );
+  }
+}
+
+class _DayPlanSummaryStrip extends StatelessWidget {
+  const _DayPlanSummaryStrip({
+    required this.totalMissionCount,
+    required this.morningMissionCount,
+    required this.afternoonMissionCount,
+    required this.room,
+  });
+
+  final int totalMissionCount;
+  final int morningMissionCount;
+  final int afternoonMissionCount;
+  final String room;
+
+  @override
+  Widget build(BuildContext context) {
+    final roomLabel = room.trim().isEmpty ? 'No room saved yet' : room.trim();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.74),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: AppPalette.sky.withValues(alpha: 0.32)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 820;
+          final metricWidth = compact ? (constraints.maxWidth - 12) / 2 : 124.0;
+
+          return Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              SizedBox(
+                width: metricWidth,
+                child: _DayPlanMetricTile(
+                  label: 'Published',
+                  value: '$totalMissionCount',
+                  colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+                ),
+              ),
+              SizedBox(
+                width: metricWidth,
+                child: _DayPlanMetricTile(
+                  label: 'Morning',
+                  value: '$morningMissionCount',
+                  colors: const [AppPalette.sun, AppPalette.orange],
+                ),
+              ),
+              SizedBox(
+                width: metricWidth,
+                child: _DayPlanMetricTile(
+                  label: 'Afternoon',
+                  value: '$afternoonMissionCount',
+                  colors: const [AppPalette.mint, AppPalette.aqua],
+                ),
+              ),
+              SizedBox(
+                width: compact
+                    ? constraints.maxWidth
+                    : constraints.maxWidth - (metricWidth * 3) - 36,
+                child: _DayPlanRoomTile(room: roomLabel),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DayPlanMetricTile extends StatelessWidget {
+  const _DayPlanMetricTile({
+    required this.label,
+    required this.value,
+    required this.colors,
+  });
+
+  final String label;
+  final String value;
+  final List<Color> colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            colors.first.withValues(alpha: 0.20),
+            colors.last.withValues(alpha: 0.12),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: colors.first.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: AppPalette.navy,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppPalette.textMuted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DayPlanRoomTile extends StatelessWidget {
+  const _DayPlanRoomTile({required this.room});
+
+  final String room;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppPalette.surface.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppPalette.sky.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppPalette.sky, AppPalette.primaryBlue],
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(Icons.meeting_room_rounded, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Room',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppPalette.textMuted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  room,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: AppPalette.navy,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
