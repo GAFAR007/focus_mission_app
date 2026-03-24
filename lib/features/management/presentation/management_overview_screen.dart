@@ -1002,50 +1002,14 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                       _saveSelectedStudentYearGroup(workspace.selectedStudent),
                   isSaving: _isSavingStudentYearGroup,
                   saveLabel: 'Save year group',
-                ),
-                const SizedBox(height: AppSpacing.item),
-                SoftPanel(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Delivery Snapshot',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: AppSpacing.item),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          StatChip(
-                            value: '${workspace.students.length}',
-                            label: 'Assigned students',
-                            colors: const [
-                              AppPalette.primaryBlue,
-                              AppPalette.aqua,
-                            ],
-                          ),
-                          StatChip(
-                            value: '${overview.metrics.weeklyXp}',
-                            label: '${workspace.selectedStudent.name} XP',
-                            colors: const [AppPalette.sun, AppPalette.orange],
-                          ),
-                          StatChip(
-                            value: '${overview.metrics.completedMissions}',
-                            label: 'Completed missions',
-                            colors: const [
-                              AppPalette.primaryBlue,
-                              AppPalette.aqua,
-                            ],
-                          ),
-                          StatChip(
-                            value: '${inbox.unreadCount}',
-                            label: 'Unread alerts',
-                            colors: const [AppPalette.sun, AppPalette.orange],
-                          ),
-                        ],
-                      ),
-                    ],
+                  secondaryActionLabel: _showStudentTargetsPanel
+                      ? 'Hide student targets'
+                      : 'Student targets',
+                  secondaryActionIcon: _showStudentTargetsPanel
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.flag_rounded,
+                  onSecondaryAction: () => setState(
+                    () => _showStudentTargetsPanel = !_showStudentTargetsPanel,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.item),
@@ -1248,6 +1212,51 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                     ),
                                 ],
                               ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Delivery Snapshot',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.item),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          StatChip(
+                            value: '${workspace.students.length}',
+                            label: 'Assigned students',
+                            colors: const [
+                              AppPalette.primaryBlue,
+                              AppPalette.aqua,
+                            ],
+                          ),
+                          StatChip(
+                            value: '${overview.metrics.weeklyXp}',
+                            label: '${workspace.selectedStudent.name} XP',
+                            colors: const [AppPalette.sun, AppPalette.orange],
+                          ),
+                          StatChip(
+                            value: '${overview.metrics.completedMissions}',
+                            label: 'Completed missions',
+                            colors: const [
+                              AppPalette.primaryBlue,
+                              AppPalette.aqua,
+                            ],
+                          ),
+                          StatChip(
+                            value: '${inbox.unreadCount}',
+                            label: 'Unread alerts',
+                            colors: const [AppPalette.sun, AppPalette.orange],
+                          ),
+                        ],
                       ),
                     ],
                   ),

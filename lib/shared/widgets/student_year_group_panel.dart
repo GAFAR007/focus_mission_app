@@ -28,6 +28,9 @@ class StudentYearGroupPanel extends StatelessWidget {
     required this.onSave,
     required this.isSaving,
     this.saveLabel = 'Save year group',
+    this.secondaryActionLabel,
+    this.secondaryActionIcon,
+    this.onSecondaryAction,
   });
 
   final String title;
@@ -37,6 +40,9 @@ class StudentYearGroupPanel extends StatelessWidget {
   final VoidCallback onSave;
   final bool isSaving;
   final String saveLabel;
+  final String? secondaryActionLabel;
+  final IconData? secondaryActionIcon;
+  final VoidCallback? onSecondaryAction;
 
   @override
   Widget build(BuildContext context) {
@@ -75,24 +81,57 @@ class StudentYearGroupPanel extends StatelessWidget {
           const SizedBox(height: AppSpacing.item),
           Align(
             alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(0, 46),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 14,
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 46),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 14,
+                    ),
+                    backgroundColor: AppPalette.navy,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  onPressed: isSaving ? null : onSave,
+                  icon: Icon(
+                    isSaving ? Icons.hourglass_top_rounded : Icons.save_rounded,
+                  ),
+                  label: Text(isSaving ? 'Saving year group...' : saveLabel),
                 ),
-                backgroundColor: AppPalette.navy,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-              onPressed: isSaving ? null : onSave,
-              icon: Icon(
-                isSaving ? Icons.hourglass_top_rounded : Icons.save_rounded,
-              ),
-              label: Text(isSaving ? 'Saving year group...' : saveLabel),
+                if ((secondaryActionLabel ?? '').trim().isNotEmpty &&
+                    onSecondaryAction != null)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 46),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 14,
+                      ),
+                      foregroundColor: AppPalette.navy,
+                      backgroundColor: AppPalette.surface.withValues(
+                        alpha: 0.98,
+                      ),
+                      side: BorderSide(
+                        color: AppPalette.sky.withValues(alpha: 0.82),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    onPressed: onSecondaryAction,
+                    icon: Icon(
+                      secondaryActionIcon ?? Icons.flag_outlined,
+                      size: 20,
+                    ),
+                    label: Text(secondaryActionLabel!.trim()),
+                  ),
+              ],
             ),
           ),
         ],
