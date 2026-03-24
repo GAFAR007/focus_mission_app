@@ -130,9 +130,16 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   void initState() {
     super.initState();
     _session = widget.session;
+    _persistSessionSnapshot();
     final now = DateTime.now();
     _selectedTimetableDate = DateTime(now.year, now.month, now.day);
     _future = _loadWorkspace();
+  }
+
+  Future<void> _persistSessionSnapshot() async {
+    try {
+      await _sessionStore.saveSession(_session);
+    } catch (_) {}
   }
 
   bool get _isAnyManagementDownloadActive =>
@@ -841,6 +848,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     ),
                     ProfileAvatarButton(
                       user: _session.user,
+                      onLogout: _signOut,
                       onTap: _openProfile,
                     ),
                   ],

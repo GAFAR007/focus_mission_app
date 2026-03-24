@@ -138,9 +138,16 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   void initState() {
     super.initState();
     _session = widget.session;
+    _persistSessionSnapshot();
     final now = DateTime.now();
     _selectedLessonDate = DateTime(now.year, now.month, now.day);
     _future = _loadWorkspace();
+  }
+
+  Future<void> _persistSessionSnapshot() async {
+    try {
+      await _sessionStore.saveSession(_session);
+    } catch (_) {}
   }
 
   Future<TeacherWorkspaceData> _loadWorkspace() async {
@@ -254,6 +261,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       onBack: () => Navigator.of(context).pop(),
                       title: _session.user.name,
                       user: _session.user,
+                      onLogout: _signOut,
                       onProfileTap: _openProfile,
                     ),
                     const SizedBox(height: AppSpacing.section),
@@ -379,6 +387,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   onBack: () => Navigator.of(context).pop(),
                   title: _session.user.name,
                   user: _session.user,
+                  onLogout: _signOut,
                   onProfileTap: _openProfile,
                 ),
                 const SizedBox(height: AppSpacing.section),
@@ -3816,12 +3825,14 @@ class _Header extends StatelessWidget {
     required this.onBack,
     required this.title,
     required this.user,
+    required this.onLogout,
     required this.onProfileTap,
   });
 
   final VoidCallback onBack;
   final String title;
   final AppUser user;
+  final VoidCallback onLogout;
   final VoidCallback onProfileTap;
 
   @override
@@ -3833,7 +3844,11 @@ class _Header extends StatelessWidget {
         Expanded(
           child: Text(title, style: Theme.of(context).textTheme.titleLarge),
         ),
-        ProfileAvatarButton(user: user, onTap: onProfileTap),
+        ProfileAvatarButton(
+          user: user,
+          onLogout: onLogout,
+          onTap: onProfileTap,
+        ),
       ],
     );
   }

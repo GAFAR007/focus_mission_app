@@ -54,7 +54,14 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
   void initState() {
     super.initState();
     _session = widget.session;
+    _persistSessionSnapshot();
     _future = _loadWorkspace();
+  }
+
+  Future<void> _persistSessionSnapshot() async {
+    try {
+      await _sessionStore.saveSession(_session);
+    } catch (_) {}
   }
 
   Future<MentorWorkspaceData> _loadWorkspace() async {
@@ -115,6 +122,7 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                     ),
                     ProfileAvatarButton(
                       user: _session.user,
+                      onLogout: _signOut,
                       onTap: _openProfile,
                     ),
                   ],

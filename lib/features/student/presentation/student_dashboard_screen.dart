@@ -76,8 +76,15 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   void initState() {
     super.initState();
     _session = widget.session;
+    _persistSessionSnapshot();
     _future = _loadData();
     _loadShownPopupKeys();
+  }
+
+  Future<void> _persistSessionSnapshot() async {
+    try {
+      await _sessionStore.saveSession(_session);
+    } catch (_) {}
   }
 
   @override
@@ -186,6 +193,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       subtitle: 'Tiny wins, clear missions, calm progress.',
                       onBack: () => Navigator.of(context).pop(),
                       user: _session.user,
+                      onLogout: _signOut,
                       onProfileTap: _openProfile,
                     ),
                     const SizedBox(height: AppSpacing.section),
@@ -1747,6 +1755,7 @@ class _ScreenHeader extends StatelessWidget {
     required this.subtitle,
     required this.onBack,
     required this.user,
+    required this.onLogout,
     required this.onProfileTap,
   });
 
@@ -1754,6 +1763,7 @@ class _ScreenHeader extends StatelessWidget {
   final String subtitle;
   final VoidCallback onBack;
   final AppUser user;
+  final VoidCallback onLogout;
   final VoidCallback onProfileTap;
 
   @override
@@ -1777,7 +1787,11 @@ class _ScreenHeader extends StatelessWidget {
             ],
           ),
         ),
-        ProfileAvatarButton(user: user, onTap: onProfileTap),
+        ProfileAvatarButton(
+          user: user,
+          onLogout: onLogout,
+          onTap: onProfileTap,
+        ),
       ],
     );
   }
