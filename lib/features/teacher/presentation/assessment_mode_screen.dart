@@ -1,13 +1,16 @@
 /**
  * WHAT:
  * assessment_mode_screen captures assessment-specific mission setup before the
- * teacher applies it back into the mission builder sheet.
+ * teacher applies it back into the mission builder sheet or imports a fixed
+ * 10-question assessment draft from a structured file.
  * WHY:
  * Assessment mode has fixed constraints (10 questions, hard difficulty, 50 XP)
- * and required task focus, so a focused screen prevents accidental mismatch.
+ * and required task focus, so a focused screen prevents accidental mismatch
+ * while still keeping AI drafting and direct file population as separate paths.
  * HOW:
  * Render fixed assessment settings, collect task focus selection, validate it,
- * and return the chosen task codes to the caller.
+ * upload source files through the existing backend extract/import endpoint, and
+ * return either raw source text or a populated mission draft to the caller.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -28,6 +31,7 @@ class AssessmentModeSelectionResult {
     this.taskScopedSourceText = '',
     this.sourceFileName = '',
     this.sourceFileType = '',
+    this.populatedMission,
   });
 
   final List<String> taskCodes;
@@ -37,6 +41,7 @@ class AssessmentModeSelectionResult {
   final String taskScopedSourceText;
   final String sourceFileName;
   final String sourceFileType;
+  final MissionPayload? populatedMission;
 }
 
 class _DateSlotOption {
@@ -69,7 +74,9 @@ class AssessmentModeScreen extends StatefulWidget {
     required this.currentTeacherId,
     required this.authToken,
     required this.subjectId,
+    required this.studentId,
     this.lockedTaskCodes = const [],
+    this.missionDraftId = '',
     this.api,
   });
 
@@ -84,7 +91,9 @@ class AssessmentModeScreen extends StatefulWidget {
   final String currentTeacherId;
   final String authToken;
   final String subjectId;
+  final String studentId;
   final List<String> lockedTaskCodes;
+  final String missionDraftId;
   final FocusMissionApi? api;
 
   @override
@@ -112,6 +121,7 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
   String _rawUploadedSourceText = '';
   bool _showFullRawUploadText = false;
   bool _isExtractingSource = false;
+  bool _isPopulatingDraft = false;
   String? _errorMessage;
   String? _sourceErrorMessage;
 
@@ -322,23 +332,72 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Upload a document or scan. The backend extracts text so you can preview task-specific sections or full raw upload text before applying assessment mode.',
+                        'Choose how to use the uploaded file. One path extracts source text for Groq to build the 10-question assessment. The other path imports a structured 10-question assessment draft directly without AI.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppPalette.textMuted,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _isExtractingSource
-                              ? null
-                              : _pickAndExtractSource,
-                          child: Text(
-                            _isExtractingSource
-                                ? 'Reading file and extracting text...'
-                                : 'Upload doc or scan',
-                          ),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final buttonWidth = constraints.maxWidth < 560
+                              ? constraints.maxWidth
+                              : (constraints.maxWidth - 12) / 2;
+
+                          return Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              SizedBox(
+                                width: buttonWidth,
+                                child: _SourceActionButton(
+                                  title: _isExtractingSource
+                                      ? 'Reading file...'
+                                      : 'AI draft',
+                                  subtitle:
+                                      'Extract lesson text first, then let Groq build the fixed 10-question assessment.',
+                                  icon: Icons.auto_awesome_rounded,
+                                  colors: AppPalette.teacherGradient,
+                                  active:
+                                      _isExtractingSource &&
+                                      !_isPopulatingDraft,
+                                  onPressed:
+                                      (_isExtractingSource ||
+                                          _isPopulatingDraft)
+                                      ? null
+                                      : _pickAndExtractSource,
+                                ),
+                              ),
+                              SizedBox(
+                                width: buttonWidth,
+                                child: _SourceActionButton(
+                                  title: _isPopulatingDraft
+                                      ? 'Importing...'
+                                      : 'Populate objective',
+                                  subtitle:
+                                      'Import a ready 10-question objective assessment directly from the file.',
+                                  icon: Icons.quiz_outlined,
+                                  colors: const [
+                                    AppPalette.primaryBlue,
+                                    AppPalette.aqua,
+                                  ],
+                                  active: _isPopulatingDraft,
+                                  onPressed:
+                                      (_isExtractingSource ||
+                                          _isPopulatingDraft)
+                                      ? null
+                                      : _pickAndPopulateAssessmentDraft,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Populate draft only succeeds when the file already contains a structured 10-question objective assessment with unit text, options, and correct answers.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.textMuted,
                         ),
                       ),
                       if (_uploadedSource != null) ...[
@@ -543,6 +602,122 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
     }
   }
 
+  Future<void> _pickAndPopulateAssessmentDraft() async {
+    if (_selectedDateOption == null) {
+      setState(() {
+        _sourceErrorMessage =
+            'Select a timetable date first so the imported assessment uses the correct lesson slot.';
+      });
+      return;
+    }
+
+    if (_selectedTaskCodes.isEmpty) {
+      setState(() {
+        _sourceErrorMessage =
+            'Select at least one task focus before importing an assessment draft.';
+      });
+      return;
+    }
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        withData: true,
+        type: FileType.custom,
+        allowedExtensions: _allowedSourceExtensions,
+      );
+
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+
+      final selected = result.files.single;
+      final bytes = selected.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception(
+          'The selected file could not be read. Try selecting the file again.',
+        );
+      }
+
+      setState(() {
+        _isPopulatingDraft = true;
+        _sourceErrorMessage = null;
+      });
+
+      final extracted = await _api.uploadTeacherSourceDraft(
+        token: widget.authToken,
+        subjectId: widget.subjectId,
+        sessionType: _selectedDateOption!.sessionType,
+        fileBytes: bytes,
+        fileName: selected.name,
+        uploadMode: 'populate_draft',
+        studentId: widget.studentId,
+        targetDate: _dateKey(_selectedDateOption!.date),
+        missionDraftId: widget.missionDraftId,
+        draftFormat: 'QUESTIONS',
+        difficulty: 'hard',
+        questionCount: 10,
+        taskCodes: _selectedTaskCodes,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final prefilledMission = extracted.prefilledMission;
+      final importedQuestionCount =
+          prefilledMission?.questions.length ?? prefilledMission?.questionCount ?? 0;
+
+      setState(() {
+        _uploadedSource = extracted;
+        _rawUploadedSourceText = extracted.extractedText.trim();
+      });
+
+      if (prefilledMission == null) {
+        setState(() {
+          _sourceErrorMessage = extracted.draftReadiness.summary;
+        });
+        return;
+      }
+
+      if (importedQuestionCount != 10) {
+        setState(() {
+          _sourceErrorMessage =
+              'Assessment populate only accepts files with exactly 10 imported objective questions.';
+        });
+        return;
+      }
+
+      Navigator.of(context).pop(
+        AssessmentModeSelectionResult(
+          taskCodes: _selectedTaskCodes,
+          targetDate: _selectedDateOption!.date,
+          sessionType: _selectedDateOption!.sessionType,
+          sourceRawText: extracted.extractedText.trim(),
+          taskScopedSourceText: _extractTaskScopedTextFromSource(
+            sourceText: extracted.extractedText,
+            taskCodes: _selectedTaskCodes,
+          ).trim(),
+          sourceFileName: extracted.fileName,
+          sourceFileType: extracted.mimeType,
+          populatedMission: prefilledMission,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _sourceErrorMessage = error.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPopulatingDraft = false;
+        });
+      }
+    }
+  }
+
   _DateSlotOption? _resolveInitialDateOption() {
     if (_availableDateOptions.isEmpty) {
       return null;
@@ -565,6 +740,13 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
     }
 
     return _availableDateOptions.first;
+  }
+
+  String _dateKey(DateTime date) {
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 
   List<_DateSlotOption> _buildAvailableDateOptions({
@@ -852,6 +1034,129 @@ class _InfoPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+    );
+  }
+}
+
+class _SourceActionButton extends StatelessWidget {
+  const _SourceActionButton({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.colors,
+    required this.active,
+    required this.onPressed,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> colors;
+  final bool active;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(24),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          constraints: const BoxConstraints(minHeight: 92),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: enabled
+                ? LinearGradient(
+                    colors: active
+                        ? colors
+                        : [
+                            Colors.white.withValues(alpha: 0.9),
+                            Colors.white.withValues(alpha: 0.78),
+                          ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : LinearGradient(
+                    colors: [
+                      AppPalette.sky.withValues(alpha: 0.28),
+                      Colors.white.withValues(alpha: 0.7),
+                    ],
+                  ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: active
+                  ? colors.first.withValues(alpha: 0.44)
+                  : AppPalette.sky.withValues(alpha: 0.32),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: (active ? colors.first : AppPalette.primaryBlue)
+                    .withValues(alpha: enabled ? 0.14 : 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: active
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : AppPalette.sky.withValues(alpha: enabled ? 0.24 : 0.16),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  icon,
+                  color: active
+                      ? Colors.white
+                      : enabled
+                      ? AppPalette.navy
+                      : AppPalette.textMuted,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: active
+                            ? Colors.white
+                            : enabled
+                            ? AppPalette.navy
+                            : AppPalette.textMuted,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: active
+                            ? Colors.white.withValues(alpha: 0.92)
+                            : AppPalette.textMuted,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -134,6 +134,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   String _rawUploadedSourceText = '';
   String _selectedSourceFileName = '';
   String _selectedSourceFileType = '';
+  String? _pendingPopulateDraftFormat;
   MissionPayload? _draftMission;
   UploadedSourceDraft? _uploadedSource;
   MissionSourceReadiness? _sourceUploadReadiness;
@@ -149,6 +150,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   bool get _isAssessmentPublishLocked =>
       _isAssessmentMode && _selectedTaskCodes.isEmpty;
   bool get _isTheoryDraft => _draftFormat == 'THEORY';
+  bool get _isEssayDraft => _draftFormat == 'ESSAY_BUILDER';
   bool get _isCertificationQualifyingFormat =>
       _draftFormat == 'ESSAY_BUILDER' ||
       _draftFormat == 'THEORY' ||
@@ -924,9 +926,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         Text('Source file', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
-          _isTheoryDraft
-              ? 'Choose how to use the uploaded file. One path sends the extracted lesson text to Groq to draft a theory check for you. The other path tries to populate the draft directly from the uploaded source.'
-              : 'Choose how to use the uploaded file. One path sends the extracted lesson text to Groq to draft the mission for you. The other path tries to populate the draft directly from the uploaded source questions and unit text.',
+          'Choose one path for this upload. You can send lesson text to Groq for drafting, or import a structured file directly into Objective, Theory, or Essay format.',
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
@@ -934,49 +934,108 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         const SizedBox(height: 12),
         LayoutBuilder(
           builder: (context, constraints) {
-            final stackButtons = constraints.maxWidth < 720;
-            final aiDraftButton = GradientButton(
-              label: _isUploadingForAiDraft
-                  ? 'Uploading for AI draft...'
-                  : 'Upload file for AI draft',
-              colors: AppPalette.teacherGradient,
-              onPressed: _isExtractingSource || _isTargetDateInPast
-                  ? () {}
-                  : () => _pickAndExtractSource(_SourceUploadMode.aiDraft),
-            );
-            final populateButton = GradientButton(
-              label: _isPopulatingDraftFromSource
-                  ? 'Populating draft from file...'
-                  : 'Populate draft from PDF',
-              colors: const [AppPalette.primaryBlue, AppPalette.aqua],
-              onPressed: _isExtractingSource || _isTargetDateInPast
-                  ? () {}
-                  : () =>
-                        _pickAndExtractSource(_SourceUploadMode.populateDraft),
-            );
+            final buttonWidth = constraints.maxWidth < 560
+                ? constraints.maxWidth
+                : constraints.maxWidth < 980
+                ? (constraints.maxWidth - 12) / 2
+                : (constraints.maxWidth - 24) / 3;
 
-            if (stackButtons) {
-              return Column(
-                children: [
-                  aiDraftButton,
-                  const SizedBox(height: 10),
-                  populateButton,
-                ],
-              );
-            }
-
-            return Row(
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
               children: [
-                Expanded(child: aiDraftButton),
-                const SizedBox(width: 10),
-                Expanded(child: populateButton),
+                SizedBox(
+                  width: buttonWidth,
+                  child: _SourceActionButton(
+                    title: _isUploadingForAiDraft
+                        ? 'Reading file...'
+                        : 'AI draft',
+                    subtitle: _isEssayDraft
+                        ? 'Send lesson text to Groq for essay drafting.'
+                        : _isTheoryDraft
+                        ? 'Send lesson text to Groq for theory drafting.'
+                        : 'Send lesson text to Groq for mission drafting.',
+                    icon: Icons.auto_awesome_rounded,
+                    colors: AppPalette.teacherGradient,
+                    active: _activeSourceUploadMode == _SourceUploadMode.aiDraft,
+                    onPressed: _isExtractingSource || _isTargetDateInPast
+                        ? null
+                        : () => _pickAndExtractSource(_SourceUploadMode.aiDraft),
+                  ),
+                ),
+                SizedBox(
+                  width: buttonWidth,
+                  child: _SourceActionButton(
+                    title: _isPopulatingDraftFromSource
+                        ? 'Importing...'
+                        : 'Populate objective',
+                    subtitle:
+                        'Import structured A/B/C/D questions and unit text.',
+                    icon: Icons.quiz_outlined,
+                    colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+                    active:
+                        _activeSourceUploadMode == _SourceUploadMode.populateDraft &&
+                        (_pendingPopulateDraftFormat ?? _draftFormat) ==
+                            'QUESTIONS',
+                    onPressed: _isExtractingSource || _isTargetDateInPast
+                        ? null
+                        : () => _pickAndExtractSource(
+                              _SourceUploadMode.populateDraft,
+                              draftFormatOverride: 'QUESTIONS',
+                            ),
+                  ),
+                ),
+                SizedBox(
+                  width: buttonWidth,
+                  child: _SourceActionButton(
+                    title: _isPopulatingDraftFromSource
+                        ? 'Importing...'
+                        : 'Populate theory',
+                    subtitle:
+                        'Import short-answer theory prompts and expected answers.',
+                    icon: Icons.short_text_rounded,
+                    colors: const [AppPalette.mint, AppPalette.aqua],
+                    active:
+                        _activeSourceUploadMode == _SourceUploadMode.populateDraft &&
+                        (_pendingPopulateDraftFormat ?? _draftFormat) ==
+                            'THEORY',
+                    onPressed: _isExtractingSource || _isTargetDateInPast
+                        ? null
+                        : () => _pickAndExtractSource(
+                              _SourceUploadMode.populateDraft,
+                              draftFormatOverride: 'THEORY',
+                            ),
+                  ),
+                ),
+                SizedBox(
+                  width: buttonWidth,
+                  child: _SourceActionButton(
+                    title: _isPopulatingDraftFromSource
+                        ? 'Importing...'
+                        : 'Populate essay',
+                    subtitle:
+                        'Import sentence previews, blanks, and correct options.',
+                    icon: Icons.edit_note_rounded,
+                    colors: const [AppPalette.sun, AppPalette.orange],
+                    active:
+                        _activeSourceUploadMode == _SourceUploadMode.populateDraft &&
+                        (_pendingPopulateDraftFormat ?? _draftFormat) ==
+                            'ESSAY_BUILDER',
+                    onPressed: _isExtractingSource || _isTargetDateInPast
+                        ? null
+                        : () => _pickAndExtractSource(
+                              _SourceUploadMode.populateDraft,
+                              draftFormatOverride: 'ESSAY_BUILDER',
+                            ),
+                  ),
+                ),
               ],
             );
           },
         ),
         const SizedBox(height: 8),
         Text(
-          'Upload file for AI draft extracts the lesson text and asks Groq to build the draft. Populate draft from PDF copies the detected questions, unit text, and draft fields directly when the file is structured enough.',
+          'Objective, Theory, and Essay imports stay file-only. They do not call Groq, rewrite wording, or fill missing sections automatically.',
           style: Theme.of(
             context,
           ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -3455,8 +3514,19 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     return null;
   }
 
-  Future<void> _pickAndExtractSource(_SourceUploadMode mode) async {
+  Future<void> _pickAndExtractSource(
+    _SourceUploadMode mode, {
+    String? draftFormatOverride,
+  }) async {
     try {
+      final resolvedDraftFormat =
+          (draftFormatOverride ?? _draftFormat).trim().toUpperCase();
+      final resolvedEssayMode =
+          resolvedDraftFormat == 'ESSAY_BUILDER' ? _essayMode : '';
+      final resolvedQuestionCount = _normalizedQuestionCountForDraftFormat(
+        _questionCount,
+        draftFormat: resolvedDraftFormat,
+      );
       final hadDraftBeforeUpload = _draftMission != null;
       final result = await FilePicker.platform.pickFiles(
         withData: true,
@@ -3489,6 +3559,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       setState(() {
         _isExtractingSource = true;
         _activeSourceUploadMode = mode;
+        _pendingPopulateDraftFormat =
+            mode == _SourceUploadMode.populateDraft
+            ? resolvedDraftFormat
+            : null;
         _errorMessage = null;
         _sourceUploadReadiness = null;
       });
@@ -3505,10 +3579,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             ? 'populate_draft'
             : 'ai_draft',
         title: _titleController.text.trim(),
-        draftFormat: _draftFormat,
-        essayMode: _draftFormat == 'ESSAY_BUILDER' ? _essayMode : '',
+        draftFormat: resolvedDraftFormat,
+        essayMode: resolvedEssayMode,
         difficulty: _effectiveDifficulty,
-        questionCount: _questionCount,
+        questionCount: resolvedQuestionCount,
         taskCodes: _selectedTaskCodes,
         missionDraftId: _draftMission?.id ?? '',
       );
@@ -3526,35 +3600,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         final hasAppliedTaskScope = mode == _SourceUploadMode.aiDraft
             ? _applyTaskFocusedUnitTextFromSource(_selectedTaskCodes)
             : false;
-        final uploadedPrefilledMission = extracted.prefilledMission;
-        final prefilledMission =
-            uploadedPrefilledMission != null &&
-                uploadedPrefilledMission.id.isEmpty &&
-                _draftMission != null
-            ? _draftMission!.copyWith(
-                title: uploadedPrefilledMission.title,
-                teacherNote: uploadedPrefilledMission.teacherNote,
-                sourceUnitText: uploadedPrefilledMission.sourceUnitText,
-                sourceRawText: uploadedPrefilledMission.sourceRawText,
-                sourceFileName: uploadedPrefilledMission.sourceFileName,
-                sourceFileType: uploadedPrefilledMission.sourceFileType,
-                draftFormat: uploadedPrefilledMission.draftFormat,
-                essayMode: uploadedPrefilledMission.essayMode,
-                draftJson: uploadedPrefilledMission.draftJson,
-                source: uploadedPrefilledMission.source,
-                status: uploadedPrefilledMission.status,
-                sessionType: uploadedPrefilledMission.sessionType,
-                difficulty: uploadedPrefilledMission.difficulty,
-                taskCodes: uploadedPrefilledMission.taskCodes,
-                xpReward: uploadedPrefilledMission.xpReward,
-                questionCount: uploadedPrefilledMission.questionCount,
-                aiModel: uploadedPrefilledMission.aiModel,
-                availableOnDate: uploadedPrefilledMission.availableOnDate,
-                availableOnDay: uploadedPrefilledMission.availableOnDay,
-                subject: uploadedPrefilledMission.subject,
-                questions: uploadedPrefilledMission.questions,
-              )
-            : uploadedPrefilledMission;
+        final prefilledMission = _mergeImportedPrefilledMission(
+          extracted.prefilledMission,
+        );
 
         if (mode == _SourceUploadMode.populateDraft &&
             prefilledMission != null) {
@@ -3607,7 +3655,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       if (mode == _SourceUploadMode.aiDraft && !canDraftWithAi && mounted) {
         setState(() {
           _errorMessage =
-              'The upload was saved, but there is not enough lesson text yet for Groq to draft from it. Add more source detail or use Populate draft from PDF if the file already contains the questions.';
+              'The upload was saved, but there is not enough lesson text yet for Groq to draft from it. Add more source detail or use one of the Populate import buttons if the file already contains the draft.';
         });
       }
     } catch (error) {
@@ -3624,6 +3672,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         setState(() {
           _isExtractingSource = false;
           _activeSourceUploadMode = null;
+          _pendingPopulateDraftFormat = null;
         });
       }
     }
@@ -4086,12 +4135,51 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     }
   }
 
+  MissionPayload? _mergeImportedPrefilledMission(
+    MissionPayload? uploadedPrefilledMission,
+  ) {
+    if (uploadedPrefilledMission == null) {
+      return null;
+    }
+
+    if (uploadedPrefilledMission.id.isNotEmpty || _draftMission == null) {
+      return uploadedPrefilledMission;
+    }
+
+    // WHY: Import previews for existing drafts do not persist immediately, so
+    // the current draft id must stay attached until the teacher saves.
+    return _draftMission!.copyWith(
+      title: uploadedPrefilledMission.title,
+      teacherNote: uploadedPrefilledMission.teacherNote,
+      sourceUnitText: uploadedPrefilledMission.sourceUnitText,
+      sourceRawText: uploadedPrefilledMission.sourceRawText,
+      sourceFileName: uploadedPrefilledMission.sourceFileName,
+      sourceFileType: uploadedPrefilledMission.sourceFileType,
+      draftFormat: uploadedPrefilledMission.draftFormat,
+      essayMode: uploadedPrefilledMission.essayMode,
+      draftJson: uploadedPrefilledMission.draftJson,
+      source: uploadedPrefilledMission.source,
+      status: uploadedPrefilledMission.status,
+      sessionType: uploadedPrefilledMission.sessionType,
+      difficulty: uploadedPrefilledMission.difficulty,
+      taskCodes: uploadedPrefilledMission.taskCodes,
+      xpReward: uploadedPrefilledMission.xpReward,
+      questionCount: uploadedPrefilledMission.questionCount,
+      aiModel: uploadedPrefilledMission.aiModel,
+      availableOnDate: uploadedPrefilledMission.availableOnDate,
+      availableOnDay: uploadedPrefilledMission.availableOnDay,
+      subject: uploadedPrefilledMission.subject,
+      questions: uploadedPrefilledMission.questions,
+    );
+  }
+
   Future<void> _openAssessmentModeScreen() async {
     final result = await Navigator.of(context)
         .push<AssessmentModeSelectionResult>(
           MaterialPageRoute(
             builder: (_) => AssessmentModeScreen(
               studentName: widget.student.name,
+              studentId: widget.student.id,
               subjectName: widget.subject.name,
               sessionType: _selectedSessionType,
               targetDateLabel: _formatTargetDate(_resolvedTargetDate),
@@ -4102,6 +4190,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               currentTeacherId: widget.session.user.id,
               authToken: widget.session.token,
               subjectId: widget.subject.id,
+              missionDraftId: _draftMission?.id ?? '',
               api: widget.api,
               lockedTaskCodes: widget.lockedAssessmentTaskCodes,
             ),
@@ -4109,6 +4198,26 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         );
 
     if (!mounted || result == null) {
+      return;
+    }
+
+    final prefilledMission = _mergeImportedPrefilledMission(
+      result.populatedMission,
+    );
+
+    if (prefilledMission != null) {
+      setState(() {
+        _selectedSessionType = result.sessionType;
+        _selectedTargetDate = _dateOnly(result.targetDate);
+        _difficulty = 'hard';
+        _selectedTaskCodes = result.taskCodes;
+        _uploadedSource = null;
+        _sourceUploadReadiness = null;
+        _activeSourceUploadMode = _SourceUploadMode.populateDraft;
+        _errorMessage = null;
+        _applyDraft(prefilledMission);
+        _createdDraftThisSession = true;
+      });
       return;
     }
 
@@ -5447,6 +5556,129 @@ class _CountChip extends StatelessWidget {
           label,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
             color: selected ? Colors.white : AppPalette.navy,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SourceActionButton extends StatelessWidget {
+  const _SourceActionButton({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.colors,
+    required this.active,
+    required this.onPressed,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> colors;
+  final bool active;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(24),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          constraints: const BoxConstraints(minHeight: 92),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: enabled
+                ? LinearGradient(
+                    colors: active
+                        ? colors
+                        : [
+                            Colors.white.withValues(alpha: 0.88),
+                            Colors.white.withValues(alpha: 0.74),
+                          ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : LinearGradient(
+                    colors: [
+                      AppPalette.sky.withValues(alpha: 0.28),
+                      Colors.white.withValues(alpha: 0.68),
+                    ],
+                  ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: active
+                  ? colors.first.withValues(alpha: 0.44)
+                  : AppPalette.sky.withValues(alpha: 0.32),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: (active ? colors.first : AppPalette.primaryBlue)
+                    .withValues(alpha: enabled ? 0.14 : 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: active
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : AppPalette.sky.withValues(alpha: enabled ? 0.24 : 0.16),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  icon,
+                  color: active
+                      ? Colors.white
+                      : enabled
+                      ? AppPalette.navy
+                      : AppPalette.textMuted,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: active
+                            ? Colors.white
+                            : enabled
+                            ? AppPalette.navy
+                            : AppPalette.textMuted,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: active
+                            ? Colors.white.withValues(alpha: 0.92)
+                            : AppPalette.textMuted,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
