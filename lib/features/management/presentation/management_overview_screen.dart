@@ -191,7 +191,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       _api.fetchManagementStudents(token: _session.token, status: 'archived'),
     ]);
     final recentResults = responses[0] as List<ResultHistoryItem>;
-    final targets = responses[1] as List<TargetSummary>;
+    final targetHistory = responses[1] as ManagementTargetHistory;
     final certifications = responses[2] as List<SubjectCertificationSummary>;
     final certificationSubjects =
         responses[3] as List<SubjectCertificationSettings>;
@@ -214,14 +214,15 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     if (!resultDateFilters.contains(_selectedResultDate)) {
       _selectedResultDate = _allResultDatesFilterLabel;
     }
-    final targetDateFilters = _buildTargetDateFilters(targets);
+    final targetDateFilters = _buildTargetDateFilters(targetHistory.targets);
     if (!targetDateFilters.contains(_selectedTargetDate)) {
       _selectedTargetDate = _allTargetDatesFilterLabel;
     }
     return _ManagementScreenData(
       workspace: workspace,
       recentResults: recentResults,
-      targets: targets,
+      targets: targetHistory.targets,
+      targetSessionComments: targetHistory.sessionComments,
       certifications: certifications,
       certificationSubjects: certificationSubjects,
       teachers: teachers,
@@ -803,6 +804,98 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         .toList(growable: false);
   }
 
+  List<ManagementTargetSessionComment> _filterTargetSessionComments(
+    List<ManagementTargetSessionComment> sessionComments, {
+    required List<TargetSummary> targets,
+  }) {
+    final targetDateKeys = targets
+        .map((target) => target.awardDateKey.trim())
+        .where((dateKey) => dateKey.isNotEmpty)
+        .toSet();
+
+    if (targetDateKeys.isEmpty) {
+      return const <ManagementTargetSessionComment>[];
+    }
+
+    final filtered = sessionComments
+        .where((comment) => targetDateKeys.contains(comment.dateKey.trim()))
+        .toList(growable: false);
+
+    filtered.sort((left, right) {
+      final dateCompare = right.dateKey.compareTo(left.dateKey);
+      if (dateCompare != 0) {
+        return dateCompare;
+      }
+      final sessionCompare = _managementSessionTypeOrder(
+        left.sessionType,
+      ).compareTo(_managementSessionTypeOrder(right.sessionType));
+      if (sessionCompare != 0) {
+        return sessionCompare;
+      }
+      return left.subjectName.compareTo(right.subjectName);
+    });
+
+    return filtered;
+  }
+
+  List<_ManagementTargetDateSection> _buildTargetDateSections({
+    required List<TargetSummary> filteredTargets,
+    required List<ManagementTargetSessionComment> sessionComments,
+  }) {
+    final groupedTargets = <String, List<TargetSummary>>{};
+    for (final target in filteredTargets) {
+      final dateKey = target.awardDateKey.trim().isEmpty
+          ? 'No date'
+          : target.awardDateKey.trim();
+      groupedTargets.putIfAbsent(dateKey, () => <TargetSummary>[]).add(target);
+    }
+
+    final groupedComments = <String, List<ManagementTargetSessionComment>>{};
+    for (final comment in sessionComments) {
+      final dateKey = comment.dateKey.trim().isEmpty
+          ? 'No date'
+          : comment.dateKey.trim();
+      groupedComments
+          .putIfAbsent(dateKey, () => <ManagementTargetSessionComment>[])
+          .add(comment);
+    }
+
+    final sortedDateKeys = groupedTargets.keys.toList(growable: false)
+      ..sort((left, right) {
+        if (left == 'No date') {
+          return 1;
+        }
+        if (right == 'No date') {
+          return -1;
+        }
+        return right.compareTo(left);
+      });
+
+    return sortedDateKeys
+        .map((dateKey) {
+          final targetsForDate =
+              [...(groupedTargets[dateKey] ?? const <TargetSummary>[])]
+                ..sort((left, right) {
+                  final typeCompare = _managementTargetTypeLabel(
+                    left,
+                  ).compareTo(_managementTargetTypeLabel(right));
+                  if (typeCompare != 0) {
+                    return typeCompare;
+                  }
+                  return left.title.compareTo(right.title);
+                });
+
+          return _ManagementTargetDateSection(
+            dateKey: dateKey,
+            targets: targetsForDate,
+            sessionComments:
+                groupedComments[dateKey] ??
+                const <ManagementTargetSessionComment>[],
+          );
+        })
+        .toList(growable: false);
+  }
+
   String _buildStudentTargetsSummary({
     required List<TargetSummary> filteredTargets,
     required String selectedDate,
@@ -863,6 +956,14 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           final filteredTargets = _filterTargets(
             data.targets,
             dateKey: selectedTargetDate,
+          );
+          final filteredTargetSessionComments = _filterTargetSessionComments(
+            data.targetSessionComments,
+            targets: filteredTargets,
+          );
+          final targetDateSections = _buildTargetDateSections(
+            filteredTargets: filteredTargets,
+            sessionComments: filteredTargetSessionComments,
           );
           final certificationFilters = _buildCertificationFilters(
             data.certifications,
@@ -1112,6 +1213,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                                 student:
                                                     workspace.selectedStudent,
                                                 targets: filteredTargets,
+                                                sessionComments:
+                                                    filteredTargetSessionComments,
                                               ),
                                         icon: Icon(
                                           _isDownloadingTargets
@@ -1190,23 +1293,118 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                       ),
                                     )
                                   else
-                                    ...filteredTargets.map(
-                                      (target) => Padding(
+                                    ...targetDateSections.map(
+                                      (section) => Padding(
                                         padding: const EdgeInsets.only(
                                           bottom: AppSpacing.compact,
                                         ),
-                                        child: _ManagementTargetCard(
-                                          target: target,
-                                          isDownloading:
-                                              _downloadingTargetId == target.id,
-                                          onDownload:
-                                              _isAnyManagementDownloadActive
-                                              ? null
-                                              : () => _downloadTargetResult(
-                                                  student:
-                                                      workspace.selectedStudent,
-                                                  target: target,
+                                        child: Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(
+                                            AppSpacing.item,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppPalette.surface
+                                                .withValues(alpha: 0.96),
+                                            borderRadius: BorderRadius.circular(
+                                              AppSpacing.radiusLg,
+                                            ),
+                                            border: Border.all(
+                                              color: AppPalette.sky.withValues(
+                                                alpha: 0.68,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      section.dateKey,
+                                                      style: Theme.of(
+                                                        context,
+                                                      ).textTheme.titleSmall,
+                                                    ),
+                                                  ),
+                                                  _ManagementMiniPill(
+                                                    label:
+                                                        '${section.targets.length} target${section.targets.length == 1 ? '' : 's'}',
+                                                    backgroundColor: AppPalette
+                                                        .sky
+                                                        .withValues(
+                                                          alpha: 0.16,
+                                                        ),
+                                                  ),
+                                                ],
+                                              ),
+                                              if (section
+                                                  .sessionComments
+                                                  .isNotEmpty) ...[
+                                                const SizedBox(
+                                                  height: AppSpacing.compact,
                                                 ),
+                                                Text(
+                                                  'Teacher session comments',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        color: AppPalette
+                                                            .textMuted,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 10),
+                                                ...section.sessionComments.map(
+                                                  (comment) => Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          bottom: 10,
+                                                        ),
+                                                    child:
+                                                        _ManagementTargetSessionCommentCard(
+                                                          comment: comment,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ],
+                                              if (section
+                                                  .sessionComments
+                                                  .isNotEmpty)
+                                                const SizedBox(
+                                                  height: AppSpacing.compact,
+                                                ),
+                                              ...section.targets.map(
+                                                (target) => Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        bottom:
+                                                            AppSpacing.compact,
+                                                      ),
+                                                  child: _ManagementTargetCard(
+                                                    target: target,
+                                                    isDownloading:
+                                                        _downloadingTargetId ==
+                                                        target.id,
+                                                    onDownload:
+                                                        _isAnyManagementDownloadActive
+                                                        ? null
+                                                        : () => _downloadTargetResult(
+                                                            student: workspace
+                                                                .selectedStudent,
+                                                            target: target,
+                                                            sessionComments: section
+                                                                .sessionComments,
+                                                          ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -2741,6 +2939,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   Future<void> _downloadFilteredTargets({
     required StudentSummary student,
     required List<TargetSummary> targets,
+    required List<ManagementTargetSessionComment> sessionComments,
   }) async {
     if (_isAnyManagementDownloadActive || targets.isEmpty) {
       return;
@@ -2753,6 +2952,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         content: _buildManagementTargetsHtml(
           student: student,
           targets: targets,
+          sessionComments: sessionComments,
         ),
         mimeType: 'text/html;charset=utf-8',
       );
@@ -2787,6 +2987,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   Future<void> _downloadTargetResult({
     required StudentSummary student,
     required TargetSummary target,
+    required List<ManagementTargetSessionComment> sessionComments,
   }) async {
     if (_isAnyManagementDownloadActive) {
       return;
@@ -2802,6 +3003,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         content: _buildManagementTargetsHtml(
           student: student,
           targets: [target],
+          sessionComments: sessionComments,
         ),
         mimeType: 'text/html;charset=utf-8',
       );
@@ -3080,6 +3282,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   String _buildManagementTargetsHtml({
     required StudentSummary student,
     required List<TargetSummary> targets,
+    required List<ManagementTargetSessionComment> sessionComments,
   }) {
     final sortedTargets = [...targets]
       ..sort((left, right) {
@@ -3160,18 +3363,61 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       groupedByDate.putIfAbsent(dateKey, () => <TargetSummary>[]).add(target);
     }
 
+    final groupedCommentsByDate =
+        <String, List<ManagementTargetSessionComment>>{};
+    for (final comment in sessionComments) {
+      final dateKey = comment.dateKey.trim().isEmpty
+          ? 'No date'
+          : comment.dateKey.trim();
+      groupedCommentsByDate
+          .putIfAbsent(dateKey, () => <ManagementTargetSessionComment>[])
+          .add(comment);
+    }
+
     for (final entry in groupedByDate.entries) {
       final targetsForDate = entry.value;
       final dateXp = targetsForDate.fold<int>(
         0,
         (total, target) => total + target.xpAwarded,
       );
+      final sessionCommentsForDate =
+          groupedCommentsByDate[entry.key] ??
+          const <ManagementTargetSessionComment>[];
       buffer
         ..writeln('<section class="date-group">')
         ..writeln('<h2>${_escapeManagementHtml(entry.key)}</h2>')
         ..writeln(
           '<p class="hero-summary">${targetsForDate.length} target${targetsForDate.length == 1 ? '' : 's'} · $dateXp XP</p>',
         );
+      if (sessionCommentsForDate.isNotEmpty) {
+        buffer.writeln(
+          '<p class="meta-label" style="margin: 0 0 12px;">Teacher session comments</p>',
+        );
+        for (final comment in sessionCommentsForDate) {
+          final subjectName = comment.subjectName.trim().isEmpty
+              ? 'Session'
+              : comment.subjectName.trim();
+          final teacherName = comment.teacherName.trim();
+          final commentLabel = teacherName.isEmpty
+              ? '$subjectName · ${_managementSessionTypeLabel(comment.sessionType)}'
+              : '$subjectName · ${_managementSessionTypeLabel(comment.sessionType)} · $teacherName';
+          buffer
+            ..writeln('<article class="result-card">')
+            ..writeln('<div class="result-header">')
+            ..writeln('<div>')
+            ..writeln('<h4>${_escapeManagementHtml(subjectName)}</h4>')
+            ..writeln(
+              '<p class="result-subtitle">${_escapeManagementHtml(commentLabel)}</p>',
+            )
+            ..writeln('</div>')
+            ..writeln(
+              '<span class="result-pill">${_escapeManagementHtml(_managementSessionTypeLabel(comment.sessionType))}</span>',
+            )
+            ..writeln('</div>')
+            ..writeln('<p>${_escapeManagementHtml(comment.comment)}</p>')
+            ..writeln('</article>');
+        }
+      }
       for (final target in targetsForDate) {
         final description = target.description.trim();
         buffer
@@ -3188,6 +3434,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           )
           ..writeln('</div>');
         if (description.isNotEmpty) {
+          buffer.writeln(
+            '<p class="meta-label">${_escapeManagementHtml(_managementTargetCommentLabel(target))}</p>',
+          );
           buffer.writeln('<p>${_escapeManagementHtml(description)}</p>');
         }
         buffer
@@ -4023,6 +4272,42 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return _managementTitleCase(target.status.replaceAll('_', ' '));
   }
 
+  String _managementTargetCommentLabel(TargetSummary target) {
+    final createdByRole = target.createdByRole.trim().toLowerCase();
+    if (createdByRole == 'mentor') {
+      return 'Learning mentor comment';
+    }
+    if (createdByRole == 'teacher') {
+      return 'Teacher target note';
+    }
+    if (target.isFixedTarget) {
+      return 'Target detail';
+    }
+    return 'Support note';
+  }
+
+  int _managementSessionTypeOrder(String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'morning':
+        return 0;
+      case 'afternoon':
+        return 1;
+      default:
+        return 2;
+    }
+  }
+
+  String _managementSessionTypeLabel(String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'morning':
+        return 'Morning session';
+      case 'afternoon':
+        return 'Afternoon session';
+      default:
+        return _managementTitleCase(value);
+    }
+  }
+
   String _managementTitleCase(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) {
@@ -4495,6 +4780,18 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   }
 }
 
+class _ManagementTargetDateSection {
+  const _ManagementTargetDateSection({
+    required this.dateKey,
+    required this.targets,
+    required this.sessionComments,
+  });
+
+  final String dateKey;
+  final List<TargetSummary> targets;
+  final List<ManagementTargetSessionComment> sessionComments;
+}
+
 class _ManagementCertificationCard extends StatelessWidget {
   const _ManagementCertificationCard({
     required this.certification,
@@ -4726,6 +5023,7 @@ class _ManagementScreenData {
     required this.workspace,
     required this.recentResults,
     required this.targets,
+    required this.targetSessionComments,
     required this.certifications,
     required this.certificationSubjects,
     required this.teachers,
@@ -4735,6 +5033,7 @@ class _ManagementScreenData {
   final MentorWorkspaceData workspace;
   final List<ResultHistoryItem> recentResults;
   final List<TargetSummary> targets;
+  final List<ManagementTargetSessionComment> targetSessionComments;
   final List<SubjectCertificationSummary> certifications;
   final List<SubjectCertificationSettings> certificationSubjects;
   final List<TeacherSummary> teachers;
@@ -5632,12 +5931,23 @@ class _ManagementTargetCard extends StatelessWidget {
         .join(' ');
   }
 
+  String _commentLabel() {
+    final createdByRole = target.createdByRole.trim().toLowerCase();
+    if (createdByRole == 'mentor') {
+      return 'Learning mentor comment';
+    }
+    if (createdByRole == 'teacher') {
+      return 'Teacher target note';
+    }
+    if (target.isFixedTarget) {
+      return 'Target detail';
+    }
+    return 'Support note';
+  }
+
   @override
   Widget build(BuildContext context) {
     final description = target.description.trim();
-    final dateLabel = target.awardDateKey.trim().isEmpty
-        ? 'No date'
-        : target.awardDateKey.trim();
     final difficulty = target.difficulty.trim().isEmpty
         ? 'Not set'
         : '${target.difficulty[0].toUpperCase()}${target.difficulty.substring(1).toLowerCase()}';
@@ -5653,77 +5963,45 @@ class _ManagementTargetCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Text(
+            target.title.trim().isEmpty
+                ? 'Untitled target'
+                : target.title.trim(),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      target.title.trim().isEmpty
-                          ? 'Untitled target'
-                          : target.title.trim(),
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _ManagementMiniPill(
-                          label: _targetTypeLabel(),
-                          backgroundColor: AppPalette.sky.withValues(
-                            alpha: 0.2,
-                          ),
-                        ),
-                        _ManagementMiniPill(
-                          label: _statusLabel(),
-                          backgroundColor: AppPalette.sun.withValues(
-                            alpha: 0.18,
-                          ),
-                        ),
-                        _ManagementMiniPill(
-                          label: '${target.stars}/3 stars',
-                          backgroundColor: AppPalette.mint.withValues(
-                            alpha: 0.16,
-                          ),
-                        ),
-                        _ManagementMiniPill(
-                          label: '${target.xpAwarded} XP',
-                          backgroundColor: AppPalette.primaryBlue.withValues(
-                            alpha: 0.12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              _ManagementMiniPill(
+                label: _targetTypeLabel(),
+                backgroundColor: AppPalette.sky.withValues(alpha: 0.2),
               ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: AppPalette.surface.withValues(alpha: 0.96),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: AppPalette.sky.withValues(alpha: 0.68),
-                  ),
-                ),
-                child: Text(
-                  dateLabel,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
-                ),
+              _ManagementMiniPill(
+                label: _statusLabel(),
+                backgroundColor: AppPalette.sun.withValues(alpha: 0.18),
+              ),
+              _ManagementMiniPill(
+                label: '${target.stars}/3 stars',
+                backgroundColor: AppPalette.mint.withValues(alpha: 0.16),
+              ),
+              _ManagementMiniPill(
+                label: '${target.xpAwarded} XP',
+                backgroundColor: AppPalette.primaryBlue.withValues(alpha: 0.12),
               ),
             ],
           ),
           if (description.isNotEmpty) ...[
             const SizedBox(height: 10),
+            Text(
+              _commentLabel(),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppPalette.textMuted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
             Text(
               description,
               style: Theme.of(
@@ -5759,6 +6037,87 @@ class _ManagementTargetCard extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManagementTargetSessionCommentCard extends StatelessWidget {
+  const _ManagementTargetSessionCommentCard({required this.comment});
+
+  final ManagementTargetSessionComment comment;
+
+  String _sessionLabel() {
+    switch (comment.sessionType.trim().toLowerCase()) {
+      case 'morning':
+        return 'Morning session';
+      case 'afternoon':
+        return 'Afternoon session';
+      default:
+        final normalized = comment.sessionType.replaceAll('_', ' ').trim();
+        if (normalized.isEmpty) {
+          return 'Session';
+        }
+        return normalized
+            .split(RegExp(r'\s+'))
+            .map(
+              (word) => word.isEmpty
+                  ? word
+                  : '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
+            )
+            .join(' ');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final subjectName = comment.subjectName.trim().isEmpty
+        ? 'Session'
+        : comment.subjectName.trim();
+    final teacherName = comment.teacherName.trim();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: AppPalette.sky.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppPalette.sky.withValues(alpha: 0.58)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                subjectName,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppPalette.navy,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              _ManagementMiniPill(
+                label: _sessionLabel(),
+                backgroundColor: AppPalette.primaryBlue.withValues(alpha: 0.12),
+              ),
+              if (teacherName.isNotEmpty)
+                _ManagementMiniPill(
+                  label: teacherName,
+                  backgroundColor: AppPalette.sun.withValues(alpha: 0.16),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            comment.comment.trim(),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
           ),
         ],
       ),

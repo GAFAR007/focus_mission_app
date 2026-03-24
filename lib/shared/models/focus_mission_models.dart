@@ -2312,6 +2312,8 @@ class TargetSummary {
     required this.xpAwarded,
     required this.weekKey,
     required this.awardDateKey,
+    this.createdByName = '',
+    this.createdByRole = '',
   });
 
   final String id;
@@ -2324,6 +2326,8 @@ class TargetSummary {
   final int xpAwarded;
   final String weekKey;
   final String awardDateKey;
+  final String createdByName;
+  final String createdByRole;
 
   bool get isFixedTarget =>
       targetType == 'fixed_daily_mission' || targetType == 'fixed_assessment';
@@ -2339,6 +2343,8 @@ class TargetSummary {
     int? xpAwarded,
     String? weekKey,
     String? awardDateKey,
+    String? createdByName,
+    String? createdByRole,
   }) {
     return TargetSummary(
       id: id ?? this.id,
@@ -2351,6 +2357,8 @@ class TargetSummary {
       xpAwarded: xpAwarded ?? this.xpAwarded,
       weekKey: weekKey ?? this.weekKey,
       awardDateKey: awardDateKey ?? this.awardDateKey,
+      createdByName: createdByName ?? this.createdByName,
+      createdByRole: createdByRole ?? this.createdByRole,
     );
   }
 
@@ -2366,6 +2374,61 @@ class TargetSummary {
       xpAwarded: _asInt(json['xpAwarded']),
       weekKey: (json['weekKey'] ?? '').toString(),
       awardDateKey: (json['awardDateKey'] ?? '').toString(),
+      createdByName: (json['createdByName'] ?? '').toString(),
+      createdByRole: (json['createdByRole'] ?? '').toString(),
+    );
+  }
+}
+
+class ManagementTargetSessionComment {
+  const ManagementTargetSessionComment({
+    required this.id,
+    required this.dateKey,
+    required this.sessionType,
+    required this.subjectName,
+    required this.comment,
+    this.teacherName = '',
+    this.teacherRole = '',
+  });
+
+  final String id;
+  final String dateKey;
+  final String sessionType;
+  final String subjectName;
+  final String comment;
+  final String teacherName;
+  final String teacherRole;
+
+  factory ManagementTargetSessionComment.fromJson(Map<String, dynamic> json) {
+    return ManagementTargetSessionComment(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      dateKey: (json['dateKey'] ?? '').toString(),
+      sessionType: (json['sessionType'] ?? '').toString(),
+      subjectName: (json['subjectName'] ?? '').toString(),
+      comment: (json['comment'] ?? '').toString(),
+      teacherName: (json['teacherName'] ?? '').toString(),
+      teacherRole: (json['teacherRole'] ?? '').toString(),
+    );
+  }
+}
+
+class ManagementTargetHistory {
+  const ManagementTargetHistory({
+    required this.targets,
+    required this.sessionComments,
+  });
+
+  final List<TargetSummary> targets;
+  final List<ManagementTargetSessionComment> sessionComments;
+
+  factory ManagementTargetHistory.fromJson(Map<String, dynamic> json) {
+    return ManagementTargetHistory(
+      targets: (json['targets'] as List<dynamic>? ?? const [])
+          .map((item) => TargetSummary.fromJson(_asMap(item)))
+          .toList(growable: false),
+      sessionComments: (json['sessionComments'] as List<dynamic>? ?? const [])
+          .map((item) => ManagementTargetSessionComment.fromJson(_asMap(item)))
+          .toList(growable: false),
     );
   }
 }

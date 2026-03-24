@@ -525,7 +525,7 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
-  Future<List<TargetSummary>> fetchManagementStudentTargets({
+  Future<ManagementTargetHistory> fetchManagementStudentTargets({
     required String token,
     required String studentId,
   }) async {
@@ -534,16 +534,8 @@ class FocusMissionApi {
       '/management/students/$studentId/targets',
       token: token,
     );
-    final targets = (json['targets'] as List<dynamic>? ?? const [])
-        .cast<dynamic>();
 
-    return targets
-        .map(
-          (item) => TargetSummary.fromJson(
-            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
-          ),
-        )
-        .toList(growable: false);
+    return ManagementTargetHistory.fromJson(json);
   }
 
   Future<ManagementDayPlan> fetchManagementStudentDayPlan({
