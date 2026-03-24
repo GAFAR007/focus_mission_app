@@ -2412,22 +2412,54 @@ class ManagementTargetSessionComment {
   }
 }
 
-class ManagementTargetHistory {
-  const ManagementTargetHistory({
+class ManagementTargetDateSection {
+  const ManagementTargetDateSection({
+    required this.dateKey,
     required this.targets,
     required this.sessionComments,
   });
 
+  final String dateKey;
   final List<TargetSummary> targets;
   final List<ManagementTargetSessionComment> sessionComments;
 
-  factory ManagementTargetHistory.fromJson(Map<String, dynamic> json) {
-    return ManagementTargetHistory(
+  factory ManagementTargetDateSection.fromJson(Map<String, dynamic> json) {
+    return ManagementTargetDateSection(
+      dateKey: (json['dateKey'] ?? '').toString(),
       targets: (json['targets'] as List<dynamic>? ?? const [])
           .map((item) => TargetSummary.fromJson(_asMap(item)))
           .toList(growable: false),
       sessionComments: (json['sessionComments'] as List<dynamic>? ?? const [])
           .map((item) => ManagementTargetSessionComment.fromJson(_asMap(item)))
+          .toList(growable: false),
+    );
+  }
+}
+
+class ManagementTargetHistory {
+  const ManagementTargetHistory({
+    required this.displayDateKeys,
+    required this.targets,
+    required this.sessionComments,
+    required this.dateSections,
+  });
+
+  final List<String> displayDateKeys;
+  final List<TargetSummary> targets;
+  final List<ManagementTargetSessionComment> sessionComments;
+  final List<ManagementTargetDateSection> dateSections;
+
+  factory ManagementTargetHistory.fromJson(Map<String, dynamic> json) {
+    return ManagementTargetHistory(
+      displayDateKeys: _asStringList(json['displayDateKeys']),
+      targets: (json['targets'] as List<dynamic>? ?? const [])
+          .map((item) => TargetSummary.fromJson(_asMap(item)))
+          .toList(growable: false),
+      sessionComments: (json['sessionComments'] as List<dynamic>? ?? const [])
+          .map((item) => ManagementTargetSessionComment.fromJson(_asMap(item)))
+          .toList(growable: false),
+      dateSections: (json['dateSections'] as List<dynamic>? ?? const [])
+          .map((item) => ManagementTargetDateSection.fromJson(_asMap(item)))
           .toList(growable: false),
     );
   }

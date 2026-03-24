@@ -528,10 +528,11 @@ class FocusMissionApi {
   Future<ManagementTargetHistory> fetchManagementStudentTargets({
     required String token,
     required String studentId,
+    required String dateKey,
   }) async {
     final json = await _requestJson(
       'GET',
-      '/management/students/$studentId/targets',
+      '/management/students/$studentId/targets?date=$dateKey',
       token: token,
     );
 

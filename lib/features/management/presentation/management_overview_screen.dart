@@ -181,6 +181,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       _api.fetchManagementStudentTargets(
         token: _session.token,
         studentId: workspace.selectedStudent.id,
+        dateKey: _dateKeyFromDate(_selectedTimetableDate),
       ),
       _api.fetchManagementStudentCertification(
         token: _session.token,
@@ -197,6 +198,14 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         responses[3] as List<SubjectCertificationSettings>;
     final teachers = responses[4] as List<TeacherSummary>;
     final archivedStudents = responses[5] as List<StudentSummary>;
+    final targetDateKeys = _buildWeekdayTargetDateKeysForMonth(
+      _selectedTimetableDate,
+    );
+    final targetDateSections = _buildMonthTargetDateSections(
+      dateKeys: targetDateKeys,
+      targets: targetHistory.targets,
+      sessionComments: targetHistory.sessionComments,
+    );
     _selectedStudentId = workspace.selectedStudent.id;
     _selectedStudentYearGroup = workspace.selectedStudent.yearGroup.trim();
     _notificationInbox ??= workspace.notificationInbox;
@@ -214,15 +223,15 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     if (!resultDateFilters.contains(_selectedResultDate)) {
       _selectedResultDate = _allResultDatesFilterLabel;
     }
-    final targetDateFilters = _buildTargetDateFilters(targetHistory.targets);
+    final targetDateFilters = _buildTargetDateFilters(targetDateKeys);
     if (!targetDateFilters.contains(_selectedTargetDate)) {
       _selectedTargetDate = _allTargetDatesFilterLabel;
     }
     return _ManagementScreenData(
       workspace: workspace,
       recentResults: recentResults,
-      targets: targetHistory.targets,
-      targetSessionComments: targetHistory.sessionComments,
+      targetDateKeys: targetDateKeys,
+      targetDateSections: targetDateSections,
       certifications: certifications,
       certificationSubjects: certificationSubjects,
       teachers: teachers,
@@ -429,18 +438,96 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   DateTime _dateOnly(DateTime date) =>
       DateTime(date.year, date.month, date.day);
 
+  String _dateKeyFromDate(DateTime date) {
+    final normalized = _dateOnly(date);
+    final year = normalized.year.toString().padLeft(4, '0');
+    final month = normalized.month.toString().padLeft(2, '0');
+    final day = normalized.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  List<String> _buildWeekdayTargetDateKeysForMonth(DateTime anchorDate) {
+    final keys = <String>[];
+    final lastDay = DateTime(anchorDate.year, anchorDate.month + 1, 0).day;
+
+    for (var day = lastDay; day >= 1; day -= 1) {
+      final date = DateTime(anchorDate.year, anchorDate.month, day);
+      if (_isWeekendDate(date)) {
+        continue;
+      }
+      keys.add(_dateKeyFromDate(date));
+    }
+
+    return keys;
+  }
+
+  String _managementWeekKeyForDateKey(String dateKey) {
+    final parsed = DateTime.tryParse(dateKey.trim());
+    if (parsed == null) {
+      return '';
+    }
+
+    final utcDate = DateTime.utc(parsed.year, parsed.month, parsed.day);
+    final adjusted = utcDate.add(Duration(days: 4 - utcDate.weekday));
+    final yearStart = DateTime.utc(adjusted.year, 1, 1);
+    final weekNumber = ((adjusted.difference(yearStart).inDays + 1) / 7).ceil();
+
+    return '${adjusted.year}-W${weekNumber.toString().padLeft(2, '0')}';
+  }
+
+  List<ManagementTargetDateSection> _buildMonthTargetDateSections({
+    required List<String> dateKeys,
+    required List<TargetSummary> targets,
+    required List<ManagementTargetSessionComment> sessionComments,
+  }) {
+    return dateKeys
+        .map((dateKey) {
+          final dateWeekKey = _managementWeekKeyForDateKey(dateKey);
+          final targetsForDate = targets
+              .where((target) {
+                final targetType = target.targetType.trim();
+                if (targetType == 'fixed_daily_mission' ||
+                    targetType == 'fixed_assessment') {
+                  // WHY: Fixed targets are weekly expectations, so management should
+                  // see them on each teaching weekday in that week instead of only on
+                  // the one date the original row was first awarded.
+                  return target.weekKey.trim() == dateWeekKey;
+                }
+                return target.awardDateKey.trim() == dateKey;
+              })
+              .toList(growable: false);
+          final commentsForDate = sessionComments
+              .where((comment) => comment.dateKey.trim() == dateKey)
+              .toList(growable: false);
+
+          return ManagementTargetDateSection(
+            dateKey: dateKey,
+            targets: targetsForDate,
+            sessionComments: commentsForDate,
+          );
+        })
+        .toList(growable: false);
+  }
+
   void _selectTimetableDate({
     required DateTime date,
     required List<TodaySchedule> timetable,
     required List<SubjectCertificationSettings> subjects,
     required List<TeacherSummary> teachers,
   }) {
+    final previousMonth = _selectedTimetableDate.month;
+    final previousYear = _selectedTimetableDate.year;
     final normalized = _dateOnly(date);
     // WHY: The calendar is now a direct selector for the inline editor below,
     // so the chosen date must always drive the visible day fields on-screen.
     _selectedTimetableDate = normalized;
+    final monthChanged =
+        previousMonth != normalized.month || previousYear != normalized.year;
 
     if (_isWeekendDate(normalized)) {
+      if (monthChanged) {
+        _future = _loadWorkspace();
+      }
       return;
     }
 
@@ -452,6 +539,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       subjects: subjects,
       teachers: teachers,
     );
+    if (monthChanged) {
+      _future = _loadWorkspace();
+    }
   }
 
   TodaySchedule? _scheduleForDate(
@@ -777,121 +867,25 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return '$resultLabel · $subjectLabel · $dateLabel';
   }
 
-  List<String> _buildTargetDateFilters(List<TargetSummary> targets) {
-    final dates = <String>{};
-
-    for (final target in targets) {
-      final dateKey = target.awardDateKey.trim();
-      if (dateKey.isNotEmpty) {
-        dates.add(dateKey);
-      }
-    }
-
-    final sortedDates = dates.toList(growable: false)
-      ..sort((left, right) => right.compareTo(left));
+  List<String> _buildTargetDateFilters(List<String> dateKeys) {
+    final sortedDates =
+        dateKeys
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort((left, right) => right.compareTo(left));
     return <String>[_allTargetDatesFilterLabel, ...sortedDates];
   }
 
-  List<TargetSummary> _filterTargets(
-    List<TargetSummary> targets, {
+  List<ManagementTargetDateSection> _filterTargetSections(
+    List<ManagementTargetDateSection> sections, {
     required String dateKey,
   }) {
-    return targets
-        .where((target) {
+    return sections
+        .where((section) {
           return dateKey == _allTargetDatesFilterLabel ||
-              target.awardDateKey.trim() == dateKey;
-        })
-        .toList(growable: false);
-  }
-
-  List<ManagementTargetSessionComment> _filterTargetSessionComments(
-    List<ManagementTargetSessionComment> sessionComments, {
-    required List<TargetSummary> targets,
-  }) {
-    final targetDateKeys = targets
-        .map((target) => target.awardDateKey.trim())
-        .where((dateKey) => dateKey.isNotEmpty)
-        .toSet();
-
-    if (targetDateKeys.isEmpty) {
-      return const <ManagementTargetSessionComment>[];
-    }
-
-    final filtered = sessionComments
-        .where((comment) => targetDateKeys.contains(comment.dateKey.trim()))
-        .toList(growable: false);
-
-    filtered.sort((left, right) {
-      final dateCompare = right.dateKey.compareTo(left.dateKey);
-      if (dateCompare != 0) {
-        return dateCompare;
-      }
-      final sessionCompare = _managementSessionTypeOrder(
-        left.sessionType,
-      ).compareTo(_managementSessionTypeOrder(right.sessionType));
-      if (sessionCompare != 0) {
-        return sessionCompare;
-      }
-      return left.subjectName.compareTo(right.subjectName);
-    });
-
-    return filtered;
-  }
-
-  List<_ManagementTargetDateSection> _buildTargetDateSections({
-    required List<TargetSummary> filteredTargets,
-    required List<ManagementTargetSessionComment> sessionComments,
-  }) {
-    final groupedTargets = <String, List<TargetSummary>>{};
-    for (final target in filteredTargets) {
-      final dateKey = target.awardDateKey.trim().isEmpty
-          ? 'No date'
-          : target.awardDateKey.trim();
-      groupedTargets.putIfAbsent(dateKey, () => <TargetSummary>[]).add(target);
-    }
-
-    final groupedComments = <String, List<ManagementTargetSessionComment>>{};
-    for (final comment in sessionComments) {
-      final dateKey = comment.dateKey.trim().isEmpty
-          ? 'No date'
-          : comment.dateKey.trim();
-      groupedComments
-          .putIfAbsent(dateKey, () => <ManagementTargetSessionComment>[])
-          .add(comment);
-    }
-
-    final sortedDateKeys = groupedTargets.keys.toList(growable: false)
-      ..sort((left, right) {
-        if (left == 'No date') {
-          return 1;
-        }
-        if (right == 'No date') {
-          return -1;
-        }
-        return right.compareTo(left);
-      });
-
-    return sortedDateKeys
-        .map((dateKey) {
-          final targetsForDate =
-              [...(groupedTargets[dateKey] ?? const <TargetSummary>[])]
-                ..sort((left, right) {
-                  final typeCompare = _managementTargetTypeLabel(
-                    left,
-                  ).compareTo(_managementTargetTypeLabel(right));
-                  if (typeCompare != 0) {
-                    return typeCompare;
-                  }
-                  return left.title.compareTo(right.title);
-                });
-
-          return _ManagementTargetDateSection(
-            dateKey: dateKey,
-            targets: targetsForDate,
-            sessionComments:
-                groupedComments[dateKey] ??
-                const <ManagementTargetSessionComment>[],
-          );
+              section.dateKey.trim() == dateKey;
         })
         .toList(growable: false);
   }
@@ -911,6 +905,22 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     );
 
     return '$targetLabel · $dateLabel · $awardedXp XP';
+  }
+
+  List<TargetSummary> _uniqueTargetsFromSections(
+    List<ManagementTargetDateSection> sections,
+  ) {
+    final byId = <String, TargetSummary>{};
+    for (final section in sections) {
+      for (final target in section.targets) {
+        final id = target.id.trim();
+        if (id.isEmpty || byId.containsKey(id)) {
+          continue;
+        }
+        byId[id] = target;
+      }
+    }
+    return byId.values.toList(growable: false);
   }
 
   @override
@@ -936,7 +946,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           final inbox = _notificationInbox ?? workspace.notificationInbox;
           final subjectFilters = _buildSubjectFilters(data.recentResults);
           final resultDateFilters = _buildResultDateFilters(data.recentResults);
-          final targetDateFilters = _buildTargetDateFilters(data.targets);
+          final targetDateFilters = _buildTargetDateFilters(
+            data.targetDateKeys,
+          );
           final selectedSubject = subjectFilters.contains(_selectedSubject)
               ? _selectedSubject
               : _allSubjectsFilterLabel;
@@ -953,17 +965,12 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
             subject: selectedSubject,
             dateKey: selectedResultDate,
           );
-          final filteredTargets = _filterTargets(
-            data.targets,
+          final filteredTargetSections = _filterTargetSections(
+            data.targetDateSections,
             dateKey: selectedTargetDate,
           );
-          final filteredTargetSessionComments = _filterTargetSessionComments(
-            data.targetSessionComments,
-            targets: filteredTargets,
-          );
-          final targetDateSections = _buildTargetDateSections(
-            filteredTargets: filteredTargets,
-            sessionComments: filteredTargetSessionComments,
+          final filteredTargets = _uniqueTargetsFromSections(
+            filteredTargetSections,
           );
           final certificationFilters = _buildCertificationFilters(
             data.certifications,
@@ -1212,9 +1219,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                             : () => _downloadFilteredTargets(
                                                 student:
                                                     workspace.selectedStudent,
-                                                targets: filteredTargets,
-                                                sessionComments:
-                                                    filteredTargetSessionComments,
+                                                sections:
+                                                    filteredTargetSections,
                                               ),
                                         icon: Icon(
                                           _isDownloadingTargets
@@ -1264,120 +1270,123 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                     },
                                   ),
                                   const SizedBox(height: AppSpacing.item),
-                                  if (filteredTargets.isEmpty)
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(
-                                        AppSpacing.item,
+                                  ...filteredTargetSections.map(
+                                    (section) => Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: AppSpacing.compact,
                                       ),
-                                      decoration: BoxDecoration(
-                                        color: AppPalette.surface.withValues(
-                                          alpha: 0.94,
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(
+                                          AppSpacing.item,
                                         ),
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusMd,
-                                        ),
-                                        border: Border.all(
-                                          color: AppPalette.sky.withValues(
-                                            alpha: 0.68,
+                                        decoration: BoxDecoration(
+                                          color: AppPalette.surface.withValues(
+                                            alpha: 0.96,
                                           ),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        data.targets.isEmpty
-                                            ? 'No target results were found for this student yet.'
-                                            : 'No targets match this date filter.',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
-                                      ),
-                                    )
-                                  else
-                                    ...targetDateSections.map(
-                                      (section) => Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: AppSpacing.compact,
-                                        ),
-                                        child: Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.all(
-                                            AppSpacing.item,
+                                          borderRadius: BorderRadius.circular(
+                                            AppSpacing.radiusLg,
                                           ),
-                                          decoration: BoxDecoration(
-                                            color: AppPalette.surface
-                                                .withValues(alpha: 0.96),
-                                            borderRadius: BorderRadius.circular(
-                                              AppSpacing.radiusLg,
-                                            ),
-                                            border: Border.all(
-                                              color: AppPalette.sky.withValues(
-                                                alpha: 0.68,
-                                              ),
+                                          border: Border.all(
+                                            color: AppPalette.sky.withValues(
+                                              alpha: 0.68,
                                             ),
                                           ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      section.dateKey,
-                                                      style: Theme.of(
-                                                        context,
-                                                      ).textTheme.titleSmall,
-                                                    ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    section.dateKey,
+                                                    style: Theme.of(
+                                                      context,
+                                                    ).textTheme.titleSmall,
                                                   ),
-                                                  _ManagementMiniPill(
-                                                    label:
-                                                        '${section.targets.length} target${section.targets.length == 1 ? '' : 's'}',
-                                                    backgroundColor: AppPalette
-                                                        .sky
+                                                ),
+                                                _ManagementMiniPill(
+                                                  label:
+                                                      '${section.targets.length} target${section.targets.length == 1 ? '' : 's'}',
+                                                  backgroundColor: AppPalette
+                                                      .sky
+                                                      .withValues(alpha: 0.16),
+                                                ),
+                                              ],
+                                            ),
+                                            if (section
+                                                .sessionComments
+                                                .isNotEmpty) ...[
+                                              const SizedBox(
+                                                height: AppSpacing.compact,
+                                              ),
+                                              Text(
+                                                'Teacher session comments',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.copyWith(
+                                                      color:
+                                                          AppPalette.textMuted,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                              ),
+                                              const SizedBox(height: 10),
+                                              ...section.sessionComments.map(
+                                                (comment) => Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        bottom: 10,
+                                                      ),
+                                                  child:
+                                                      _ManagementTargetSessionCommentCard(
+                                                        comment: comment,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
+                                            if (section
+                                                .sessionComments
+                                                .isNotEmpty)
+                                              const SizedBox(
+                                                height: AppSpacing.compact,
+                                              ),
+                                            if (section.targets.isEmpty &&
+                                                section.sessionComments.isEmpty)
+                                              Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(
+                                                  AppSpacing.item,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: AppPalette.surface
+                                                      .withValues(alpha: 0.9),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                        AppSpacing.radiusMd,
+                                                      ),
+                                                  border: Border.all(
+                                                    color: AppPalette.sky
                                                         .withValues(
-                                                          alpha: 0.16,
+                                                          alpha: 0.58,
                                                         ),
                                                   ),
-                                                ],
-                                              ),
-                                              if (section
-                                                  .sessionComments
-                                                  .isNotEmpty) ...[
-                                                const SizedBox(
-                                                  height: AppSpacing.compact,
                                                 ),
-                                                Text(
-                                                  'Teacher session comments',
+                                                child: Text(
+                                                  'No target result was saved for this weekday yet.',
                                                   style: Theme.of(context)
                                                       .textTheme
                                                       .bodyMedium
                                                       ?.copyWith(
                                                         color: AppPalette
                                                             .textMuted,
-                                                        fontWeight:
-                                                            FontWeight.w700,
                                                       ),
                                                 ),
-                                                const SizedBox(height: 10),
-                                                ...section.sessionComments.map(
-                                                  (comment) => Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                          bottom: 10,
-                                                        ),
-                                                    child:
-                                                        _ManagementTargetSessionCommentCard(
-                                                          comment: comment,
-                                                        ),
-                                                  ),
-                                                ),
-                                              ],
-                                              if (section
-                                                  .sessionComments
-                                                  .isNotEmpty)
-                                                const SizedBox(
-                                                  height: AppSpacing.compact,
-                                                ),
+                                              )
+                                            else
                                               ...section.targets.map(
                                                 (target) => Padding(
                                                   padding:
@@ -1397,17 +1406,16 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                                             student: workspace
                                                                 .selectedStudent,
                                                             target: target,
-                                                            sessionComments: section
-                                                                .sessionComments,
+                                                            sections: [section],
                                                           ),
                                                   ),
                                                 ),
                                               ),
-                                            ],
-                                          ),
+                                          ],
                                         ),
                                       ),
                                     ),
+                                  ),
                                 ],
                               ),
                       ),
@@ -2938,10 +2946,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
   Future<void> _downloadFilteredTargets({
     required StudentSummary student,
-    required List<TargetSummary> targets,
-    required List<ManagementTargetSessionComment> sessionComments,
+    required List<ManagementTargetDateSection> sections,
   }) async {
-    if (_isAnyManagementDownloadActive || targets.isEmpty) {
+    final exportTargets = _uniqueTargetsFromSections(sections);
+    if (_isAnyManagementDownloadActive || exportTargets.isEmpty) {
       return;
     }
 
@@ -2951,8 +2959,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         fileName: _buildManagementTargetsFileName(student: student),
         content: _buildManagementTargetsHtml(
           student: student,
-          targets: targets,
-          sessionComments: sessionComments,
+          sections: sections,
         ),
         mimeType: 'text/html;charset=utf-8',
       );
@@ -2965,7 +2972,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         SnackBar(
           content: Text(
             downloaded
-                ? 'Downloaded ${targets.length} target result${targets.length == 1 ? '' : 's'}.'
+                ? 'Downloaded ${exportTargets.length} target result${exportTargets.length == 1 ? '' : 's'}.'
                 : 'Download is not available on this device yet.',
           ),
         ),
@@ -2987,7 +2994,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   Future<void> _downloadTargetResult({
     required StudentSummary student,
     required TargetSummary target,
-    required List<ManagementTargetSessionComment> sessionComments,
+    required List<ManagementTargetDateSection> sections,
   }) async {
     if (_isAnyManagementDownloadActive) {
       return;
@@ -3002,8 +3009,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         ),
         content: _buildManagementTargetsHtml(
           student: student,
-          targets: [target],
-          sessionComments: sessionComments,
+          sections: sections,
         ),
         mimeType: 'text/html;charset=utf-8',
       );
@@ -3281,10 +3287,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
   String _buildManagementTargetsHtml({
     required StudentSummary student,
-    required List<TargetSummary> targets,
-    required List<ManagementTargetSessionComment> sessionComments,
+    required List<ManagementTargetDateSection> sections,
   }) {
-    final sortedTargets = [...targets]
+    final sortedTargets = _uniqueTargetsFromSections(sections)
       ..sort((left, right) {
         final dateCompare = right.awardDateKey.compareTo(left.awardDateKey);
         if (dateCompare != 0) {
@@ -3298,11 +3303,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         }
         return left.title.compareTo(right.title);
       });
-    final uniqueDateCount = sortedTargets
-        .map((target) => target.awardDateKey.trim())
-        .where((dateKey) => dateKey.isNotEmpty)
-        .toSet()
-        .length;
+    final uniqueDateCount = sections.length;
     final totalXp = sortedTargets.fold<int>(
       0,
       (total, target) => total + target.xpAwarded,
@@ -3355,37 +3356,16 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       ..writeln('</div>')
       ..writeln('</section>');
 
-    final groupedByDate = <String, List<TargetSummary>>{};
-    for (final target in sortedTargets) {
-      final dateKey = target.awardDateKey.trim().isEmpty
-          ? 'No date'
-          : target.awardDateKey.trim();
-      groupedByDate.putIfAbsent(dateKey, () => <TargetSummary>[]).add(target);
-    }
-
-    final groupedCommentsByDate =
-        <String, List<ManagementTargetSessionComment>>{};
-    for (final comment in sessionComments) {
-      final dateKey = comment.dateKey.trim().isEmpty
-          ? 'No date'
-          : comment.dateKey.trim();
-      groupedCommentsByDate
-          .putIfAbsent(dateKey, () => <ManagementTargetSessionComment>[])
-          .add(comment);
-    }
-
-    for (final entry in groupedByDate.entries) {
-      final targetsForDate = entry.value;
+    for (final section in sections) {
+      final targetsForDate = section.targets;
       final dateXp = targetsForDate.fold<int>(
         0,
         (total, target) => total + target.xpAwarded,
       );
-      final sessionCommentsForDate =
-          groupedCommentsByDate[entry.key] ??
-          const <ManagementTargetSessionComment>[];
+      final sessionCommentsForDate = section.sessionComments;
       buffer
         ..writeln('<section class="date-group">')
-        ..writeln('<h2>${_escapeManagementHtml(entry.key)}</h2>')
+        ..writeln('<h2>${_escapeManagementHtml(section.dateKey)}</h2>')
         ..writeln(
           '<p class="hero-summary">${targetsForDate.length} target${targetsForDate.length == 1 ? '' : 's'} · $dateXp XP</p>',
         );
@@ -3417,6 +3397,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
             ..writeln('<p>${_escapeManagementHtml(comment.comment)}</p>')
             ..writeln('</article>');
         }
+      }
+      if (targetsForDate.isEmpty && sessionCommentsForDate.isEmpty) {
+        buffer.writeln(
+          '<article class="result-card"><p>No target result was saved for this weekday yet.</p></article>',
+        );
       }
       for (final target in targetsForDate) {
         final description = target.description.trim();
@@ -4286,17 +4271,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     return 'Support note';
   }
 
-  int _managementSessionTypeOrder(String value) {
-    switch (value.trim().toLowerCase()) {
-      case 'morning':
-        return 0;
-      case 'afternoon':
-        return 1;
-      default:
-        return 2;
-    }
-  }
-
   String _managementSessionTypeLabel(String value) {
     switch (value.trim().toLowerCase()) {
       case 'morning':
@@ -4780,18 +4754,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   }
 }
 
-class _ManagementTargetDateSection {
-  const _ManagementTargetDateSection({
-    required this.dateKey,
-    required this.targets,
-    required this.sessionComments,
-  });
-
-  final String dateKey;
-  final List<TargetSummary> targets;
-  final List<ManagementTargetSessionComment> sessionComments;
-}
-
 class _ManagementCertificationCard extends StatelessWidget {
   const _ManagementCertificationCard({
     required this.certification,
@@ -5022,8 +4984,8 @@ class _ManagementScreenData {
   const _ManagementScreenData({
     required this.workspace,
     required this.recentResults,
-    required this.targets,
-    required this.targetSessionComments,
+    required this.targetDateKeys,
+    required this.targetDateSections,
     required this.certifications,
     required this.certificationSubjects,
     required this.teachers,
@@ -5032,8 +4994,8 @@ class _ManagementScreenData {
 
   final MentorWorkspaceData workspace;
   final List<ResultHistoryItem> recentResults;
-  final List<TargetSummary> targets;
-  final List<ManagementTargetSessionComment> targetSessionComments;
+  final List<String> targetDateKeys;
+  final List<ManagementTargetDateSection> targetDateSections;
   final List<SubjectCertificationSummary> certifications;
   final List<SubjectCertificationSettings> certificationSubjects;
   final List<TeacherSummary> teachers;
