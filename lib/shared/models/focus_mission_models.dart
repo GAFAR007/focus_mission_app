@@ -19,6 +19,7 @@ class AppUser {
     this.role,
     this.yearGroup,
     this.subjectSpecialty,
+    this.subjectSpecialties = const [],
     this.isPlaceholder = false,
     this.avatar,
     this.avatarSeed,
@@ -41,6 +42,7 @@ class AppUser {
   final String? role;
   final String? yearGroup;
   final String? subjectSpecialty;
+  final List<String> subjectSpecialties;
   final bool isPlaceholder;
   final String? avatar;
   final String? avatarSeed;
@@ -63,6 +65,7 @@ class AppUser {
     String? role,
     String? yearGroup,
     String? subjectSpecialty,
+    List<String>? subjectSpecialties,
     bool? isPlaceholder,
     String? avatar,
     String? avatarSeed,
@@ -85,6 +88,7 @@ class AppUser {
       role: role ?? this.role,
       yearGroup: yearGroup ?? this.yearGroup,
       subjectSpecialty: subjectSpecialty ?? this.subjectSpecialty,
+      subjectSpecialties: subjectSpecialties ?? this.subjectSpecialties,
       isPlaceholder: isPlaceholder ?? this.isPlaceholder,
       avatar: avatar ?? this.avatar,
       avatarSeed: avatarSeed ?? this.avatarSeed,
@@ -110,6 +114,7 @@ class AppUser {
       role: json['role']?.toString(),
       yearGroup: json['yearGroup']?.toString(),
       subjectSpecialty: json['subjectSpecialty']?.toString(),
+      subjectSpecialties: _asStringList(json['subjectSpecialties']),
       isPlaceholder: json['isPlaceholder'] == true,
       avatar: json['avatar']?.toString(),
       avatarSeed: json['avatarSeed']?.toString(),
@@ -205,14 +210,18 @@ class TeacherSummary {
     required this.name,
     this.email,
     this.avatar,
+    this.role,
     this.subjectSpecialty,
+    this.subjectSpecialties = const [],
   });
 
   final String id;
   final String name;
   final String? email;
   final String? avatar;
+  final String? role;
   final String? subjectSpecialty;
+  final List<String> subjectSpecialties;
 
   factory TeacherSummary.fromJson(Map<String, dynamic> json) {
     return TeacherSummary(
@@ -220,7 +229,49 @@ class TeacherSummary {
       name: (json['name'] ?? '').toString(),
       email: json['email']?.toString(),
       avatar: json['avatar']?.toString(),
+      role: json['role']?.toString(),
       subjectSpecialty: json['subjectSpecialty']?.toString(),
+      subjectSpecialties: _asStringList(json['subjectSpecialties']),
+    );
+  }
+}
+
+class ManagementSessionCoverAssignment {
+  const ManagementSessionCoverAssignment({
+    required this.id,
+    required this.dateKey,
+    required this.sessionType,
+    required this.reason,
+    this.subject,
+    this.plannedTeacher,
+    this.coverStaff,
+  });
+
+  final String id;
+  final String dateKey;
+  final String sessionType;
+  final String reason;
+  final SubjectSummary? subject;
+  final TeacherSummary? plannedTeacher;
+  final TeacherSummary? coverStaff;
+
+  factory ManagementSessionCoverAssignment.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return ManagementSessionCoverAssignment(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      dateKey: (json['dateKey'] ?? '').toString(),
+      sessionType: (json['sessionType'] ?? '').toString(),
+      reason: (json['reason'] ?? '').toString(),
+      subject: _asNullableMap(json['subject']) == null
+          ? null
+          : SubjectSummary.fromJson(_asMap(json['subject'])),
+      plannedTeacher: _asNullableMap(json['plannedTeacher']) == null
+          ? null
+          : TeacherSummary.fromJson(_asMap(json['plannedTeacher'])),
+      coverStaff: _asNullableMap(json['coverStaff']) == null
+          ? null
+          : TeacherSummary.fromJson(_asMap(json['coverStaff'])),
     );
   }
 }
@@ -295,12 +346,14 @@ class ManagementPlannedSession {
     required this.missions,
     this.subject,
     this.teacher,
+    this.coverAssignment,
   });
 
   final String sessionType;
   final bool hasScheduledLesson;
   final SubjectSummary? subject;
   final TeacherSummary? teacher;
+  final ManagementSessionCoverAssignment? coverAssignment;
   final List<MissionPayload> missions;
 
   factory ManagementPlannedSession.fromJson(Map<String, dynamic> json) {
@@ -313,6 +366,11 @@ class ManagementPlannedSession {
       teacher: _asNullableMap(json['teacher']) == null
           ? null
           : TeacherSummary.fromJson(_asMap(json['teacher'])),
+      coverAssignment: _asNullableMap(json['coverAssignment']) == null
+          ? null
+          : ManagementSessionCoverAssignment.fromJson(
+              _asMap(json['coverAssignment']),
+            ),
       missions: (json['missions'] as List<dynamic>? ?? const [])
           .map((item) => MissionPayload.fromJson(_asMap(item)))
           .toList(growable: false),
@@ -328,6 +386,7 @@ class ManagementDayPlan {
     required this.room,
     required this.morning,
     required this.afternoon,
+    this.availableCoverStaff = const [],
     this.student,
   });
 
@@ -336,6 +395,7 @@ class ManagementDayPlan {
   final bool hasTimetableEntry;
   final String room;
   final AppUser? student;
+  final List<TeacherSummary> availableCoverStaff;
   final ManagementPlannedSession morning;
   final ManagementPlannedSession afternoon;
 
@@ -351,6 +411,10 @@ class ManagementDayPlan {
       student: _asNullableMap(json['student']) == null
           ? null
           : AppUser.fromJson(_asMap(json['student'])),
+      availableCoverStaff:
+          (json['availableCoverStaff'] as List<dynamic>? ?? const [])
+              .map((item) => TeacherSummary.fromJson(_asMap(item)))
+              .toList(growable: false),
       morning: ManagementPlannedSession.fromJson(_asMap(json['morning'])),
       afternoon: ManagementPlannedSession.fromJson(_asMap(json['afternoon'])),
     );
@@ -2389,6 +2453,12 @@ class ManagementTargetSessionComment {
     required this.comment,
     this.teacherName = '',
     this.teacherRole = '',
+    this.authorName = '',
+    this.authorRole = '',
+    this.plannedTeacherName = '',
+    this.plannedTeacherRole = '',
+    this.conductedByName = '',
+    this.conductedByRole = '',
   });
 
   final String id;
@@ -2398,6 +2468,12 @@ class ManagementTargetSessionComment {
   final String comment;
   final String teacherName;
   final String teacherRole;
+  final String authorName;
+  final String authorRole;
+  final String plannedTeacherName;
+  final String plannedTeacherRole;
+  final String conductedByName;
+  final String conductedByRole;
 
   factory ManagementTargetSessionComment.fromJson(Map<String, dynamic> json) {
     return ManagementTargetSessionComment(
@@ -2408,6 +2484,12 @@ class ManagementTargetSessionComment {
       comment: (json['comment'] ?? '').toString(),
       teacherName: (json['teacherName'] ?? '').toString(),
       teacherRole: (json['teacherRole'] ?? '').toString(),
+      authorName: (json['authorName'] ?? '').toString(),
+      authorRole: (json['authorRole'] ?? '').toString(),
+      plannedTeacherName: (json['plannedTeacherName'] ?? '').toString(),
+      plannedTeacherRole: (json['plannedTeacherRole'] ?? '').toString(),
+      conductedByName: (json['conductedByName'] ?? '').toString(),
+      conductedByRole: (json['conductedByRole'] ?? '').toString(),
     );
   }
 }
@@ -2488,6 +2570,112 @@ class MentorOverviewData {
       recentSessions: (json['recentSessions'] as List<dynamic>? ?? const [])
           .map((item) => SessionSummary.fromJson(_asMap(item)))
           .toList(),
+    );
+  }
+}
+
+class MentorCoveredSessionLog {
+  const MentorCoveredSessionLog({
+    required this.id,
+    required this.notes,
+    required this.focusScore,
+    required this.completedQuestions,
+    required this.behaviourStatus,
+    required this.xpAwarded,
+    required this.authorName,
+    required this.authorRole,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  final String notes;
+  final int focusScore;
+  final int completedQuestions;
+  final String behaviourStatus;
+  final int xpAwarded;
+  final String authorName;
+  final String authorRole;
+  final String? createdAt;
+  final String? updatedAt;
+
+  factory MentorCoveredSessionLog.fromJson(Map<String, dynamic> json) {
+    return MentorCoveredSessionLog(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      notes: (json['notes'] ?? '').toString(),
+      focusScore: _asInt(json['focusScore']),
+      completedQuestions: _asInt(json['completedQuestions']),
+      behaviourStatus: (json['behaviourStatus'] ?? '').toString(),
+      xpAwarded: _asInt(json['xpAwarded']),
+      authorName: (json['authorName'] ?? '').toString(),
+      authorRole: (json['authorRole'] ?? '').toString(),
+      createdAt: json['createdAt']?.toString(),
+      updatedAt: json['updatedAt']?.toString(),
+    );
+  }
+}
+
+class MentorCoveredSession {
+  const MentorCoveredSession({
+    required this.id,
+    required this.dateKey,
+    required this.sessionType,
+    required this.reason,
+    this.subject,
+    this.plannedTeacher,
+    this.coverStaff,
+    this.sessionLog,
+  });
+
+  final String id;
+  final String dateKey;
+  final String sessionType;
+  final String reason;
+  final SubjectSummary? subject;
+  final TeacherSummary? plannedTeacher;
+  final TeacherSummary? coverStaff;
+  final MentorCoveredSessionLog? sessionLog;
+
+  factory MentorCoveredSession.fromJson(Map<String, dynamic> json) {
+    return MentorCoveredSession(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      dateKey: (json['dateKey'] ?? '').toString(),
+      sessionType: (json['sessionType'] ?? '').toString(),
+      reason: (json['reason'] ?? '').toString(),
+      subject: _asNullableMap(json['subject']) == null
+          ? null
+          : SubjectSummary.fromJson(_asMap(json['subject'])),
+      plannedTeacher: _asNullableMap(json['plannedTeacher']) == null
+          ? null
+          : TeacherSummary.fromJson(_asMap(json['plannedTeacher'])),
+      coverStaff: _asNullableMap(json['coverStaff']) == null
+          ? null
+          : TeacherSummary.fromJson(_asMap(json['coverStaff'])),
+      sessionLog: _asNullableMap(json['sessionLog']) == null
+          ? null
+          : MentorCoveredSessionLog.fromJson(_asMap(json['sessionLog'])),
+    );
+  }
+}
+
+class MentorCoveredSessionsData {
+  const MentorCoveredSessionsData({
+    required this.student,
+    required this.dateKey,
+    required this.sessions,
+  });
+
+  final AppUser student;
+  final String dateKey;
+  final List<MentorCoveredSession> sessions;
+
+  factory MentorCoveredSessionsData.fromJson(Map<String, dynamic> json) {
+    return MentorCoveredSessionsData(
+      student: AppUser.fromJson(_asMap(json['student'])),
+      dateKey: (json['dateKey'] ?? '').toString(),
+      sessions: (json['sessions'] as List<dynamic>? ?? const [])
+          .map((item) => MentorCoveredSession.fromJson(_asMap(item)))
+          .toList(growable: false),
     );
   }
 }

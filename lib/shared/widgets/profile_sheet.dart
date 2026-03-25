@@ -67,6 +67,11 @@ class _ProfileSheetState extends State<_ProfileSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final subjectLabels = <String>{
+      (widget.session.user.subjectSpecialty ?? '').trim(),
+      ...widget.session.user.subjectSpecialties.map((value) => value.trim()),
+    }..removeWhere((value) => value.isEmpty);
+
     return SafeArea(
       child: FractionallySizedBox(
         heightFactor: 0.94,
@@ -191,12 +196,12 @@ class _ProfileSheetState extends State<_ProfileSheet> {
                                                             .user
                                                             .subjectSpecialty ??
                                                         '')
-                                                    .isNotEmpty)
+                                                    .isNotEmpty ||
+                                                    subjectLabels.isNotEmpty)
                                                   _MetaPill(
-                                                    label: widget
-                                                        .session
-                                                        .user
-                                                        .subjectSpecialty!,
+                                                    label: subjectLabels.join(
+                                                      ', ',
+                                                    ),
                                                   ),
                                               ],
                                             ),

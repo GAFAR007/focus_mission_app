@@ -48,6 +48,7 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
   late Future<ManagementDayPlan> _future;
   String _downloadingTeacherCopyMissionId = '';
   String _downloadingStudentCopyMissionId = '';
+  String _coverActionSessionType = '';
 
   @override
   void initState() {
@@ -137,6 +138,18 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
                 else ...[
                   _PlannedSessionPanel(
                     plan: plan.morning,
+                    availableCoverStaff: plan.availableCoverStaff,
+                    isSavingCover:
+                        _coverActionSessionType.trim().toLowerCase() ==
+                        plan.morning.sessionType.trim().toLowerCase(),
+                    onAssignCover: () =>
+                        _assignCoverForSession(plan: plan, sessionType: 'morning'),
+                    onRemoveCover: plan.morning.coverAssignment == null
+                        ? null
+                        : () => _removeCoverForSession(
+                            plan: plan,
+                            sessionType: 'morning',
+                          ),
                     downloadingTeacherCopyMissionId:
                         _downloadingTeacherCopyMissionId,
                     downloadingStudentCopyMissionId:
@@ -148,6 +161,20 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
                   const SizedBox(height: AppSpacing.item),
                   _PlannedSessionPanel(
                     plan: plan.afternoon,
+                    availableCoverStaff: plan.availableCoverStaff,
+                    isSavingCover:
+                        _coverActionSessionType.trim().toLowerCase() ==
+                        plan.afternoon.sessionType.trim().toLowerCase(),
+                    onAssignCover: () => _assignCoverForSession(
+                      plan: plan,
+                      sessionType: 'afternoon',
+                    ),
+                    onRemoveCover: plan.afternoon.coverAssignment == null
+                        ? null
+                        : () => _removeCoverForSession(
+                            plan: plan,
+                            sessionType: 'afternoon',
+                          ),
                     downloadingTeacherCopyMissionId:
                         _downloadingTeacherCopyMissionId,
                     downloadingStudentCopyMissionId:
@@ -191,6 +218,142 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
     return '$year-$month-$day';
+  }
+
+  Future<void> _assignCoverForSession({
+    required ManagementDayPlan plan,
+    required String sessionType,
+  }) async {
+    if (_coverActionSessionType.isNotEmpty) {
+      return;
+    }
+
+    if (plan.availableCoverStaff.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No assigned mentors are available for this student yet.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final selectedStaff = await showModalBottomSheet<TeacherSummary>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _CoverStaffPickerSheet(
+          staff: plan.availableCoverStaff,
+          sessionType: sessionType,
+        );
+      },
+    );
+
+    if (selectedStaff == null || !mounted) {
+      return;
+    }
+
+    setState(() => _coverActionSessionType = sessionType);
+    try {
+      await _api.saveManagementStudentSessionCover(
+        token: widget.session.token,
+        studentId: widget.student.id,
+        dateKey: _dateKey(_selectedDate),
+        sessionType: sessionType,
+        coverStaffId: selectedStaff.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _future = _loadPlan());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${selectedStaff.name} is now covering the ${sessionType.trim()} lesson.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _coverActionSessionType = '');
+      }
+    }
+  }
+
+  Future<void> _removeCoverForSession({
+    required ManagementDayPlan plan,
+    required String sessionType,
+  }) async {
+    if (_coverActionSessionType.isNotEmpty) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Remove mentor cover?'),
+          content: Text(
+            'The ${sessionType.trim()} lesson will revert to the planned teacher on the day plan.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Remove'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _coverActionSessionType = sessionType);
+    try {
+      await _api.removeManagementStudentSessionCover(
+        token: widget.session.token,
+        studentId: widget.student.id,
+        dateKey: _dateKey(_selectedDate),
+        sessionType: sessionType,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _future = _loadPlan());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Mentor cover was removed from the ${sessionType.trim()} lesson.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _coverActionSessionType = '');
+      }
+    }
   }
 
   Future<void> _openTeacherCopyPreview(MissionPayload mission) async {
@@ -551,6 +714,10 @@ class _DayPlanRoomTile extends StatelessWidget {
 class _PlannedSessionPanel extends StatelessWidget {
   const _PlannedSessionPanel({
     required this.plan,
+    required this.availableCoverStaff,
+    required this.isSavingCover,
+    required this.onAssignCover,
+    required this.onRemoveCover,
     required this.downloadingTeacherCopyMissionId,
     required this.downloadingStudentCopyMissionId,
     required this.onOpenTeacherCopy,
@@ -559,6 +726,10 @@ class _PlannedSessionPanel extends StatelessWidget {
   });
 
   final ManagementPlannedSession plan;
+  final List<TeacherSummary> availableCoverStaff;
+  final bool isSavingCover;
+  final VoidCallback onAssignCover;
+  final VoidCallback? onRemoveCover;
   final String downloadingTeacherCopyMissionId;
   final String downloadingStudentCopyMissionId;
   final ValueChanged<MissionPayload> onOpenTeacherCopy;
@@ -619,6 +790,78 @@ class _PlannedSessionPanel extends StatelessWidget {
               _MiniPill(label: '${plan.missions.length} planned'),
             ],
           ),
+          if (plan.coverAssignment != null || availableCoverStaff.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.compact),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppPalette.primaryBlue.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                border: Border.all(
+                  color: AppPalette.primaryBlue.withValues(alpha: 0.18),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (plan.coverAssignment?.plannedTeacher?.name.trim().isNotEmpty ==
+                          true)
+                        _MiniPill(
+                          label:
+                              'Planned: ${plan.coverAssignment!.plannedTeacher!.name}',
+                        ),
+                      if (plan.coverAssignment?.coverStaff?.name.trim().isNotEmpty ==
+                          true)
+                        _MiniPill(
+                          label:
+                              'Cover: ${plan.coverAssignment!.coverStaff!.name}',
+                        ),
+                    ],
+                  ),
+                  if (plan.coverAssignment?.reason.trim().isNotEmpty == true) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      plan.coverAssignment!.reason.trim(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: isSavingCover ? null : onAssignCover,
+                        icon: Icon(
+                          plan.coverAssignment == null
+                              ? Icons.person_add_alt_1_rounded
+                              : Icons.swap_horiz_rounded,
+                        ),
+                        label: Text(
+                          plan.coverAssignment == null
+                              ? 'Assign mentor cover'
+                              : 'Change cover',
+                        ),
+                      ),
+                      if (onRemoveCover != null)
+                        TextButton.icon(
+                          onPressed: isSavingCover ? null : onRemoveCover,
+                          icon: const Icon(Icons.person_remove_alt_1_rounded),
+                          label: const Text('Remove cover'),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (plan.missions.isEmpty) ...[
             const SizedBox(height: AppSpacing.item),
             Container(
@@ -858,6 +1101,94 @@ class _PlannedMissionTile extends StatelessWidget {
 
   String _missionTypeLabel(MissionPayload mission) {
     return mission.questionCount >= 10 ? 'Assessment' : 'Daily';
+  }
+}
+
+class _CoverStaffPickerSheet extends StatelessWidget {
+  const _CoverStaffPickerSheet({
+    required this.staff,
+    required this.sessionType,
+  });
+
+  final List<TeacherSummary> staff;
+  final String sessionType;
+
+  @override
+  Widget build(BuildContext context) {
+    final sessionLabel = sessionType.trim().isEmpty
+        ? 'lesson'
+        : '${sessionType[0].toUpperCase()}${sessionType.substring(1)} lesson';
+
+    return SafeArea(
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+        ),
+        padding: const EdgeInsets.all(AppSpacing.screen),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Assign mentor cover',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Choose who will conduct the $sessionLabel for audit purposes.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+            ),
+            const SizedBox(height: AppSpacing.item),
+            ...staff.map(
+              (staffMember) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    ),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(staffMember),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: AppPalette.primaryBlue.withValues(
+                          alpha: 0.12,
+                        ),
+                        child: const Icon(
+                          Icons.support_agent_rounded,
+                          color: AppPalette.primaryBlue,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(staffMember.name),
+                            if ((staffMember.role ?? '').trim().isNotEmpty)
+                              Text(
+                                staffMember.role!,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: AppPalette.textMuted),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

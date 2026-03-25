@@ -68,6 +68,15 @@ const List<String> _certificationTaskCodeOptions = [
   'D2',
 ];
 
+String _teacherSubjectSummaryLabel(TeacherSummary teacher) {
+  final subjectNames = <String>{
+    (teacher.subjectSpecialty ?? '').trim(),
+    ...teacher.subjectSpecialties.map((value) => value.trim()),
+  }..removeWhere((value) => value.isEmpty);
+
+  return subjectNames.join(', ');
+}
+
 class ManagementOverviewScreen extends StatefulWidget {
   const ManagementOverviewScreen({super.key, required this.session});
 
@@ -85,8 +94,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _subjectSpecialtyController =
-      TextEditingController();
   final TextEditingController _certificationLabelController =
       TextEditingController();
 
@@ -108,6 +115,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   String _selectedAfternoonRoom = _timetableRoomOptions.first;
   String _createRole = 'student';
   String _createStudentYearGroup = '';
+  String _createTeacherPrimarySubject = '';
   String _selectedStudentYearGroup = '';
   NotificationInboxData? _notificationInbox;
   bool _isCreatingUser = false;
@@ -125,12 +133,14 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _showCertificationSetup = false;
   bool _showCreateUserPanel = false;
   bool _showCertificationProgressPanel = false;
+  bool _showTeacherSubjectSetupPanel = false;
   bool _showTimetablePanel = false;
   bool _showStudentResultsPanel = false;
   bool _showStudentTargetsPanel = false;
   bool _certificationEnabled = false;
   AppUser? _lastCreatedUser;
   final Set<String> _selectedCertificationTaskCodes = <String>{};
+  final Set<String> _createTeacherAdditionalSubjects = <String>{};
 
   @override
   void initState() {
@@ -163,7 +173,6 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _subjectSpecialtyController.dispose();
     _certificationLabelController.dispose();
     super.dispose();
   }
@@ -800,7 +809,27 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
     return _createRole == 'student'
         ? 'Student account form is ready when needed.'
-        : 'Teacher account form with subject specialty is ready.';
+        : 'Teacher account form with a primary subject and extra teachable subjects is ready.';
+  }
+
+  String _buildTeacherSubjectSetupSummary(List<TeacherSummary> teachers) {
+    if (teachers.isEmpty) {
+      return 'No teacher accounts yet.';
+    }
+
+    final multiSubjectCount = teachers.where((teacher) {
+      final subjectNames = <String>{
+        (teacher.subjectSpecialty ?? '').trim(),
+        ...teacher.subjectSpecialties.map((value) => value.trim()),
+      }..removeWhere((value) => value.isEmpty);
+      return subjectNames.length > 1;
+    }).length;
+
+    if (multiSubjectCount == 0) {
+      return '${teachers.length} teacher${teachers.length == 1 ? '' : 's'}';
+    }
+
+    return '${teachers.length} teacher${teachers.length == 1 ? '' : 's'} · $multiSubjectCount multi-subject';
   }
 
   String _buildCertificationProgressSummary(
@@ -973,9 +1002,17 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       comment.dateKey.trim(),
       _normalizeManagementLookupValue(comment.subjectName),
       _managementSessionLookupKey(comment.sessionType),
-      _normalizeManagementLookupValue(comment.teacherName),
+      _normalizeManagementLookupValue(_commentActorDisplayName(comment)),
       _normalizeManagementLookupValue(comment.comment),
     ].join('|');
+  }
+
+  String _commentActorDisplayName(ManagementTargetSessionComment comment) {
+    final authorName = comment.authorName.trim();
+    if (authorName.isNotEmpty) {
+      return authorName;
+    }
+    return comment.teacherName.trim();
   }
 
   int _managementResultMatchScore({
@@ -1054,17 +1091,23 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
 
     TeacherSummary? partialMatch;
     for (final teacher in teachers) {
-      final specialty = (teacher.subjectSpecialty ?? '').trim();
-      final normalizedSpecialty = _normalizeManagementLookupValue(specialty);
-      if (normalizedSpecialty.isEmpty) {
-        continue;
-      }
-      if (normalizedSpecialty == normalizedSubject) {
-        return teacher.name.trim();
-      }
-      if (normalizedSpecialty.contains(normalizedSubject) ||
-          normalizedSubject.contains(normalizedSpecialty)) {
-        partialMatch ??= teacher;
+      final teacherSubjects = <String>{
+        (teacher.subjectSpecialty ?? '').trim(),
+        ...teacher.subjectSpecialties.map((value) => value.trim()),
+      }..removeWhere((value) => value.isEmpty);
+
+      for (final specialty in teacherSubjects) {
+        final normalizedSpecialty = _normalizeManagementLookupValue(specialty);
+        if (normalizedSpecialty.isEmpty) {
+          continue;
+        }
+        if (normalizedSpecialty == normalizedSubject) {
+          return teacher.name.trim();
+        }
+        if (normalizedSpecialty.contains(normalizedSubject) ||
+            normalizedSubject.contains(normalizedSpecialty)) {
+          partialMatch ??= teacher;
+        }
       }
     }
 
@@ -1129,6 +1172,20 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                         comment.subjectName,
                         teachers,
                       ),
+                authorName: comment.authorName.trim().isNotEmpty
+                    ? comment.authorName.trim()
+                    : comment.teacherName.trim(),
+                plannedTeacherName: comment.plannedTeacherName.trim().isNotEmpty
+                    ? comment.plannedTeacherName.trim()
+                    : (comment.teacherName.trim().isNotEmpty
+                          ? comment.teacherName.trim()
+                          : _resolveTeacherNameForSubject(
+                              comment.subjectName,
+                              teachers,
+                            )),
+                conductedByName: comment.conductedByName.trim().isNotEmpty
+                    ? comment.conductedByName.trim()
+                    : comment.teacherName.trim(),
                 comment: comment.comment.trim(),
                 isPending: false,
               ),
@@ -1156,6 +1213,12 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
             inferredSubjectName,
             teachers,
           ),
+          authorName: '',
+          plannedTeacherName: _resolveTeacherNameForSubject(
+            inferredSubjectName,
+            teachers,
+          ),
+          conductedByName: '',
           comment: 'Pending comments from $inferredSubjectName teacher.',
           isPending: true,
         ),
@@ -2050,7 +2113,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             : 'Add New Teacher',
                         subtitle: _createRole == 'student'
                             ? 'Create a student account and add that learner to management immediately.'
-                            : 'Create a teacher account with a subject specialty.',
+                            : 'Create a teacher account with a primary subject and extra teachable subjects.',
                         summary: _buildCreateUserSummary(),
                         isExpanded: _showCreateUserPanel,
                         onToggle: () => setState(
@@ -2184,23 +2247,110 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                         ],
                                         if (_createRole == 'teacher') ...[
                                           const SizedBox(height: 12),
-                                          TextFormField(
-                                            controller:
-                                                _subjectSpecialtyController,
-                                            decoration: _managementFieldDecoration(
-                                              labelText: 'Subject specialty',
-                                              hintText:
-                                                  'English, Science, Business',
-                                            ),
+                                          DropdownButtonFormField<String>(
+                                            initialValue:
+                                                _createTeacherPrimarySubject
+                                                        .trim()
+                                                        .isEmpty
+                                                    ? null
+                                                    : _createTeacherPrimarySubject,
+                                            decoration:
+                                                _managementFieldDecoration(
+                                                  labelText: 'Primary subject',
+                                                  helperText:
+                                                      'This stays as the teacher profile display subject.',
+                                                ),
+                                            items: <DropdownMenuItem<String>>[
+                                              const DropdownMenuItem<String>(
+                                                value: '',
+                                                child: Text(
+                                                  'Choose primary subject',
+                                                ),
+                                              ),
+                                              ...data.certificationSubjects.map(
+                                                (subject) =>
+                                                    DropdownMenuItem<String>(
+                                                      value:
+                                                          subject.subjectName,
+                                                      child: Text(
+                                                        subject.subjectName,
+                                                      ),
+                                                    ),
+                                              ),
+                                            ],
                                             validator: (value) {
                                               if (_createRole == 'teacher' &&
                                                   (value ?? '')
                                                       .trim()
                                                       .isEmpty) {
-                                                return 'Enter a subject specialty.';
+                                                return 'Choose a primary subject.';
                                               }
                                               return null;
                                             },
+                                            onChanged: (value) {
+                                              setState(() {
+                                                _createTeacherPrimarySubject =
+                                                    (value ?? '').trim();
+                                                _createTeacherAdditionalSubjects
+                                                    .remove(
+                                                      _createTeacherPrimarySubject,
+                                                    );
+                                              });
+                                            },
+                                          ),
+                                          const SizedBox(height: 12),
+                                          Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              'Additional teachable subjects',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodyMedium
+                                                  ?.copyWith(
+                                                    color: AppPalette.navy,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Wrap(
+                                            spacing: 8,
+                                            runSpacing: 8,
+                                            children: data.certificationSubjects.map((
+                                              subject,
+                                            ) {
+                                              final subjectName =
+                                                  subject.subjectName.trim();
+                                              final isPrimary =
+                                                  subjectName ==
+                                                  _createTeacherPrimarySubject;
+                                              final isSelected =
+                                                  isPrimary ||
+                                                  _createTeacherAdditionalSubjects
+                                                      .contains(subjectName);
+
+                                              return FilterChip(
+                                                label: Text(subjectName),
+                                                selected: isSelected,
+                                                onSelected: isPrimary
+                                                    ? null
+                                                    : (selected) {
+                                                        setState(() {
+                                                          if (selected) {
+                                                            _createTeacherAdditionalSubjects
+                                                                .add(
+                                                                  subjectName,
+                                                                );
+                                                          } else {
+                                                            _createTeacherAdditionalSubjects
+                                                                .remove(
+                                                                  subjectName,
+                                                                );
+                                                          }
+                                                        });
+                                                      },
+                                              );
+                                            }).toList(growable: false),
                                           ),
                                         ],
                                       ],
@@ -2246,6 +2396,186 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                       ),
                                     ),
                                   ],
+                                ],
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _ManagementExpandableHeader(
+                        title: 'Teacher Subject Setup',
+                        subtitle:
+                            'Management owns each teacher’s primary subject and full teachable subject list.',
+                        summary: _buildTeacherSubjectSetupSummary(
+                          data.teachers,
+                        ),
+                        isExpanded: _showTeacherSubjectSetupPanel,
+                        onToggle: () => setState(
+                          () => _showTeacherSubjectSetupPanel =
+                              !_showTeacherSubjectSetupPanel,
+                        ),
+                      ),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        child: !_showTeacherSubjectSetupPanel
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AppSpacing.compact),
+                                  if (data.certificationSubjects.isEmpty)
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.item,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.82,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.radiusMd,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'Create certification subjects first so teacher subject access stays canonical.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    )
+                                  else if (data.teachers.isEmpty)
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.item,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.82,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.radiusMd,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'No teacher accounts exist yet. Create one above, then manage their subjects here.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    )
+                                  else
+                                    ...data.teachers.map((teacher) {
+                                      final subjectSummary =
+                                          _teacherSubjectSummaryLabel(teacher);
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 10,
+                                        ),
+                                        child: Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(
+                                            AppSpacing.item,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.84,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(
+                                                  AppSpacing.radiusMd,
+                                                ),
+                                            border: Border.all(
+                                              color: AppPalette.sky
+                                                  .withValues(alpha: 0.36),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      teacher.name,
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .titleSmall,
+                                                    ),
+                                                    if ((teacher.email ?? '')
+                                                        .trim()
+                                                        .isNotEmpty) ...[
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        teacher.email!.trim(),
+                                                        style: Theme.of(
+                                                          context,
+                                                        ).textTheme.bodySmall?.copyWith(
+                                                          color: AppPalette
+                                                              .textMuted,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                    const SizedBox(height: 10),
+                                                    Wrap(
+                                                      spacing: 8,
+                                                      runSpacing: 8,
+                                                      children: [
+                                                        _ManagementMiniPill(
+                                                          label:
+                                                              subjectSummary.isEmpty
+                                                              ? 'No teachable subjects yet'
+                                                              : subjectSummary,
+                                                          backgroundColor: subjectSummary
+                                                                  .isEmpty
+                                                              ? AppPalette.sun
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.18,
+                                                                    )
+                                                              : AppPalette
+                                                                    .primaryBlue
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.12,
+                                                                    ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              OutlinedButton.icon(
+                                                onPressed: () =>
+                                                    _openTeacherSubjectEditor(
+                                                      teacher: teacher,
+                                                      subjectOptions:
+                                                          data.certificationSubjects,
+                                                    ),
+                                                icon: const Icon(
+                                                  Icons.edit_rounded,
+                                                ),
+                                                label: const Text(
+                                                  'Edit subjects',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }),
                                 ],
                               ),
                       ),
@@ -3077,7 +3407,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
-        subjectSpecialty: _subjectSpecialtyController.text.trim(),
+        subjectSpecialty: _createTeacherPrimarySubject.trim(),
+        subjectSpecialties:
+            _createTeacherAdditionalSubjects.toList(growable: false),
         yearGroup: _createRole == 'student' ? _createStudentYearGroup : '',
       );
 
@@ -3091,8 +3423,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         _nameController.clear();
         _emailController.clear();
         _passwordController.clear();
-        _subjectSpecialtyController.clear();
         _createStudentYearGroup = '';
+        _createTeacherPrimarySubject = '';
+        _createTeacherAdditionalSubjects.clear();
         if (createdUser.role == 'student') {
           final nextAssignedStudents = {
             ..._session.user.assignedStudents,
@@ -3138,6 +3471,225 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         setState(() => _isCreatingUser = false);
       }
     }
+  }
+
+  Future<void> _openTeacherSubjectEditor({
+    required TeacherSummary teacher,
+    required List<SubjectCertificationSettings> subjectOptions,
+  }) async {
+    final canonicalSubjectNames = subjectOptions
+        .map((subject) => subject.subjectName.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false)
+      ..sort();
+    if (canonicalSubjectNames.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Create certification subjects first so teacher subjects stay canonical.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final initialPrimary = (teacher.subjectSpecialty ?? '').trim().isNotEmpty
+        ? (teacher.subjectSpecialty ?? '').trim()
+        : (teacher.subjectSpecialties.isNotEmpty
+              ? teacher.subjectSpecialties.first.trim()
+              : '');
+
+    final updatedTeacher = await showModalBottomSheet<TeacherSummary>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        var selectedPrimary = initialPrimary;
+        final selectedAdditional = <String>{
+          ...teacher.subjectSpecialties.map((value) => value.trim()),
+        }
+          ..removeWhere((value) => value.isEmpty)
+          ..remove(initialPrimary);
+        var isSaving = false;
+
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: AppSpacing.screen,
+                right: AppSpacing.screen,
+                top: AppSpacing.compact,
+                bottom:
+                    MediaQuery.of(sheetContext).viewInsets.bottom +
+                    AppSpacing.screen,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Edit teacher subjects',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${teacher.name} · ${teacher.email ?? 'No email'}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.section),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedPrimary.isNotEmpty
+                          ? selectedPrimary
+                          : null,
+                      decoration: _managementFieldDecoration(
+                        labelText: 'Primary subject',
+                        helperText:
+                            'This stays the display subject for roster labels and backward-compatible teacher views.',
+                      ),
+                      items: canonicalSubjectNames
+                          .map(
+                            (subjectName) => DropdownMenuItem<String>(
+                              value: subjectName,
+                              child: Text(subjectName),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: isSaving
+                          ? null
+                          : (value) {
+                              final nextPrimary = (value ?? '').trim();
+                              setSheetState(() {
+                                selectedPrimary = nextPrimary;
+                                selectedAdditional.remove(nextPrimary);
+                              });
+                            },
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Additional teachable subjects',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AppPalette.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: canonicalSubjectNames.map((subjectName) {
+                        final isPrimary = subjectName == selectedPrimary;
+                        final isSelected =
+                            isPrimary || selectedAdditional.contains(subjectName);
+                        return FilterChip(
+                          label: Text(subjectName),
+                          selected: isSelected,
+                          onSelected: isSaving || isPrimary
+                              ? null
+                              : (selected) {
+                                  setSheetState(() {
+                                    if (selected) {
+                                      selectedAdditional.add(subjectName);
+                                    } else {
+                                      selectedAdditional.remove(subjectName);
+                                    }
+                                  });
+                                },
+                        );
+                      }).toList(growable: false),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Primary: ${selectedPrimary.isEmpty ? 'Not selected yet' : selectedPrimary}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.section),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                final primarySubject = selectedPrimary.trim();
+                                if (primarySubject.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Choose a primary subject before saving teacher access.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                setSheetState(() => isSaving = true);
+                                try {
+                                  final updated = await _api
+                                      .updateManagementTeacherSubjects(
+                                        token: _session.token,
+                                        teacherId: teacher.id,
+                                        subjectSpecialty: primarySubject,
+                                        subjectSpecialties: <String>[
+                                          primarySubject,
+                                          ...selectedAdditional,
+                                        ],
+                                      );
+                                  if (!mounted) {
+                                    return;
+                                  }
+                                  if (!sheetContext.mounted) {
+                                    return;
+                                  }
+                                  Navigator.of(sheetContext).pop(updated);
+                                } catch (error) {
+                                  if (!mounted) {
+                                    return;
+                                  }
+                                  ScaffoldMessenger.of(
+                                    this.context,
+                                  ).showSnackBar(
+                                    SnackBar(content: Text(error.toString())),
+                                  );
+                                  setSheetState(() => isSaving = false);
+                                }
+                              },
+                        icon: Icon(
+                          isSaving ? Icons.hourglass_top_rounded : Icons.save,
+                        ),
+                        label: Text(
+                          isSaving ? 'Saving subjects...' : 'Save teacher subjects',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (updatedTeacher == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      // WHY: Teacher subject access affects timetable ownership and authoring
+      // scope immediately, so management reloads the workspace from the
+      // backend instead of patching partial local state.
+      _future = _loadWorkspace();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${updatedTeacher.name} now teaches ${_teacherSubjectSummaryLabel(updatedTeacher)}.',
+        ),
+      ),
+    );
   }
 
   Future<void> _openNotification(AppNotification notification) async {
@@ -3709,10 +4261,14 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           final subjectName = comment.subjectName.trim().isEmpty
               ? 'Session'
               : comment.subjectName.trim();
-          final teacherName = comment.teacherName.trim();
-          final commentLabel = teacherName.isEmpty
+          final authorName = comment.authorName.trim().isNotEmpty
+              ? comment.authorName.trim()
+              : comment.teacherName.trim();
+          final plannedTeacherName = comment.plannedTeacherName.trim();
+          final conductedByName = comment.conductedByName.trim();
+          final commentLabel = authorName.isEmpty
               ? '$subjectName · ${_managementSessionTypeLabel(comment.sessionType)}'
-              : '$subjectName · ${_managementSessionTypeLabel(comment.sessionType)} · $teacherName';
+              : '$subjectName · ${_managementSessionTypeLabel(comment.sessionType)} · $authorName';
           buffer
             ..writeln('<article class="result-card">')
             ..writeln('<div class="result-header">')
@@ -3725,6 +4281,24 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
             ..writeln(
               '<span class="result-pill">${_escapeManagementHtml(_managementSessionTypeLabel(comment.sessionType))}</span>',
             )
+            ..writeln('</div>')
+            ..writeln('<div class="result-pills">');
+          if (authorName.isNotEmpty) {
+            buffer.writeln(
+              '<span class="result-pill">${_escapeManagementHtml('Author: $authorName')}</span>',
+            );
+          }
+          if (plannedTeacherName.isNotEmpty) {
+            buffer.writeln(
+              '<span class="result-pill">${_escapeManagementHtml('Planned: $plannedTeacherName')}</span>',
+            );
+          }
+          if (conductedByName.isNotEmpty) {
+            buffer.writeln(
+              '<span class="result-pill">${_escapeManagementHtml('Taught by: $conductedByName')}</span>',
+            );
+          }
+          buffer
             ..writeln('</div>')
             ..writeln('<p>${_escapeManagementHtml(comment.comment)}</p>')
             ..writeln('</article>');
@@ -4624,7 +5198,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     final sessionType = comment.sessionType.trim().isEmpty
         ? 'Session'
         : _managementSessionTypeLabel(comment.sessionType);
-    final teacherName = comment.teacherName.trim();
+    final authorName = comment.authorName.trim().isNotEmpty
+        ? comment.authorName.trim()
+        : comment.teacherName.trim();
+    final plannedTeacherName = comment.plannedTeacherName.trim();
+    final conductedByName = comment.conductedByName.trim();
     final pendingClass = comment.isPending ? ' pending' : '';
 
     final buffer = StringBuffer()
@@ -4634,9 +5212,19 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       ..writeln(
         '<span class="copy-chip">${_escapeManagementHtml(sessionType)}</span>',
       );
-    if (teacherName.isNotEmpty) {
+    if (authorName.isNotEmpty) {
       buffer.writeln(
-        '<span class="result-pill">${_escapeManagementHtml(teacherName)}</span>',
+        '<span class="result-pill">${_escapeManagementHtml('Author: $authorName')}</span>',
+      );
+    }
+    if (plannedTeacherName.isNotEmpty) {
+      buffer.writeln(
+        '<span class="result-pill">${_escapeManagementHtml('Planned: $plannedTeacherName')}</span>',
+      );
+    }
+    if (conductedByName.isNotEmpty) {
+      buffer.writeln(
+        '<span class="result-pill">${_escapeManagementHtml('Taught by: $conductedByName')}</span>',
       );
     }
     buffer
@@ -5402,6 +5990,9 @@ class _ManagementResolvedTargetComment {
     required this.subjectName,
     required this.sessionType,
     required this.teacherName,
+    required this.authorName,
+    required this.plannedTeacherName,
+    required this.conductedByName,
     required this.comment,
     required this.isPending,
   });
@@ -5409,6 +6000,9 @@ class _ManagementResolvedTargetComment {
   final String subjectName;
   final String sessionType;
   final String teacherName;
+  final String authorName;
+  final String plannedTeacherName;
+  final String conductedByName;
   final String comment;
   final bool isPending;
 }
@@ -6152,7 +6746,7 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
                     value: teacher.id,
                     child: Text(
                       teacher.subjectSpecialty?.trim().isNotEmpty == true
-                          ? '${teacher.name} · ${teacher.subjectSpecialty}'
+                          ? '${teacher.name} · ${_teacherSubjectSummaryLabel(teacher)}'
                           : teacher.name,
                     ),
                   ),
@@ -6200,7 +6794,7 @@ class _ManagementTimetableInlineEditor extends StatelessWidget {
                     value: teacher.id,
                     child: Text(
                       teacher.subjectSpecialty?.trim().isNotEmpty == true
-                          ? '${teacher.name} · ${teacher.subjectSpecialty}'
+                          ? '${teacher.name} · ${_teacherSubjectSummaryLabel(teacher)}'
                           : teacher.name,
                     ),
                   ),
@@ -6480,7 +7074,11 @@ class _ManagementAttachedTeacherCommentCard extends StatelessWidget {
     final subjectName = comment.subjectName.trim().isEmpty
         ? 'Subject teacher'
         : comment.subjectName.trim();
-    final teacherName = comment.teacherName.trim();
+    final authorName = comment.authorName.trim().isNotEmpty
+        ? comment.authorName.trim()
+        : comment.teacherName.trim();
+    final plannedTeacherName = comment.plannedTeacherName.trim();
+    final conductedByName = comment.conductedByName.trim();
     final backgroundColor = comment.isPending
         ? AppPalette.sun.withValues(alpha: 0.18)
         : AppPalette.sky.withValues(alpha: 0.08);
@@ -6512,10 +7110,22 @@ class _ManagementAttachedTeacherCommentCard extends StatelessWidget {
                 label: _sessionLabel(),
                 backgroundColor: AppPalette.primaryBlue.withValues(alpha: 0.12),
               ),
-              if (teacherName.isNotEmpty)
+              if (authorName.isNotEmpty)
                 _ManagementMiniPill(
-                  label: teacherName,
+                  label: 'Author: $authorName',
                   backgroundColor: AppPalette.sun.withValues(alpha: 0.16),
+                ),
+              if (plannedTeacherName.isNotEmpty)
+                _ManagementMiniPill(
+                  label: 'Planned: $plannedTeacherName',
+                  backgroundColor: AppPalette.primaryBlue.withValues(
+                    alpha: 0.12,
+                  ),
+                ),
+              if (conductedByName.isNotEmpty)
+                _ManagementMiniPill(
+                  label: 'Taught by: $conductedByName',
+                  backgroundColor: AppPalette.mint.withValues(alpha: 0.18),
                 ),
               if (comment.isPending)
                 _ManagementMiniPill(
@@ -6569,7 +7179,11 @@ class _ManagementTargetSessionCommentCard extends StatelessWidget {
     final subjectName = comment.subjectName.trim().isEmpty
         ? 'Session'
         : comment.subjectName.trim();
-    final teacherName = comment.teacherName.trim();
+    final authorName = comment.authorName.trim().isNotEmpty
+        ? comment.authorName.trim()
+        : comment.teacherName.trim();
+    final plannedTeacherName = comment.plannedTeacherName.trim();
+    final conductedByName = comment.conductedByName.trim();
 
     return Container(
       width: double.infinity,
@@ -6598,10 +7212,22 @@ class _ManagementTargetSessionCommentCard extends StatelessWidget {
                 label: _sessionLabel(),
                 backgroundColor: AppPalette.primaryBlue.withValues(alpha: 0.12),
               ),
-              if (teacherName.isNotEmpty)
+              if (authorName.isNotEmpty)
                 _ManagementMiniPill(
-                  label: teacherName,
+                  label: 'Author: $authorName',
                   backgroundColor: AppPalette.sun.withValues(alpha: 0.16),
+                ),
+              if (plannedTeacherName.isNotEmpty)
+                _ManagementMiniPill(
+                  label: 'Planned: $plannedTeacherName',
+                  backgroundColor: AppPalette.primaryBlue.withValues(
+                    alpha: 0.12,
+                  ),
+                ),
+              if (conductedByName.isNotEmpty)
+                _ManagementMiniPill(
+                  label: 'Taught by: $conductedByName',
+                  backgroundColor: AppPalette.mint.withValues(alpha: 0.18),
                 ),
             ],
           ),

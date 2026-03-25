@@ -42,18 +42,23 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
 
   late AuthSession _session;
   late Future<MentorWorkspaceData> _future;
+  late DateTime _selectedCoveredSessionDate;
   String _selectedStudentId = '';
   MentorWorkspaceData? _workspace;
   NotificationInboxData? _notificationInbox;
+  Future<MentorCoveredSessionsData>? _coveredSessionsFuture;
   String _difficulty = 'Easy';
   bool _isUpdatingDifficulty = false;
   List<TargetSummary>? _targets;
   bool _isUpdatingTargets = false;
+  String _savingCoveredSessionId = '';
 
   @override
   void initState() {
     super.initState();
     _session = widget.session;
+    final now = DateTime.now();
+    _selectedCoveredSessionDate = DateTime(now.year, now.month, now.day);
     _persistSessionSnapshot();
     _future = _loadWorkspace();
   }
@@ -70,6 +75,10 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
       selectedStudentId: _selectedStudentId,
     );
     _selectedStudentId = workspace.selectedStudent.id;
+    _coveredSessionsFuture = _loadCoveredSessions(
+      studentId: workspace.selectedStudent.id,
+      date: _selectedCoveredSessionDate,
+    );
     _workspace = workspace;
     _notificationInbox ??= workspace.notificationInbox;
     _targets ??= workspace.overview.targets;
@@ -101,6 +110,11 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
           final targets = _targets ?? overview.targets;
           final notificationInbox =
               _notificationInbox ?? workspace.notificationInbox;
+          final coveredSessionsFuture =
+              _coveredSessionsFuture ??= _loadCoveredSessions(
+                studentId: workspace.selectedStudent.id,
+                date: _selectedCoveredSessionDate,
+              );
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(AppSpacing.screen),
@@ -200,6 +214,158 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                   subtitle:
                       'Review Monday to Sunday coverage and the whole month before adjusting support.',
                   entries: workspace.timetable,
+                ),
+                const SizedBox(height: AppSpacing.item),
+                SoftPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Covered Teaching Sessions',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'If management assigns mentor cover, record who taught the lesson and keep the session note auditable here.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: AppPalette.textMuted,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => _pickCoveredSessionDate(workspace),
+                            icon: const Icon(Icons.edit_calendar_rounded),
+                            label: const Text('Change date'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.item),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.78),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: AppPalette.sky.withValues(alpha: 0.54),
+                          ),
+                        ),
+                        child: Text(
+                          _formatCoveredSessionDate(_selectedCoveredSessionDate),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppPalette.navy,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.item),
+                      FutureBuilder<MentorCoveredSessionsData>(
+                        future: coveredSessionsFuture,
+                        builder: (context, coveredSnapshot) {
+                          if (coveredSnapshot.connectionState !=
+                              ConnectionState.done) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(
+                                vertical: AppSpacing.compact,
+                              ),
+                              child: Text('Loading covered sessions...'),
+                            );
+                          }
+
+                          if (coveredSnapshot.hasError) {
+                            return Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(AppSpacing.item),
+                              decoration: BoxDecoration(
+                                color: AppPalette.sun.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(
+                                  AppSpacing.radiusMd,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    coveredSnapshot.error.toString(),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: AppPalette.navy),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  OutlinedButton.icon(
+                                    onPressed: () => setState(() {
+                                      _coveredSessionsFuture =
+                                          _loadCoveredSessions(
+                                            studentId:
+                                                workspace.selectedStudent.id,
+                                            date: _selectedCoveredSessionDate,
+                                          );
+                                    }),
+                                    icon: const Icon(Icons.refresh_rounded),
+                                    label: const Text('Retry'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          final coveredSessions = coveredSnapshot.data!;
+                          if (coveredSessions.sessions.isEmpty) {
+                            return Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(AppSpacing.item),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.74),
+                                borderRadius: BorderRadius.circular(
+                                  AppSpacing.radiusMd,
+                                ),
+                              ),
+                              child: Text(
+                                'No covered sessions are assigned for ${coveredSessions.student.name} on ${coveredSessions.dateKey}.',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            );
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: coveredSessions.sessions
+                                .map(
+                                  (session) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: _MentorCoveredSessionCard(
+                                      session: session,
+                                      isSaving:
+                                          _savingCoveredSessionId == session.id,
+                                      onEdit: () => _openCoveredSessionEditor(
+                                        studentId: coveredSessions.student.id,
+                                        session: session,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(growable: false),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
@@ -602,8 +768,346 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
       _selectedStudentId = selectedStudentId;
       _notificationInbox = null;
       _targets = null;
+      _coveredSessionsFuture = _loadCoveredSessions(
+        studentId: selectedStudentId,
+        date: _selectedCoveredSessionDate,
+      );
       _future = _loadWorkspace();
     });
+  }
+
+  String _dateKeyFromDate(DateTime date) {
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  String _formatCoveredSessionDate(DateTime date) {
+    const monthNames = <String>[
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return '${date.day} ${monthNames[date.month - 1]} ${date.year}';
+  }
+
+  Future<MentorCoveredSessionsData> _loadCoveredSessions({
+    required String studentId,
+    required DateTime date,
+  }) {
+    return _api.fetchMentorCoveredSessions(
+      token: _session.token,
+      studentId: studentId,
+      dateKey: _dateKeyFromDate(date),
+    );
+  }
+
+  Future<void> _pickCoveredSessionDate(MentorWorkspaceData workspace) async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedCoveredSessionDate,
+      firstDate: DateTime(2025, 1, 1),
+      lastDate: DateTime(2027, 12, 31),
+    );
+    if (pickedDate == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _selectedCoveredSessionDate = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+      );
+      _coveredSessionsFuture = _loadCoveredSessions(
+        studentId: workspace.selectedStudent.id,
+        date: _selectedCoveredSessionDate,
+      );
+    });
+  }
+
+  Future<void> _openCoveredSessionEditor({
+    required String studentId,
+    required MentorCoveredSession session,
+  }) async {
+    final focusScoreController = TextEditingController(
+      text: '${session.sessionLog?.focusScore ?? 80}',
+    );
+    final completedQuestionsController = TextEditingController(
+      text: '${session.sessionLog?.completedQuestions ?? 0}',
+    );
+    final xpAwardedController = TextEditingController(
+      text: '${session.sessionLog?.xpAwarded ?? 0}',
+    );
+    final notesController = TextEditingController(
+      text: session.sessionLog?.notes ?? '',
+    );
+    var behaviourStatus = (session.sessionLog?.behaviourStatus ?? 'steady')
+        .trim()
+        .toLowerCase();
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (sheetContext) {
+          var isSaving = false;
+          return StatefulBuilder(
+            builder: (context, setSheetState) {
+              return Padding(
+                padding: EdgeInsets.only(
+                  left: AppSpacing.screen,
+                  right: AppSpacing.screen,
+                  top: AppSpacing.compact,
+                  bottom:
+                      MediaQuery.of(sheetContext).viewInsets.bottom +
+                      AppSpacing.screen,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        session.subject?.name.trim().isNotEmpty == true
+                            ? session.subject!.name.trim()
+                            : 'Covered lesson',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${_mentorSessionLabel(session.sessionType)} · ${session.dateKey}',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      if (session.plannedTeacher?.name.trim().isNotEmpty ==
+                          true)
+                        Text(
+                          'Planned teacher: ${session.plannedTeacher!.name}',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      Text(
+                        'Conducted by: ${session.coverStaff?.name.trim().isNotEmpty == true ? session.coverStaff!.name : _session.user.name}',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      if (session.reason.trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Reason: ${session.reason.trim()}',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppPalette.textMuted,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: AppSpacing.section),
+                      TextField(
+                        controller: focusScoreController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Focus score (0-100)',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: completedQuestionsController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Completed questions',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: behaviourStatus,
+                        decoration: const InputDecoration(
+                          labelText: 'Behaviour status',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'great',
+                            child: Text('Great'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'steady',
+                            child: Text('Steady'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'warning',
+                            child: Text('Warning'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'penalty',
+                            child: Text('Penalty'),
+                          ),
+                        ],
+                        onChanged: isSaving
+                            ? null
+                            : (value) {
+                                if (value == null) {
+                                  return;
+                                }
+                                setSheetState(() => behaviourStatus = value);
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: xpAwardedController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Target/support XP (0-50)',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: notesController,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Teaching note',
+                          hintText:
+                              'What happened in the covered lesson? Keep it factual and audit-ready.',
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.section),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: isSaving
+                              ? null
+                              : () async {
+                                  final notes = notesController.text.trim();
+                                  if (notes.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'A teaching note is required for covered sessions.',
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  setSheetState(() => isSaving = true);
+                                  setState(
+                                    () => _savingCoveredSessionId = session.id,
+                                  );
+                                  try {
+                                    await _api.createMentorCoveredSessionLog(
+                                      token: _session.token,
+                                      studentId: studentId,
+                                      dateKey: session.dateKey,
+                                      sessionType: session.sessionType,
+                                      focusScore:
+                                          int.tryParse(
+                                            focusScoreController.text.trim(),
+                                          ) ??
+                                          0,
+                                      completedQuestions:
+                                          int.tryParse(
+                                            completedQuestionsController.text
+                                                .trim(),
+                                          ) ??
+                                          0,
+                                      behaviourStatus: behaviourStatus,
+                                      notes: notes,
+                                      xpAwarded:
+                                          int.tryParse(
+                                            xpAwardedController.text.trim(),
+                                          ) ??
+                                          0,
+                                    );
+                                    if (!mounted) {
+                                      return;
+                                    }
+                                    if (!sheetContext.mounted) {
+                                      return;
+                                    }
+                                    Navigator.of(sheetContext).pop();
+                                    setState(() {
+                                      // WHY: Covered-session notes affect the
+                                      // mentor overview metrics and the saved
+                                      // audited lesson record, so both the
+                                      // overview and session list refresh from
+                                      // the backend together.
+                                      _future = _loadWorkspace();
+                                    });
+                                    ScaffoldMessenger.of(
+                                      this.context,
+                                    ).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Covered session note saved.',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (error) {
+                                    if (!mounted) {
+                                      return;
+                                    }
+                                    ScaffoldMessenger.of(
+                                      this.context,
+                                    ).showSnackBar(
+                                      SnackBar(
+                                        content: Text(error.toString()),
+                                      ),
+                                    );
+                                    setSheetState(() => isSaving = false);
+                                  } finally {
+                                    if (mounted) {
+                                      setState(
+                                        () => _savingCoveredSessionId = '',
+                                      );
+                                    }
+                                  }
+                                },
+                          icon: Icon(
+                            isSaving
+                                ? Icons.hourglass_top_rounded
+                                : Icons.save_rounded,
+                          ),
+                          label: Text(
+                            isSaving
+                                ? 'Saving covered note...'
+                                : 'Save covered session note',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      focusScoreController.dispose();
+      completedQuestionsController.dispose();
+      xpAwardedController.dispose();
+      notesController.dispose();
+    }
+  }
+
+  String _mentorSessionLabel(String sessionType) {
+    switch (sessionType.trim().toLowerCase()) {
+      case 'morning':
+        return 'Morning session';
+      case 'afternoon':
+        return 'Afternoon session';
+      default:
+        return sessionType.trim().isEmpty ? 'Session' : sessionType.trim();
+    }
   }
 
   Future<void> _openNotification(AppNotification notification) async {
@@ -955,6 +1459,228 @@ class _MentorTargetRow extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MentorCoveredSessionCard extends StatelessWidget {
+  const _MentorCoveredSessionCard({
+    required this.session,
+    required this.isSaving,
+    required this.onEdit,
+  });
+
+  final MentorCoveredSession session;
+  final bool isSaving;
+  final VoidCallback onEdit;
+
+  String _sessionLabel() {
+    switch (session.sessionType.trim().toLowerCase()) {
+      case 'morning':
+        return 'Morning session';
+      case 'afternoon':
+        return 'Afternoon session';
+      default:
+        return session.sessionType.trim().isEmpty
+            ? 'Session'
+            : session.sessionType.trim();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final subjectName = session.subject?.name.trim().isNotEmpty == true
+        ? session.subject!.name.trim()
+        : 'Covered lesson';
+    final plannedTeacher = session.plannedTeacher?.name.trim() ?? '';
+    final coverMentor = session.coverStaff?.name.trim() ?? '';
+    final log = session.sessionLog;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppPalette.sky.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      subjectName,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _CoveredSessionPill(
+                          label: _sessionLabel(),
+                          backgroundColor: AppPalette.primaryBlue.withValues(
+                            alpha: 0.12,
+                          ),
+                        ),
+                        if (plannedTeacher.isNotEmpty)
+                          _CoveredSessionPill(
+                            label: 'Planned: $plannedTeacher',
+                            backgroundColor: AppPalette.sun.withValues(
+                              alpha: 0.18,
+                            ),
+                          ),
+                        if (coverMentor.isNotEmpty)
+                          _CoveredSessionPill(
+                            label: 'Cover: $coverMentor',
+                            backgroundColor: AppPalette.mint.withValues(
+                              alpha: 0.2,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (log != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppPalette.mint.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Saved',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.navy,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (session.reason.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              session.reason.trim(),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+            ),
+          ],
+          if (log != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppPalette.sky.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _CoveredSessionPill(
+                        label: 'Focus ${log.focusScore}',
+                        backgroundColor: AppPalette.primaryBlue.withValues(
+                          alpha: 0.12,
+                        ),
+                      ),
+                      _CoveredSessionPill(
+                        label: 'Questions ${log.completedQuestions}',
+                        backgroundColor: AppPalette.sky.withValues(alpha: 0.18),
+                      ),
+                      _CoveredSessionPill(
+                        label:
+                            log.behaviourStatus.isEmpty
+                            ? 'Steady'
+                            : log.behaviourStatus,
+                        backgroundColor: AppPalette.sun.withValues(alpha: 0.16),
+                      ),
+                      _CoveredSessionPill(
+                        label: '${log.xpAwarded} XP',
+                        backgroundColor: AppPalette.mint.withValues(alpha: 0.18),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    log.notes.trim(),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppPalette.navy,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Author: ${log.authorName.isEmpty ? 'Mentor' : log.authorName}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.tonalIcon(
+              onPressed: isSaving ? null : onEdit,
+              icon: Icon(
+                isSaving ? Icons.hourglass_top_rounded : Icons.edit_note_rounded,
+              ),
+              label: Text(
+                isSaving
+                    ? 'Saving...'
+                    : log == null
+                    ? 'Log covered session'
+                    : 'Update covered session',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CoveredSessionPill extends StatelessWidget {
+  const _CoveredSessionPill({
+    required this.label,
+    required this.backgroundColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: AppPalette.navy,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

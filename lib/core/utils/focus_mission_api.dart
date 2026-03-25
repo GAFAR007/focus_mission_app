@@ -556,6 +556,79 @@ class FocusMissionApi {
     );
   }
 
+  Future<TeacherSummary> updateManagementTeacherSubjects({
+    required String token,
+    required String teacherId,
+    required String subjectSpecialty,
+    List<String> subjectSpecialties = const [],
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/management/teachers/$teacherId/subjects',
+      token: token,
+      body: <String, dynamic>{
+        'subjectSpecialty': subjectSpecialty.trim(),
+        'subjectSpecialties': subjectSpecialties
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false),
+      },
+    );
+
+    return TeacherSummary.fromJson(
+      (json['teacher'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<ManagementSessionCoverAssignment> saveManagementStudentSessionCover({
+    required String token,
+    required String studentId,
+    required String dateKey,
+    required String sessionType,
+    required String coverStaffId,
+    String reason = '',
+  }) async {
+    final json = await _requestJson(
+      'PUT',
+      '/management/students/$studentId/covers',
+      token: token,
+      body: <String, dynamic>{
+        'dateKey': dateKey.trim(),
+        'sessionType': sessionType.trim().toLowerCase(),
+        'coverStaffId': coverStaffId.trim(),
+        if (reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+
+    return ManagementSessionCoverAssignment.fromJson(
+      (json['coverAssignment'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<ManagementSessionCoverAssignment> removeManagementStudentSessionCover({
+    required String token,
+    required String studentId,
+    required String dateKey,
+    required String sessionType,
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/management/students/$studentId/covers/remove',
+      token: token,
+      body: <String, dynamic>{
+        'dateKey': dateKey.trim(),
+        'sessionType': sessionType.trim().toLowerCase(),
+      },
+    );
+
+    return ManagementSessionCoverAssignment.fromJson(
+      (json['coverAssignment'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
   Future<List<StudentSummary>> fetchManagementStudents({
     required String token,
     String status = 'active',
@@ -838,6 +911,7 @@ class FocusMissionApi {
     required String email,
     required String password,
     String subjectSpecialty = '',
+    List<String> subjectSpecialties = const [],
     String yearGroup = '',
   }) async {
     final json = await _requestJson(
@@ -851,6 +925,11 @@ class FocusMissionApi {
         'password': password,
         if (subjectSpecialty.trim().isNotEmpty)
           'subjectSpecialty': subjectSpecialty.trim(),
+        if (subjectSpecialties.isNotEmpty)
+          'subjectSpecialties': subjectSpecialties
+              .map((value) => value.trim())
+              .where((value) => value.isNotEmpty)
+              .toList(growable: false),
         if (role.trim().toLowerCase() == 'student' &&
             yearGroup.trim().isNotEmpty)
           'yearGroup': yearGroup.trim(),
@@ -1155,6 +1234,7 @@ class FocusMissionApi {
     required int completedQuestions,
     required String behaviourStatus,
     required String notes,
+    String dateKey = '',
     int xpAwarded = 20,
   }) async {
     final json = await _requestJson(
@@ -1165,6 +1245,7 @@ class FocusMissionApi {
         'studentId': studentId,
         'subjectId': subjectId,
         'sessionType': sessionType,
+        if (dateKey.trim().isNotEmpty) 'dateKey': dateKey.trim(),
         'focusScore': focusScore,
         'completedQuestions': completedQuestions,
         'behaviourStatus': behaviourStatus,
@@ -1180,6 +1261,64 @@ class FocusMissionApi {
     }
 
     return null;
+  }
+
+  Future<MentorCoveredSessionsData> fetchMentorCoveredSessions({
+    required String token,
+    required String studentId,
+    String dateKey = '',
+  }) async {
+    final normalizedDateKey = dateKey.trim();
+    final json = await _requestJson(
+      'GET',
+      normalizedDateKey.isEmpty
+          ? '/mentor/covered-sessions/$studentId'
+          : '/mentor/covered-sessions/$studentId?date=$normalizedDateKey',
+      token: token,
+    );
+
+    return MentorCoveredSessionsData.fromJson(json);
+  }
+
+  Future<MentorCoveredSessionsData> createMentorCoveredSessionLog({
+    required String token,
+    required String studentId,
+    required String dateKey,
+    required String sessionType,
+    required int focusScore,
+    required int completedQuestions,
+    required String behaviourStatus,
+    required String notes,
+    int xpAwarded = 0,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/mentor/covered-session-log',
+      token: token,
+      body: <String, dynamic>{
+        'studentId': studentId,
+        'dateKey': dateKey.trim(),
+        'sessionType': sessionType.trim().toLowerCase(),
+        'focusScore': focusScore,
+        'completedQuestions': completedQuestions,
+        'behaviourStatus': behaviourStatus,
+        'notes': notes,
+        'xpAwarded': xpAwarded,
+      },
+    );
+
+    final sessionJson = (json['session'] as Map<dynamic, dynamic>? ?? const {})
+        .cast<String, dynamic>();
+    final studentJson = (json['student'] as Map<dynamic, dynamic>? ?? const {})
+        .cast<String, dynamic>();
+
+    return MentorCoveredSessionsData(
+      student: AppUser.fromJson(studentJson),
+      dateKey: dateKey.trim(),
+      sessions: <MentorCoveredSession>[
+        MentorCoveredSession.fromJson(sessionJson),
+      ],
+    );
   }
 
   Future<void> updateDifficulty({

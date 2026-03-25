@@ -338,8 +338,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           final teacherCriteria = criteria
               .where(
                 (criterion) =>
-                    _normalizeLessonValue(criterion.subject?.name) ==
-                    _normalizeLessonValue(_session.user.subjectSpecialty),
+                    _teacherSubjectMatches(criterion.subject?.name),
               )
               .toList(growable: false);
           final schedule = _scheduleForDate(
@@ -1092,6 +1091,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         studentId: workspace.selectedStudent.id,
         subjectId: selectedSubject.id,
         sessionType: lessonLabel.toLowerCase(),
+        dateKey: _dateKey(_selectedLessonDate),
         focusScore: _focusScoreForBehaviour(),
         completedQuestions: 5,
         behaviourStatus: _behaviourStatusForApi(),
@@ -1992,9 +1992,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       return selectedSubject;
     }
 
-    final specialty = _normalizeLessonValue(_session.user.subjectSpecialty);
     for (final subject in workspace.teacherSubjects) {
-      if (_normalizeLessonValue(subject.name) == specialty) {
+      if (_teacherSubjectMatches(subject.name)) {
         return subject;
       }
     }
@@ -3121,16 +3120,25 @@ body { margin: 0; font-family: Arial, sans-serif; background: #eef6ff; color: #1
     }
 
     final subjectName = _normalizeLessonValue(subject?.name);
-    final teacherSpecialty = _normalizeLessonValue(
-      _session.user.subjectSpecialty,
-    );
 
     // WHY: The UI should still resolve to the teacher's own subject slot if a
     // stale timetable payload temporarily omits the expected teacher id. The
     // backend remains authoritative and will reject invalid generation attempts.
-    return subjectName.isNotEmpty &&
-        teacherSpecialty.isNotEmpty &&
-        subjectName == teacherSpecialty;
+    return subjectName.isNotEmpty && _teacherSubjectMatches(subjectName);
+  }
+
+  bool _teacherSubjectMatches(String? subjectName) {
+    final normalizedSubject = _normalizeLessonValue(subjectName);
+    if (normalizedSubject.isEmpty) {
+      return false;
+    }
+
+    final normalizedTeacherSubjects = <String>{
+      _normalizeLessonValue(_session.user.subjectSpecialty),
+      ..._session.user.subjectSpecialties.map(_normalizeLessonValue),
+    }..removeWhere((value) => value.isEmpty);
+
+    return normalizedTeacherSubjects.contains(normalizedSubject);
   }
 
   String _normalizeLessonValue(String? value) {
@@ -3353,7 +3361,7 @@ body { margin: 0; font-family: Arial, sans-serif; background: #eef6ff; color: #1
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'This teacher has no subject specialty configured for timetable editing yet.',
+            'This teacher has no teachable subjects configured for timetable editing yet.',
           ),
         ),
       );
@@ -7049,7 +7057,7 @@ class _TeacherTimetableInlineEditor extends StatelessWidget {
           else if (!hasTeacherSubjects)
             _TeacherTimetableInfoCard(
               message:
-                  'This teacher has no subject specialty configured for timetable editing yet.',
+                  'This teacher has no teachable subjects configured for timetable editing yet.',
             )
           else if (!hasEditableSlot)
             _TeacherTimetableInfoCard(
