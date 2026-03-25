@@ -26,6 +26,7 @@ import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import '../../auth/presentation/role_selection_screen.dart';
+import 'mentor_saved_session_screen.dart';
 
 class MentorOverviewScreen extends StatefulWidget {
   const MentorOverviewScreen({super.key, required this.session});
@@ -110,8 +111,8 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
           final targets = _targets ?? overview.targets;
           final notificationInbox =
               _notificationInbox ?? workspace.notificationInbox;
-          final coveredSessionsFuture =
-              _coveredSessionsFuture ??= _loadCoveredSessions(
+          final coveredSessionsFuture = _coveredSessionsFuture ??=
+              _loadCoveredSessions(
                 studentId: workspace.selectedStudent.id,
                 date: _selectedCoveredSessionDate,
               );
@@ -235,12 +236,8 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                                 const SizedBox(height: 6),
                                 Text(
                                   'If management assigns mentor cover, record who taught the lesson and keep the session note auditable here.',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        color: AppPalette.textMuted,
-                                      ),
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(color: AppPalette.textMuted),
                                 ),
                               ],
                             ),
@@ -266,11 +263,14 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                           ),
                         ),
                         child: Text(
-                          _formatCoveredSessionDate(_selectedCoveredSessionDate),
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppPalette.navy,
-                            fontWeight: FontWeight.w700,
+                          _formatCoveredSessionDate(
+                            _selectedCoveredSessionDate,
                           ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: AppPalette.navy,
+                                fontWeight: FontWeight.w700,
+                              ),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.item),
@@ -357,6 +357,20 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                                         studentId: coveredSessions.student.id,
                                         session: session,
                                       ),
+                                      onOpenSavedSession:
+                                          session.sessionLog == null
+                                          ? null
+                                          : () => _openSavedCoveredSession(
+                                              studentName:
+                                                  coveredSessions.student.name,
+                                              studentYearGroup:
+                                                  coveredSessions
+                                                      .student
+                                                      .yearGroup ??
+                                                  '',
+                                              session: session,
+                                              targets: targets,
+                                            ),
                                     ),
                                   ),
                                 )
@@ -857,7 +871,7 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
         .toLowerCase();
 
     try {
-      await showModalBottomSheet<void>(
+      final savedSession = await showModalBottomSheet<MentorCoveredSession>(
         context: context,
         isScrollControlled: true,
         showDragHandle: true,
@@ -907,9 +921,8 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                         const SizedBox(height: 6),
                         Text(
                           'Reason: ${session.reason.trim()}',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppPalette.textMuted,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppPalette.textMuted),
                         ),
                       ],
                       const SizedBox(height: AppSpacing.section),
@@ -1003,37 +1016,50 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                                     () => _savingCoveredSessionId = session.id,
                                   );
                                   try {
-                                    await _api.createMentorCoveredSessionLog(
-                                      token: _session.token,
-                                      studentId: studentId,
-                                      dateKey: session.dateKey,
-                                      sessionType: session.sessionType,
-                                      focusScore:
-                                          int.tryParse(
-                                            focusScoreController.text.trim(),
-                                          ) ??
-                                          0,
-                                      completedQuestions:
-                                          int.tryParse(
-                                            completedQuestionsController.text
-                                                .trim(),
-                                          ) ??
-                                          0,
-                                      behaviourStatus: behaviourStatus,
-                                      notes: notes,
-                                      xpAwarded:
-                                          int.tryParse(
-                                            xpAwardedController.text.trim(),
-                                          ) ??
-                                          0,
-                                    );
+                                    final savedResponse = await _api
+                                        .createMentorCoveredSessionLog(
+                                          token: _session.token,
+                                          studentId: studentId,
+                                          dateKey: session.dateKey,
+                                          sessionType: session.sessionType,
+                                          focusScore:
+                                              int.tryParse(
+                                                focusScoreController.text
+                                                    .trim(),
+                                              ) ??
+                                              0,
+                                          completedQuestions:
+                                              int.tryParse(
+                                                completedQuestionsController
+                                                    .text
+                                                    .trim(),
+                                              ) ??
+                                              0,
+                                          behaviourStatus: behaviourStatus,
+                                          notes: notes,
+                                          xpAwarded:
+                                              int.tryParse(
+                                                xpAwardedController.text.trim(),
+                                              ) ??
+                                              0,
+                                        );
+                                    final savedSession = savedResponse.sessions
+                                        .firstWhere(
+                                          (item) =>
+                                              item.id.trim() ==
+                                              session.id.trim(),
+                                          orElse: () =>
+                                              savedResponse.sessions.first,
+                                        );
                                     if (!mounted) {
                                       return;
                                     }
                                     if (!sheetContext.mounted) {
                                       return;
                                     }
-                                    Navigator.of(sheetContext).pop();
+                                    Navigator.of(
+                                      sheetContext,
+                                    ).pop(savedSession);
                                     setState(() {
                                       // WHY: Covered-session notes affect the
                                       // mentor overview metrics and the saved
@@ -1058,9 +1084,7 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                                     ScaffoldMessenger.of(
                                       this.context,
                                     ).showSnackBar(
-                                      SnackBar(
-                                        content: Text(error.toString()),
-                                      ),
+                                      SnackBar(content: Text(error.toString())),
                                     );
                                     setSheetState(() => isSaving = false);
                                   } finally {
@@ -1091,6 +1115,22 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
           );
         },
       );
+
+      if (!mounted || savedSession == null) {
+        return;
+      }
+
+      final targetSnapshot = List<TargetSummary>.from(
+        _targets ?? _workspace?.overview.targets ?? const <TargetSummary>[],
+      );
+      await _openSavedCoveredSession(
+        studentName: _workspace?.selectedStudent.name.trim().isNotEmpty == true
+            ? _workspace!.selectedStudent.name.trim()
+            : _session.user.name,
+        studentYearGroup: _workspace?.selectedStudent.yearGroup ?? '',
+        session: savedSession,
+        targets: targetSnapshot,
+      );
     } finally {
       focusScoreController.dispose();
       completedQuestionsController.dispose();
@@ -1108,6 +1148,28 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
       default:
         return sessionType.trim().isEmpty ? 'Session' : sessionType.trim();
     }
+  }
+
+  Future<void> _openSavedCoveredSession({
+    required String studentName,
+    required String studentYearGroup,
+    required MentorCoveredSession session,
+    required List<TargetSummary> targets,
+  }) async {
+    if (session.sessionLog == null) {
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MentorSavedSessionScreen(
+          studentName: studentName,
+          studentYearGroup: studentYearGroup,
+          session: session,
+          targets: targets,
+        ),
+      ),
+    );
   }
 
   Future<void> _openNotification(AppNotification notification) async {
@@ -1469,11 +1531,13 @@ class _MentorCoveredSessionCard extends StatelessWidget {
     required this.session,
     required this.isSaving,
     required this.onEdit,
+    this.onOpenSavedSession,
   });
 
   final MentorCoveredSession session;
   final bool isSaving;
   final VoidCallback onEdit;
+  final VoidCallback? onOpenSavedSession;
 
   String _sessionLabel() {
     switch (session.sessionType.trim().toLowerCase()) {
@@ -1605,24 +1669,25 @@ class _MentorCoveredSessionCard extends StatelessWidget {
                         backgroundColor: AppPalette.sky.withValues(alpha: 0.18),
                       ),
                       _CoveredSessionPill(
-                        label:
-                            log.behaviourStatus.isEmpty
+                        label: log.behaviourStatus.isEmpty
                             ? 'Steady'
                             : log.behaviourStatus,
                         backgroundColor: AppPalette.sun.withValues(alpha: 0.16),
                       ),
                       _CoveredSessionPill(
                         label: '${log.xpAwarded} XP',
-                        backgroundColor: AppPalette.mint.withValues(alpha: 0.18),
+                        backgroundColor: AppPalette.mint.withValues(
+                          alpha: 0.18,
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
                   Text(
                     log.notes.trim(),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppPalette.navy,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -1636,21 +1701,32 @@ class _MentorCoveredSessionCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.tonalIcon(
-              onPressed: isSaving ? null : onEdit,
-              icon: Icon(
-                isSaving ? Icons.hourglass_top_rounded : Icons.edit_note_rounded,
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              if (log != null)
+                OutlinedButton.icon(
+                  onPressed: isSaving ? null : onOpenSavedSession,
+                  icon: const Icon(Icons.visibility_rounded),
+                  label: const Text('Saved session'),
+                ),
+              FilledButton.tonalIcon(
+                onPressed: isSaving ? null : onEdit,
+                icon: Icon(
+                  isSaving
+                      ? Icons.hourglass_top_rounded
+                      : Icons.edit_note_rounded,
+                ),
+                label: Text(
+                  isSaving
+                      ? 'Saving...'
+                      : log == null
+                      ? 'Log covered session'
+                      : 'Update covered session',
+                ),
               ),
-              label: Text(
-                isSaving
-                    ? 'Saving...'
-                    : log == null
-                    ? 'Log covered session'
-                    : 'Update covered session',
-              ),
-            ),
+            ],
           ),
         ],
       ),
