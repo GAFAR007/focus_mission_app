@@ -255,9 +255,7 @@ class ManagementSessionCoverAssignment {
   final TeacherSummary? plannedTeacher;
   final TeacherSummary? coverStaff;
 
-  factory ManagementSessionCoverAssignment.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory ManagementSessionCoverAssignment.fromJson(Map<String, dynamic> json) {
     return ManagementSessionCoverAssignment(
       id: (json['id'] ?? json['_id'] ?? '').toString(),
       dateKey: (json['dateKey'] ?? '').toString(),
@@ -279,27 +277,49 @@ class ManagementSessionCoverAssignment {
 class SessionSummary {
   const SessionSummary({
     required this.id,
+    required this.subjectId,
     required this.subjectName,
     required this.completedQuestions,
     required this.focusScore,
     required this.sessionType,
+    this.notes = '',
+    this.behaviourStatus = '',
+    this.dateKey = '',
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String id;
+  final String subjectId;
   final String subjectName;
   final int completedQuestions;
   final int focusScore;
   final String sessionType;
+  final String notes;
+  final String behaviourStatus;
+  final String dateKey;
+  final String? createdAt;
+  final String? updatedAt;
 
   factory SessionSummary.fromJson(Map<String, dynamic> json) {
-    final subject = _asMap(json['subjectId']);
+    final subject =
+        _asNullableMap(json['subjectId']) ??
+        _asNullableMap(json['subject']) ??
+        const <String, dynamic>{};
 
     return SessionSummary(
-      id: (json['_id'] ?? '').toString(),
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      subjectId: (subject['id'] ?? subject['_id'] ?? json['subjectId'] ?? '')
+          .toString(),
       subjectName: (subject['name'] ?? 'Mission').toString(),
       completedQuestions: _asInt(json['completedQuestions']),
       focusScore: _asInt(json['focusScore']),
       sessionType: (json['sessionType'] ?? '').toString(),
+      notes: (json['notes'] ?? '').toString(),
+      behaviourStatus: (json['behaviourStatus'] ?? '').toString(),
+      dateKey: (json['dateKey'] ?? json['sessionDateKey'] ?? '').toString(),
+      createdAt: json['createdAt']?.toString(),
+      updatedAt: json['updatedAt']?.toString(),
     );
   }
 }
@@ -2376,8 +2396,18 @@ class TargetSummary {
     required this.xpAwarded,
     required this.weekKey,
     required this.awardDateKey,
+    this.sessionType = '',
+    this.subjectId = '',
+    this.subjectName = '',
+    this.plannedTeacherName = '',
+    this.plannedTeacherRole = '',
     this.createdByName = '',
     this.createdByRole = '',
+    this.awardedByName = '',
+    this.awardedByRole = '',
+    this.createdAt,
+    this.updatedAt,
+    this.awardedAt,
   });
 
   final String id;
@@ -2390,8 +2420,18 @@ class TargetSummary {
   final int xpAwarded;
   final String weekKey;
   final String awardDateKey;
+  final String sessionType;
+  final String subjectId;
+  final String subjectName;
+  final String plannedTeacherName;
+  final String plannedTeacherRole;
   final String createdByName;
   final String createdByRole;
+  final String awardedByName;
+  final String awardedByRole;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? awardedAt;
 
   bool get isFixedTarget =>
       targetType == 'fixed_daily_mission' || targetType == 'fixed_assessment';
@@ -2407,8 +2447,18 @@ class TargetSummary {
     int? xpAwarded,
     String? weekKey,
     String? awardDateKey,
+    String? sessionType,
+    String? subjectId,
+    String? subjectName,
+    String? plannedTeacherName,
+    String? plannedTeacherRole,
     String? createdByName,
     String? createdByRole,
+    String? awardedByName,
+    String? awardedByRole,
+    String? createdAt,
+    String? updatedAt,
+    String? awardedAt,
   }) {
     return TargetSummary(
       id: id ?? this.id,
@@ -2421,8 +2471,18 @@ class TargetSummary {
       xpAwarded: xpAwarded ?? this.xpAwarded,
       weekKey: weekKey ?? this.weekKey,
       awardDateKey: awardDateKey ?? this.awardDateKey,
+      sessionType: sessionType ?? this.sessionType,
+      subjectId: subjectId ?? this.subjectId,
+      subjectName: subjectName ?? this.subjectName,
+      plannedTeacherName: plannedTeacherName ?? this.plannedTeacherName,
+      plannedTeacherRole: plannedTeacherRole ?? this.plannedTeacherRole,
       createdByName: createdByName ?? this.createdByName,
       createdByRole: createdByRole ?? this.createdByRole,
+      awardedByName: awardedByName ?? this.awardedByName,
+      awardedByRole: awardedByRole ?? this.awardedByRole,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      awardedAt: awardedAt ?? this.awardedAt,
     );
   }
 
@@ -2438,8 +2498,18 @@ class TargetSummary {
       xpAwarded: _asInt(json['xpAwarded']),
       weekKey: (json['weekKey'] ?? '').toString(),
       awardDateKey: (json['awardDateKey'] ?? '').toString(),
+      sessionType: (json['sessionType'] ?? '').toString(),
+      subjectId: (json['subjectId'] ?? '').toString(),
+      subjectName: (json['subjectName'] ?? '').toString(),
+      plannedTeacherName: (json['plannedTeacherName'] ?? '').toString(),
+      plannedTeacherRole: (json['plannedTeacherRole'] ?? '').toString(),
       createdByName: (json['createdByName'] ?? '').toString(),
       createdByRole: (json['createdByRole'] ?? '').toString(),
+      awardedByName: (json['awardedByName'] ?? '').toString(),
+      awardedByRole: (json['awardedByRole'] ?? '').toString(),
+      createdAt: json['createdAt']?.toString(),
+      updatedAt: json['updatedAt']?.toString(),
+      awardedAt: json['awardedAt']?.toString(),
     );
   }
 }
@@ -2459,6 +2529,8 @@ class ManagementTargetSessionComment {
     this.plannedTeacherRole = '',
     this.conductedByName = '',
     this.conductedByRole = '',
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String id;
@@ -2474,6 +2546,8 @@ class ManagementTargetSessionComment {
   final String plannedTeacherRole;
   final String conductedByName;
   final String conductedByRole;
+  final String? createdAt;
+  final String? updatedAt;
 
   factory ManagementTargetSessionComment.fromJson(Map<String, dynamic> json) {
     return ManagementTargetSessionComment(
@@ -2490,6 +2564,8 @@ class ManagementTargetSessionComment {
       plannedTeacherRole: (json['plannedTeacherRole'] ?? '').toString(),
       conductedByName: (json['conductedByName'] ?? '').toString(),
       conductedByRole: (json['conductedByRole'] ?? '').toString(),
+      createdAt: json['createdAt']?.toString(),
+      updatedAt: json['updatedAt']?.toString(),
     );
   }
 }

@@ -52,6 +52,7 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
   bool _isUpdatingDifficulty = false;
   List<TargetSummary>? _targets;
   bool _isUpdatingTargets = false;
+  bool _isRefreshingTargets = false;
   String _savingCoveredSessionId = '';
 
   @override
@@ -74,6 +75,7 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
     final workspace = await _api.loadMentorWorkspace(
       mentorSession: _session,
       selectedStudentId: _selectedStudentId,
+      dateKey: _dateKeyFromDate(_selectedCoveredSessionDate),
     );
     _selectedStudentId = workspace.selectedStudent.id;
     _coveredSessionsFuture = _loadCoveredSessions(
@@ -82,11 +84,44 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
     );
     _workspace = workspace;
     _notificationInbox ??= workspace.notificationInbox;
-    _targets ??= workspace.overview.targets;
+    _targets = _sortTargets(workspace.overview.targets);
     _difficulty = _labelDifficulty(
       workspace.overview.student.preferredDifficulty ?? 'easy',
     );
     return workspace;
+  }
+
+  Future<void> _refreshTargetsForSelectedDate(
+    MentorWorkspaceData workspace,
+    DateTime date,
+  ) async {
+    if (_isRefreshingTargets) {
+      return;
+    }
+
+    setState(() => _isRefreshingTargets = true);
+    try {
+      final overview = await _api.fetchMentorOverview(
+        token: _session.token,
+        studentId: workspace.selectedStudent.id,
+        dateKey: _dateKeyFromDate(date),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _targets = _sortTargets(overview.targets));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshingTargets = false);
+      }
+    }
   }
 
   @override
@@ -115,6 +150,18 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
               _loadCoveredSessions(
                 studentId: workspace.selectedStudent.id,
                 date: _selectedCoveredSessionDate,
+              );
+          final selectedTargetDateIsFuture =
+              DateTime(
+                _selectedCoveredSessionDate.year,
+                _selectedCoveredSessionDate.month,
+                _selectedCoveredSessionDate.day,
+              ).isAfter(
+                DateTime(
+                  DateTime.now().year,
+                  DateTime.now().month,
+                  DateTime.now().day,
+                ),
               );
 
           return SingleChildScrollView(
@@ -390,12 +437,15 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              'Weekly Targets',
+                              'Targets for ${_dateKeyFromDate(_selectedCoveredSessionDate)}',
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                           ),
                           TextButton.icon(
-                            onPressed: _isUpdatingTargets
+                            onPressed:
+                                _isUpdatingTargets ||
+                                    _isRefreshingTargets ||
+                                    selectedTargetDateIsFuture
                                 ? null
                                 : () => _createTarget(workspace),
                             icon: const Icon(Icons.add_circle_outline_rounded),
@@ -404,6 +454,26 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                         ],
                       ),
                       const SizedBox(height: AppSpacing.item),
+                      if (_isRefreshingTargets)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: AppSpacing.compact),
+                          child: Text(
+                            'Loading targets for the selected date...',
+                          ),
+                        ),
+                      if (selectedTargetDateIsFuture)
+                        Text(
+                          'Targets can be saved on today or a past support date only.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppPalette.textMuted),
+                        )
+                      else
+                        Text(
+                          'Use the selected covered-session date above to backdate mentor targets cleanly.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                      const SizedBox(height: AppSpacing.compact),
                       if (targets.isEmpty)
                         Text(
                           'No targets yet. Add one from the backend or mentor tools.',
@@ -415,7 +485,10 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
                             padding: const EdgeInsets.only(bottom: 10),
                             child: _MentorTargetRow(
                               target: target,
-                              enabled: !_isUpdatingTargets,
+                              enabled:
+                                  !_isUpdatingTargets &&
+                                  !_isRefreshingTargets &&
+                                  !selectedTargetDateIsFuture,
                               onSetStars: (stars) => _setTargetStars(
                                 workspace: workspace,
                                 target: target,
@@ -646,6 +719,7 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
         description: descriptionController.text.trim(),
         difficulty: selectedDifficulty,
         targetType: 'custom',
+        awardDateKey: _dateKeyFromDate(_selectedCoveredSessionDate),
       );
       if (!mounted) {
         return;
@@ -683,6 +757,7 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
         token: workspace.session.token,
         targetId: target.id,
         stars: nextStars,
+        awardDateKey: _dateKeyFromDate(_selectedCoveredSessionDate),
       );
       if (!mounted) {
         return;
@@ -848,6 +923,7 @@ class _MentorOverviewScreenState extends State<MentorOverviewScreen> {
         date: _selectedCoveredSessionDate,
       );
     });
+    _refreshTargetsForSelectedDate(workspace, _selectedCoveredSessionDate);
   }
 
   Future<void> _openCoveredSessionEditor({
@@ -1446,6 +1522,20 @@ class _MentorTargetRow extends StatelessWidget {
   final bool enabled;
   final ValueChanged<int> onSetStars;
 
+  String _formatAuditDateTime(String? rawValue) {
+    final parsed = rawValue == null
+        ? null
+        : DateTime.tryParse(rawValue)?.toLocal();
+    if (parsed == null) {
+      return '';
+    }
+    final month = parsed.month.toString().padLeft(2, '0');
+    final day = parsed.day.toString().padLeft(2, '0');
+    final hour = parsed.hour.toString().padLeft(2, '0');
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '${parsed.year}-$month-$day $hour:$minute';
+  }
+
   @override
   Widget build(BuildContext context) {
     final typeLabel = target.targetType == 'fixed_daily_mission'
@@ -1453,6 +1543,15 @@ class _MentorTargetRow extends StatelessWidget {
         : target.targetType == 'fixed_assessment'
         ? 'Default assessment'
         : 'Custom';
+    final savedAtLabel = _formatAuditDateTime(
+      target.updatedAt ?? target.createdAt,
+    );
+    final auditParts = <String>[
+      'For ${target.awardDateKey.trim().isEmpty ? 'selected date' : target.awardDateKey.trim()}',
+      if (savedAtLabel.isNotEmpty) 'Saved $savedAtLabel',
+      if (target.createdByName.trim().isNotEmpty)
+        'By ${target.createdByName.trim()}',
+    ];
     return Container(
       padding: const EdgeInsets.all(AppSpacing.item),
       decoration: BoxDecoration(
@@ -1494,6 +1593,14 @@ class _MentorTargetRow extends StatelessWidget {
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            auditParts.join(' · '),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.textMuted,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 8),
           Row(

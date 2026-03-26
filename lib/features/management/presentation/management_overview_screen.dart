@@ -1188,6 +1188,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     : comment.teacherName.trim(),
                 comment: comment.comment.trim(),
                 isPending: false,
+                createdAt: comment.createdAt,
+                updatedAt: comment.updatedAt,
               ),
             )
             .toList(growable: false),
@@ -1221,6 +1223,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           conductedByName: '',
           comment: 'Pending comments from $inferredSubjectName teacher.',
           isPending: true,
+          createdAt: null,
+          updatedAt: null,
         ),
       ],
       matchedCommentKeys: const <String>[],
@@ -2250,16 +2254,15 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                           DropdownButtonFormField<String>(
                                             initialValue:
                                                 _createTeacherPrimarySubject
-                                                        .trim()
-                                                        .isEmpty
-                                                    ? null
-                                                    : _createTeacherPrimarySubject,
-                                            decoration:
-                                                _managementFieldDecoration(
-                                                  labelText: 'Primary subject',
-                                                  helperText:
-                                                      'This stays as the teacher profile display subject.',
-                                                ),
+                                                    .trim()
+                                                    .isEmpty
+                                                ? null
+                                                : _createTeacherPrimarySubject,
+                                            decoration: _managementFieldDecoration(
+                                              labelText: 'Primary subject',
+                                              helperText:
+                                                  'This stays as the teacher profile display subject.',
+                                            ),
                                             items: <DropdownMenuItem<String>>[
                                               const DropdownMenuItem<String>(
                                                 value: '',
@@ -2316,41 +2319,44 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                           Wrap(
                                             spacing: 8,
                                             runSpacing: 8,
-                                            children: data.certificationSubjects.map((
-                                              subject,
-                                            ) {
-                                              final subjectName =
-                                                  subject.subjectName.trim();
-                                              final isPrimary =
-                                                  subjectName ==
-                                                  _createTeacherPrimarySubject;
-                                              final isSelected =
-                                                  isPrimary ||
-                                                  _createTeacherAdditionalSubjects
-                                                      .contains(subjectName);
+                                            children: data.certificationSubjects
+                                                .map((subject) {
+                                                  final subjectName = subject
+                                                      .subjectName
+                                                      .trim();
+                                                  final isPrimary =
+                                                      subjectName ==
+                                                      _createTeacherPrimarySubject;
+                                                  final isSelected =
+                                                      isPrimary ||
+                                                      _createTeacherAdditionalSubjects
+                                                          .contains(
+                                                            subjectName,
+                                                          );
 
-                                              return FilterChip(
-                                                label: Text(subjectName),
-                                                selected: isSelected,
-                                                onSelected: isPrimary
-                                                    ? null
-                                                    : (selected) {
-                                                        setState(() {
-                                                          if (selected) {
-                                                            _createTeacherAdditionalSubjects
-                                                                .add(
-                                                                  subjectName,
-                                                                );
-                                                          } else {
-                                                            _createTeacherAdditionalSubjects
-                                                                .remove(
-                                                                  subjectName,
-                                                                );
-                                                          }
-                                                        });
-                                                      },
-                                              );
-                                            }).toList(growable: false),
+                                                  return FilterChip(
+                                                    label: Text(subjectName),
+                                                    selected: isSelected,
+                                                    onSelected: isPrimary
+                                                        ? null
+                                                        : (selected) {
+                                                            setState(() {
+                                                              if (selected) {
+                                                                _createTeacherAdditionalSubjects
+                                                                    .add(
+                                                                      subjectName,
+                                                                    );
+                                                              } else {
+                                                                _createTeacherAdditionalSubjects
+                                                                    .remove(
+                                                                      subjectName,
+                                                                    );
+                                                              }
+                                                            });
+                                                          },
+                                                  );
+                                                })
+                                                .toList(growable: false),
                                           ),
                                         ],
                                       ],
@@ -2489,13 +2495,13 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                             color: Colors.white.withValues(
                                               alpha: 0.84,
                                             ),
-                                            borderRadius:
-                                                BorderRadius.circular(
-                                                  AppSpacing.radiusMd,
-                                                ),
+                                            borderRadius: BorderRadius.circular(
+                                              AppSpacing.radiusMd,
+                                            ),
                                             border: Border.all(
-                                              color: AppPalette.sky
-                                                  .withValues(alpha: 0.36),
+                                              color: AppPalette.sky.withValues(
+                                                alpha: 0.36,
+                                              ),
                                             ),
                                           ),
                                           child: Row(
@@ -2509,9 +2515,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                                   children: [
                                                     Text(
                                                       teacher.name,
-                                                      style: Theme.of(context)
-                                                          .textTheme
-                                                          .titleSmall,
+                                                      style: Theme.of(
+                                                        context,
+                                                      ).textTheme.titleSmall,
                                                     ),
                                                     if ((teacher.email ?? '')
                                                         .trim()
@@ -2519,12 +2525,13 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                                       const SizedBox(height: 4),
                                                       Text(
                                                         teacher.email!.trim(),
-                                                        style: Theme.of(
-                                                          context,
-                                                        ).textTheme.bodySmall?.copyWith(
-                                                          color: AppPalette
-                                                              .textMuted,
-                                                        ),
+                                                        style: Theme.of(context)
+                                                            .textTheme
+                                                            .bodySmall
+                                                            ?.copyWith(
+                                                              color: AppPalette
+                                                                  .textMuted,
+                                                            ),
                                                       ),
                                                     ],
                                                     const SizedBox(height: 10),
@@ -2534,10 +2541,12 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                                       children: [
                                                         _ManagementMiniPill(
                                                           label:
-                                                              subjectSummary.isEmpty
+                                                              subjectSummary
+                                                                  .isEmpty
                                                               ? 'No teachable subjects yet'
                                                               : subjectSummary,
-                                                          backgroundColor: subjectSummary
+                                                          backgroundColor:
+                                                              subjectSummary
                                                                   .isEmpty
                                                               ? AppPalette.sun
                                                                     .withValues(
@@ -2561,8 +2570,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                                 onPressed: () =>
                                                     _openTeacherSubjectEditor(
                                                       teacher: teacher,
-                                                      subjectOptions:
-                                                          data.certificationSubjects,
+                                                      subjectOptions: data
+                                                          .certificationSubjects,
                                                     ),
                                                 icon: const Icon(
                                                   Icons.edit_rounded,
@@ -3408,8 +3417,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
         subjectSpecialty: _createTeacherPrimarySubject.trim(),
-        subjectSpecialties:
-            _createTeacherAdditionalSubjects.toList(growable: false),
+        subjectSpecialties: _createTeacherAdditionalSubjects.toList(
+          growable: false,
+        ),
         yearGroup: _createRole == 'student' ? _createStudentYearGroup : '',
       );
 
@@ -3477,12 +3487,13 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     required TeacherSummary teacher,
     required List<SubjectCertificationSettings> subjectOptions,
   }) async {
-    final canonicalSubjectNames = subjectOptions
-        .map((subject) => subject.subjectName.trim())
-        .where((value) => value.isNotEmpty)
-        .toSet()
-        .toList(growable: false)
-      ..sort();
+    final canonicalSubjectNames =
+        subjectOptions
+            .map((subject) => subject.subjectName.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
     if (canonicalSubjectNames.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -3506,11 +3517,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       showDragHandle: true,
       builder: (sheetContext) {
         var selectedPrimary = initialPrimary;
-        final selectedAdditional = <String>{
-          ...teacher.subjectSpecialties.map((value) => value.trim()),
-        }
-          ..removeWhere((value) => value.isEmpty)
-          ..remove(initialPrimary);
+        final selectedAdditional =
+            <String>{...teacher.subjectSpecialties.map((value) => value.trim())}
+              ..removeWhere((value) => value.isEmpty)
+              ..remove(initialPrimary);
         var isSaving = false;
 
         return StatefulBuilder(
@@ -3571,34 +3581,39 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     const SizedBox(height: 14),
                     Text(
                       'Additional teachable subjects',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: AppPalette.navy,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleSmall?.copyWith(color: AppPalette.navy),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: canonicalSubjectNames.map((subjectName) {
-                        final isPrimary = subjectName == selectedPrimary;
-                        final isSelected =
-                            isPrimary || selectedAdditional.contains(subjectName);
-                        return FilterChip(
-                          label: Text(subjectName),
-                          selected: isSelected,
-                          onSelected: isSaving || isPrimary
-                              ? null
-                              : (selected) {
-                                  setSheetState(() {
-                                    if (selected) {
-                                      selectedAdditional.add(subjectName);
-                                    } else {
-                                      selectedAdditional.remove(subjectName);
-                                    }
-                                  });
-                                },
-                        );
-                      }).toList(growable: false),
+                      children: canonicalSubjectNames
+                          .map((subjectName) {
+                            final isPrimary = subjectName == selectedPrimary;
+                            final isSelected =
+                                isPrimary ||
+                                selectedAdditional.contains(subjectName);
+                            return FilterChip(
+                              label: Text(subjectName),
+                              selected: isSelected,
+                              onSelected: isSaving || isPrimary
+                                  ? null
+                                  : (selected) {
+                                      setSheetState(() {
+                                        if (selected) {
+                                          selectedAdditional.add(subjectName);
+                                        } else {
+                                          selectedAdditional.remove(
+                                            subjectName,
+                                          );
+                                        }
+                                      });
+                                    },
+                            );
+                          })
+                          .toList(growable: false),
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -3660,7 +3675,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                           isSaving ? Icons.hourglass_top_rounded : Icons.save,
                         ),
                         label: Text(
-                          isSaving ? 'Saving subjects...' : 'Save teacher subjects',
+                          isSaving
+                              ? 'Saving subjects...'
+                              : 'Save teacher subjects',
                         ),
                       ),
                     ),
@@ -4266,6 +4283,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
               : comment.teacherName.trim();
           final plannedTeacherName = comment.plannedTeacherName.trim();
           final conductedByName = comment.conductedByName.trim();
+          final savedAtLabel = _formatManagementAuditDateTime(
+            comment.updatedAt ?? comment.createdAt,
+          );
           final commentLabel = authorName.isEmpty
               ? '$subjectName · ${_managementSessionTypeLabel(comment.sessionType)}'
               : '$subjectName · ${_managementSessionTypeLabel(comment.sessionType)} · $authorName';
@@ -4296,6 +4316,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           if (conductedByName.isNotEmpty) {
             buffer.writeln(
               '<span class="result-pill">${_escapeManagementHtml('Taught by: $conductedByName')}</span>',
+            );
+          }
+          if (savedAtLabel.isNotEmpty) {
+            buffer.writeln(
+              '<span class="result-pill">${_escapeManagementHtml('Saved: $savedAtLabel')}</span>',
             );
           }
           buffer
@@ -4368,6 +4393,27 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
               value: target.awardDateKey.trim().isEmpty
                   ? 'No date'
                   : target.awardDateKey.trim(),
+            ),
+          )
+          ..writeln(
+            _buildManagementMetaCardHtml(
+              label: 'Saved at',
+              value:
+                  _formatManagementAuditDateTime(
+                    target.updatedAt ?? target.createdAt,
+                  ).isEmpty
+                  ? 'Not recorded'
+                  : _formatManagementAuditDateTime(
+                      target.updatedAt ?? target.createdAt,
+                    ),
+            ),
+          )
+          ..writeln(
+            _buildManagementMetaCardHtml(
+              label: 'Saved by',
+              value: target.createdByName.trim().isEmpty
+                  ? 'Not recorded'
+                  : target.createdByName.trim(),
             ),
           )
           ..writeln('</div>')
@@ -5203,6 +5249,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         : comment.teacherName.trim();
     final plannedTeacherName = comment.plannedTeacherName.trim();
     final conductedByName = comment.conductedByName.trim();
+    final savedAtLabel = _formatManagementAuditDateTime(
+      comment.updatedAt ?? comment.createdAt,
+    );
     final pendingClass = comment.isPending ? ' pending' : '';
 
     final buffer = StringBuffer()
@@ -5227,11 +5276,30 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         '<span class="result-pill">${_escapeManagementHtml('Taught by: $conductedByName')}</span>',
       );
     }
+    if (savedAtLabel.isNotEmpty) {
+      buffer.writeln(
+        '<span class="result-pill">${_escapeManagementHtml('Saved: $savedAtLabel')}</span>',
+      );
+    }
     buffer
       ..writeln('</div>')
       ..writeln('<p>${_escapeManagementHtml(comment.comment)}</p>')
       ..writeln('</div>');
     return buffer.toString();
+  }
+
+  String _formatManagementAuditDateTime(String? rawValue) {
+    final parsed = rawValue == null
+        ? null
+        : DateTime.tryParse(rawValue)?.toLocal();
+    if (parsed == null) {
+      return '';
+    }
+    final month = parsed.month.toString().padLeft(2, '0');
+    final day = parsed.day.toString().padLeft(2, '0');
+    final hour = parsed.hour.toString().padLeft(2, '0');
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '${parsed.year}-$month-$day $hour:$minute';
   }
 
   String _managementSessionTypeLabel(String value) {
@@ -5995,6 +6063,8 @@ class _ManagementResolvedTargetComment {
     required this.conductedByName,
     required this.comment,
     required this.isPending,
+    this.createdAt,
+    this.updatedAt,
   });
 
   final String subjectName;
@@ -6005,6 +6075,8 @@ class _ManagementResolvedTargetComment {
   final String conductedByName;
   final String comment;
   final bool isPending;
+  final String? createdAt;
+  final String? updatedAt;
 }
 
 class _ManagementTargetCommentResolution {
@@ -6884,6 +6956,20 @@ class _ManagementTargetCard extends StatelessWidget {
   final VoidCallback? onDownload;
   final bool isDownloading;
 
+  String _formatAuditDateTime(String? rawValue) {
+    final parsed = rawValue == null
+        ? null
+        : DateTime.tryParse(rawValue)?.toLocal();
+    if (parsed == null) {
+      return '';
+    }
+    final month = parsed.month.toString().padLeft(2, '0');
+    final day = parsed.day.toString().padLeft(2, '0');
+    final hour = parsed.hour.toString().padLeft(2, '0');
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '${parsed.year}-$month-$day $hour:$minute';
+  }
+
   String _targetTypeLabel() {
     switch (target.targetType.trim()) {
       case 'fixed_daily_mission':
@@ -6930,6 +7016,12 @@ class _ManagementTargetCard extends StatelessWidget {
     final difficulty = target.difficulty.trim().isEmpty
         ? 'Not set'
         : '${target.difficulty[0].toUpperCase()}${target.difficulty.substring(1).toLowerCase()}';
+    final subjectName = target.subjectName.trim();
+    final sessionType = target.sessionType.trim().toLowerCase();
+    final savedAtLabel = _formatAuditDateTime(
+      target.updatedAt ?? target.createdAt,
+    );
+    final createdByLabel = target.createdByName.trim();
 
     return Container(
       width: double.infinity,
@@ -6969,7 +7061,33 @@ class _ManagementTargetCard extends StatelessWidget {
                 label: '${target.xpAwarded} XP',
                 backgroundColor: AppPalette.primaryBlue.withValues(alpha: 0.12),
               ),
+              if (subjectName.isNotEmpty)
+                _ManagementMiniPill(
+                  label: subjectName,
+                  backgroundColor: AppPalette.primaryBlue.withValues(
+                    alpha: 0.12,
+                  ),
+                ),
+              if (sessionType.isNotEmpty)
+                _ManagementMiniPill(
+                  label: sessionType == 'afternoon'
+                      ? 'Afternoon session'
+                      : 'Morning session',
+                  backgroundColor: AppPalette.mint.withValues(alpha: 0.18),
+                ),
             ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            [
+              'For ${target.awardDateKey.trim().isEmpty ? 'selected date' : target.awardDateKey.trim()}',
+              if (savedAtLabel.isNotEmpty) 'Saved $savedAtLabel',
+              if (createdByLabel.isNotEmpty) 'By $createdByLabel',
+            ].join(' · '),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppPalette.textMuted,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           if (description.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -7069,6 +7187,20 @@ class _ManagementAttachedTeacherCommentCard extends StatelessWidget {
     }
   }
 
+  String _formatAuditDateTime(String? rawValue) {
+    final parsed = rawValue == null
+        ? null
+        : DateTime.tryParse(rawValue)?.toLocal();
+    if (parsed == null) {
+      return '';
+    }
+    final month = parsed.month.toString().padLeft(2, '0');
+    final day = parsed.day.toString().padLeft(2, '0');
+    final hour = parsed.hour.toString().padLeft(2, '0');
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '${parsed.year}-$month-$day $hour:$minute';
+  }
+
   @override
   Widget build(BuildContext context) {
     final subjectName = comment.subjectName.trim().isEmpty
@@ -7079,6 +7211,9 @@ class _ManagementAttachedTeacherCommentCard extends StatelessWidget {
         : comment.teacherName.trim();
     final plannedTeacherName = comment.plannedTeacherName.trim();
     final conductedByName = comment.conductedByName.trim();
+    final savedAtLabel = _formatAuditDateTime(
+      comment.updatedAt ?? comment.createdAt,
+    );
     final backgroundColor = comment.isPending
         ? AppPalette.sun.withValues(alpha: 0.18)
         : AppPalette.sky.withValues(alpha: 0.08);
@@ -7134,6 +7269,16 @@ class _ManagementAttachedTeacherCommentCard extends StatelessWidget {
                 ),
             ],
           ),
+          if (savedAtLabel.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Saved $savedAtLabel',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppPalette.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           Text(
             comment.comment.trim(),
@@ -7174,6 +7319,20 @@ class _ManagementTargetSessionCommentCard extends StatelessWidget {
     }
   }
 
+  String _formatAuditDateTime(String? rawValue) {
+    final parsed = rawValue == null
+        ? null
+        : DateTime.tryParse(rawValue)?.toLocal();
+    if (parsed == null) {
+      return '';
+    }
+    final month = parsed.month.toString().padLeft(2, '0');
+    final day = parsed.day.toString().padLeft(2, '0');
+    final hour = parsed.hour.toString().padLeft(2, '0');
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '${parsed.year}-$month-$day $hour:$minute';
+  }
+
   @override
   Widget build(BuildContext context) {
     final subjectName = comment.subjectName.trim().isEmpty
@@ -7184,6 +7343,9 @@ class _ManagementTargetSessionCommentCard extends StatelessWidget {
         : comment.teacherName.trim();
     final plannedTeacherName = comment.plannedTeacherName.trim();
     final conductedByName = comment.conductedByName.trim();
+    final savedAtLabel = _formatAuditDateTime(
+      comment.updatedAt ?? comment.createdAt,
+    );
 
     return Container(
       width: double.infinity,
@@ -7231,6 +7393,16 @@ class _ManagementTargetSessionCommentCard extends StatelessWidget {
                 ),
             ],
           ),
+          if (savedAtLabel.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Saved $savedAtLabel',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppPalette.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           Text(
             comment.comment.trim(),

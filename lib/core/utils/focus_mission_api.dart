@@ -990,10 +990,14 @@ class FocusMissionApi {
   Future<MentorOverviewData> fetchMentorOverview({
     required String token,
     required String studentId,
+    String dateKey = '',
   }) async {
+    final normalizedDateKey = dateKey.trim();
     final json = await _requestJson(
       'GET',
-      '/mentor/overview/$studentId',
+      normalizedDateKey.isEmpty
+          ? '/mentor/overview/$studentId'
+          : '/mentor/overview/$studentId?date=$normalizedDateKey',
       token: token,
     );
 
@@ -1343,6 +1347,8 @@ class FocusMissionApi {
     String targetType = 'custom',
     int stars = 0,
     String? awardDateKey,
+    String? subjectId,
+    String? sessionType,
   }) async {
     final json = await _requestJson(
       'POST',
@@ -1357,6 +1363,9 @@ class FocusMissionApi {
         'stars': stars,
         if (awardDateKey != null && awardDateKey.isNotEmpty)
           'awardDateKey': awardDateKey,
+        if (subjectId != null && subjectId.isNotEmpty) 'subjectId': subjectId,
+        if (sessionType != null && sessionType.isNotEmpty)
+          'sessionType': sessionType,
       },
     );
 
@@ -1372,12 +1381,16 @@ class FocusMissionApi {
     int? stars,
     String? status,
     String? awardDateKey,
+    String? subjectId,
+    String? sessionType,
   }) async {
     final body =
         <String, dynamic>{
           'stars': stars,
           'status': status,
           'awardDateKey': awardDateKey,
+          'subjectId': subjectId,
+          'sessionType': sessionType,
         }..removeWhere(
           (key, value) =>
               value == null || (value is String && value.trim().isEmpty),
@@ -1399,6 +1412,7 @@ class FocusMissionApi {
   Future<TeacherWorkspaceData> loadTeacherWorkspace({
     required AuthSession session,
     String? selectedStudentId,
+    String dateKey = '',
   }) async {
     final students = await fetchStudents(token: session.token);
     final teacherSubjects = await fetchTeacherSubjects(token: session.token);
@@ -1467,6 +1481,7 @@ class FocusMissionApi {
     final mentorOverview = await fetchMentorOverview(
       token: session.token,
       studentId: selectedStudent.id,
+      dateKey: dateKey,
     );
 
     return TeacherWorkspaceData(
@@ -1488,6 +1503,7 @@ class FocusMissionApi {
   Future<MentorWorkspaceData> loadMentorWorkspace({
     required AuthSession mentorSession,
     String? selectedStudentId,
+    String dateKey = '',
   }) async {
     // WHY: Management can stay logged in while teachers create learners, so
     // their workspace must fetch the live student list from the backend rather
@@ -1523,6 +1539,7 @@ class FocusMissionApi {
       studentOverviews[studentId] = await fetchMentorOverview(
         token: mentorSession.token,
         studentId: studentId,
+        dateKey: dateKey,
       );
     }
 

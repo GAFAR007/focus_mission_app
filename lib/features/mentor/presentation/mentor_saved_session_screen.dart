@@ -52,6 +52,7 @@ class _MentorSavedSessionScreenState extends State<MentorSavedSessionScreen> {
     final subjectName = widget.session.subject?.name.trim().isNotEmpty == true
         ? widget.session.subject!.name.trim()
         : 'Covered lesson';
+    final savedAtLabel = _formatAuditDateTime(_log.updatedAt ?? _log.createdAt);
     final targets = [...widget.targets]
       ..sort(
         (left, right) =>
@@ -145,6 +146,16 @@ class _MentorSavedSessionScreenState extends State<MentorSavedSessionScreen> {
                     value: _log.authorName.trim().isNotEmpty
                         ? _log.authorName.trim()
                         : 'Mentor',
+                  ),
+                  _AuditRow(
+                    label: 'Session date',
+                    value: widget.session.dateKey.trim().isEmpty
+                        ? 'Not set'
+                        : widget.session.dateKey.trim(),
+                  ),
+                  _AuditRow(
+                    label: 'Saved at',
+                    value: savedAtLabel.isEmpty ? 'Not recorded' : savedAtLabel,
                   ),
                   _AuditRow(label: 'Focus score', value: '${_log.focusScore}'),
                   _AuditRow(
@@ -324,6 +335,7 @@ class _MentorSavedSessionScreenState extends State<MentorSavedSessionScreen> {
     final savedBy = _log.authorName.trim().isNotEmpty
         ? _log.authorName.trim()
         : 'Mentor';
+    final savedAtLabel = _formatAuditDateTime(_log.updatedAt ?? _log.createdAt);
 
     final buffer = StringBuffer()
       ..writeln('<!DOCTYPE html>')
@@ -381,6 +393,12 @@ class _MentorSavedSessionScreenState extends State<MentorSavedSessionScreen> {
       )
       ..writeln(
         '<div class="label">Saved by</div><div class="value">${escape.convert(savedBy)}</div>',
+      )
+      ..writeln(
+        '<div class="label">Session date</div><div class="value">${escape.convert(widget.session.dateKey.trim().isEmpty ? 'Not set' : widget.session.dateKey.trim())}</div>',
+      )
+      ..writeln(
+        '<div class="label">Saved at</div><div class="value">${escape.convert(savedAtLabel.isEmpty ? 'Not recorded' : savedAtLabel)}</div>',
       )
       ..writeln(
         '<div class="label">Focus score</div><div class="value">${escape.convert('${_log.focusScore}')}</div>',
@@ -474,6 +492,20 @@ class _MentorSavedSessionScreenState extends State<MentorSavedSessionScreen> {
       3,
       (index) => index < safeStars ? '★' : '☆',
     ).join(' ');
+  }
+
+  String _formatAuditDateTime(String? rawValue) {
+    final parsed = rawValue == null
+        ? null
+        : DateTime.tryParse(rawValue)?.toLocal();
+    if (parsed == null) {
+      return '';
+    }
+    final month = parsed.month.toString().padLeft(2, '0');
+    final day = parsed.day.toString().padLeft(2, '0');
+    final hour = parsed.hour.toString().padLeft(2, '0');
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '${parsed.year}-$month-$day $hour:$minute';
   }
 
   String _slugify(String value, {required String fallback}) {

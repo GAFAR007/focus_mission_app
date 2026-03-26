@@ -111,10 +111,15 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   List<MissionPayload>? _draftMissions;
   List<MissionPayload>? _recentMissions;
   List<ResultHistoryItem>? _studentResults;
+  List<SessionSummary>? _recentSessions;
   List<CriterionOverview>? _criteria;
   NotificationInboxData? _notificationInbox;
   List<TargetSummary>? _targets;
+  final Map<String, _TeacherSessionCommentPreview>
+  _savedTeacherSessionCommentOverrides =
+      <String, _TeacherSessionCommentPreview>{};
   bool _isUpdatingTargets = false;
+  bool _isRefreshingTargets = false;
   bool _isSelectingDraftMissions = false;
   bool _isDeletingDraftMissions = false;
   final Set<String> _selectedDraftMissionIds = <String>{};
@@ -154,6 +159,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     final workspace = await _api.loadTeacherWorkspace(
       session: _session,
       selectedStudentId: _selectedStudentId,
+      dateKey: _dateKey(_selectedLessonDate),
     );
     _selectedStudentId = workspace.selectedStudent.id;
     _selectedStudentYearGroup = workspace.selectedStudent.yearGroup.trim();
@@ -170,9 +176,43 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       _selectedResultDate = _allTeacherResultDatesFilterLabel;
     }
     _notificationInbox ??= workspace.notificationInbox;
-    _targets ??= workspace.targets;
+    _recentSessions ??= workspace.selectedDashboard.recentSessions;
+    _targets = _sortTargets(workspace.targets);
     _syncTeacherTimetableEditor(workspace, _selectedLessonDate);
     return workspace;
+  }
+
+  Future<void> _refreshTargetsForSelectedLessonDate(
+    TeacherWorkspaceData workspace,
+    DateTime date,
+  ) async {
+    if (_isRefreshingTargets) {
+      return;
+    }
+
+    setState(() => _isRefreshingTargets = true);
+    try {
+      final overview = await _api.fetchMentorOverview(
+        token: workspace.session.token,
+        studentId: workspace.selectedStudent.id,
+        dateKey: _dateKey(date),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _targets = _sortTargets(overview.targets));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshingTargets = false);
+      }
+    }
   }
 
   bool _isNoAssignedStudentsError(Object? error) =>
@@ -217,9 +257,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     _draftMissions = null;
     _recentMissions = null;
     _studentResults = null;
+    _recentSessions = null;
     _criteria = null;
     _targets = null;
     _notificationInbox = null;
+    _savedTeacherSessionCommentOverrides.clear();
     _selectedResultSubject = _allTeacherResultSubjectsFilterLabel;
     _selectedResultDate = _allTeacherResultDatesFilterLabel;
     _isSelectingDraftMissions = false;
@@ -337,8 +379,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
               _notificationInbox ?? workspace.notificationInbox;
           final teacherCriteria = criteria
               .where(
-                (criterion) =>
-                    _teacherSubjectMatches(criterion.subject?.name),
+                (criterion) => _teacherSubjectMatches(criterion.subject?.name),
               )
               .toList(growable: false);
           final schedule = _scheduleForDate(
@@ -352,13 +393,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           final selectedTeacher = activeLesson == 'Morning'
               ? schedule?.morningTeacher
               : schedule?.afternoonTeacher;
+          final recentSessions =
+              _recentSessions ?? workspace.selectedDashboard.recentSessions;
           final teacherOwnsSelectedSlot = _teacherMatchesLessonSlot(
             subject: selectedSubject,
             teacher: selectedTeacher,
-          );
-          final selectedDateIsToday = _isSameDateOnly(
-            _selectedLessonDate,
-            DateTime.now(),
           );
           final lessonSummaryChips = <String>[
             activeLesson,
@@ -371,11 +410,22 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           final selectedDateIsFuture = _dateOnly(
             _selectedLessonDate,
           ).isAfter(_dateOnly(DateTime.now()));
+          final canManageTargetsForSelectedLesson =
+              selectedSubject != null &&
+              teacherOwnsSelectedSlot &&
+              !selectedDateIsFuture;
           final uploadResultHelperText = canCreateFallbackResultUpload
               ? 'Upload Result creates a standalone paper assessment for ${selectedSubject?.name ?? 'this lesson'} on ${_dateKey(_selectedLessonDate)} using the selected timetable date above.'
               : selectedDateIsFuture
               ? 'Select today or a past timetable date before uploading a result.'
               : 'Pick a valid lesson subject before uploading a paper result.';
+          final savedLessonComment = _resolveSavedTeacherComment(
+            studentId: workspace.selectedStudent.id,
+            subject: selectedSubject,
+            lessonLabel: activeLesson,
+            selectedDate: _selectedLessonDate,
+            recentSessions: recentSessions,
+          );
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(AppSpacing.screen),
@@ -566,10 +616,13 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                           onSave: () => _saveTeacherTimetableEntry(workspace),
                         )
                       : null,
-                  onDateChanged: (date) => setState(() {
-                    _selectedLessonDate = date;
-                    _syncTeacherTimetableEditor(workspace, date);
-                  }),
+                  onDateChanged: (date) {
+                    setState(() {
+                      _selectedLessonDate = date;
+                      _syncTeacherTimetableEditor(workspace, date);
+                    });
+                    _refreshTargetsForSelectedLessonDate(workspace, date);
+                  },
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _DraftMissionsPanel(
@@ -698,7 +751,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       _ExpandablePanelHeader(
                         title: 'Lesson',
                         subtitle:
-                            '${selectedDateIsToday ? 'Today\'s session' : 'Selected session'} · ${_selectedDateSummary(schedule)}',
+                            '${selectedDateIsFuture ? 'Future session' : 'Selected session'} · ${_selectedDateSummary(schedule)}',
                         summaryChips: lessonSummaryChips,
                         isExpanded: _isLessonPanelExpanded,
                         onTap: _toggleLessonPanelExpanded,
@@ -774,6 +827,49 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                             ],
                           ),
                         ),
+                        if (savedLessonComment != null) ...[
+                          const SizedBox(height: AppSpacing.compact),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(AppSpacing.item),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF5FAFF),
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.radiusMd,
+                              ),
+                              border: Border.all(
+                                color: AppPalette.primaryBlue.withValues(
+                                  alpha: 0.16,
+                                ),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Saved teacher comment',
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(color: AppPalette.navy),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  savedLessonComment.comment,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(color: AppPalette.navy),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  savedLessonComment.metaLabel,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: AppPalette.textMuted,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: AppSpacing.section),
                         Text(
                           'Targets Met',
@@ -784,15 +880,22 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                           children: [
                             Expanded(
                               child: Text(
-                                'Default + custom weekly targets',
+                                'Targets for ${_dateKey(_selectedLessonDate)}',
                                 style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(color: AppPalette.textMuted),
                               ),
                             ),
                             TextButton.icon(
-                              onPressed: _isUpdatingTargets
+                              onPressed:
+                                  _isUpdatingTargets ||
+                                      _isRefreshingTargets ||
+                                      !canManageTargetsForSelectedLesson
                                   ? null
-                                  : () => _createTarget(workspace),
+                                  : () => _createTarget(
+                                      workspace,
+                                      selectedSubject,
+                                      activeLesson,
+                                    ),
                               icon: const Icon(
                                 Icons.add_circle_outline_rounded,
                               ),
@@ -800,6 +903,28 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                             ),
                           ],
                         ),
+                        if (_isRefreshingTargets)
+                          const Padding(
+                            padding: EdgeInsets.only(
+                              bottom: AppSpacing.compact,
+                            ),
+                            child: Text(
+                              'Loading targets for the selected date...',
+                            ),
+                          ),
+                        if (!canManageTargetsForSelectedLesson)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.compact,
+                            ),
+                            child: Text(
+                              selectedDateIsFuture
+                                  ? 'Targets can be saved on today or a past lesson date only.'
+                                  : 'Only the teacher assigned to this lesson slot can save targets for this date.',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: AppPalette.textMuted),
+                            ),
+                          ),
                         if (targets.isEmpty)
                           const Padding(
                             padding: EdgeInsets.only(
@@ -815,10 +940,15 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                               ),
                               child: _TargetStarsRow(
                                 target: target,
-                                enabled: !_isUpdatingTargets,
+                                enabled:
+                                    !_isUpdatingTargets &&
+                                    !_isRefreshingTargets &&
+                                    canManageTargetsForSelectedLesson,
                                 onSetStars: (stars) => _setTargetStars(
                                   workspace: workspace,
                                   target: target,
+                                  selectedSubject: selectedSubject,
+                                  lessonLabel: activeLesson,
                                   stars: stars,
                                 ),
                               ),
@@ -882,16 +1012,16 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   onPressed:
                       selectedSubject == null ||
                           _isSaving ||
-                          !selectedDateIsToday ||
+                          selectedDateIsFuture ||
                           !teacherOwnsSelectedSlot
                       ? () {}
                       : () => _saveSession(workspace, selectedSubject),
                 ),
-                if (!selectedDateIsToday || !teacherOwnsSelectedSlot) ...[
+                if (selectedDateIsFuture || !teacherOwnsSelectedSlot) ...[
                   const SizedBox(height: AppSpacing.compact),
                   Text(
-                    !selectedDateIsToday
-                        ? 'Session logs can only be saved on the actual lesson day. You can still prepare missions for this selected future class.'
+                    selectedDateIsFuture
+                        ? 'Session logs can be saved on today or a past lesson date. You can still prepare missions for this selected future class.'
                         : 'Only the teacher assigned to this lesson can save the session log for this slot.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppPalette.textMuted,
@@ -1076,6 +1206,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   ) async {
     final schedule = _scheduleForDate(workspace.timetable, _selectedLessonDate);
     final lessonLabel = _resolvedLessonForTeacher(schedule);
+    final sessionDateKey = _dateKey(_selectedLessonDate);
+    final savedNotes = _notesController.text.trim();
     final publishedMission = _publishedMissionForLesson(
       _recentMissions ?? workspace.recentMissions,
       lessonLabel: lessonLabel,
@@ -1091,12 +1223,16 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         studentId: workspace.selectedStudent.id,
         subjectId: selectedSubject.id,
         sessionType: lessonLabel.toLowerCase(),
-        dateKey: _dateKey(_selectedLessonDate),
+        dateKey: sessionDateKey,
         focusScore: _focusScoreForBehaviour(),
         completedQuestions: 5,
         behaviourStatus: _behaviourStatusForApi(),
-        notes: _notesController.text.trim(),
+        notes: savedNotes,
         xpAwarded: xpReward,
+      );
+      final refreshedDashboard = await _api.fetchStudentDashboard(
+        token: workspace.session.token,
+        studentId: workspace.selectedStudent.id,
       );
       final refreshedRecentMissions = await _api.fetchTeacherRecentMissions(
         token: workspace.session.token,
@@ -1116,6 +1252,24 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       setState(() {
         // WHY: Saving a completed session can create fresh result evidence, so
         // the teacher workspace refreshes both mission and result history cards immediately.
+        _recentSessions = refreshedDashboard.recentSessions;
+        final commentKey = _teacherSessionCommentKey(
+          studentId: workspace.selectedStudent.id,
+          subjectId: selectedSubject.id,
+          subjectName: selectedSubject.name,
+          sessionType: lessonLabel,
+          dateKey: sessionDateKey,
+        );
+        if (savedNotes.isEmpty) {
+          _savedTeacherSessionCommentOverrides.remove(commentKey);
+        } else {
+          _savedTeacherSessionCommentOverrides[commentKey] =
+              _TeacherSessionCommentPreview(
+                comment: savedNotes,
+                metaLabel:
+                    'Saved by ${_session.user.name} · ${selectedSubject.name} · $lessonLabel · $sessionDateKey',
+              );
+        }
         _recentMissions = refreshedRecentMissions;
         _studentResults = refreshedStudentResults;
       });
@@ -1142,7 +1296,151 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     }
   }
 
-  Future<void> _createTarget(TeacherWorkspaceData workspace) async {
+  _TeacherSessionCommentPreview? _resolveSavedTeacherComment({
+    required String studentId,
+    required SubjectSummary? subject,
+    required String lessonLabel,
+    required DateTime selectedDate,
+    required List<SessionSummary> recentSessions,
+  }) {
+    if (subject == null) {
+      return null;
+    }
+
+    final commentKey = _teacherSessionCommentKey(
+      studentId: studentId,
+      subjectId: subject.id,
+      subjectName: subject.name,
+      sessionType: lessonLabel,
+      dateKey: _dateKey(selectedDate),
+    );
+    final recentMatch = recentSessions
+        .where(
+          (session) =>
+              session.notes.trim().isNotEmpty &&
+              _sessionSummaryMatchesSavedComment(
+                session: session,
+                subject: subject,
+                lessonLabel: lessonLabel,
+                selectedDate: selectedDate,
+              ),
+        )
+        .toList(growable: false);
+    if (recentMatch.isNotEmpty) {
+      recentMatch.sort((a, b) {
+        final left = _sessionSummaryTimestamp(a);
+        final right = _sessionSummaryTimestamp(b);
+        if (left == null && right == null) {
+          return 0;
+        }
+        if (left == null) {
+          return 1;
+        }
+        if (right == null) {
+          return -1;
+        }
+        return right.compareTo(left);
+      });
+      final latest = recentMatch.first;
+      final savedAt = _sessionSummaryTimestamp(latest);
+      final savedAtLabel = savedAt == null
+          ? (_dateKey(selectedDate))
+          : _formatTeacherSessionCommentDateTime(savedAt);
+      return _TeacherSessionCommentPreview(
+        comment: latest.notes.trim(),
+        metaLabel:
+            'Saved by ${_session.user.name} · ${subject.name} · $lessonLabel · $savedAtLabel',
+      );
+    }
+
+    return _savedTeacherSessionCommentOverrides[commentKey];
+  }
+
+  bool _sessionSummaryMatchesSavedComment({
+    required SessionSummary session,
+    required SubjectSummary subject,
+    required String lessonLabel,
+    required DateTime selectedDate,
+  }) {
+    final normalizedSubjectId = subject.id.trim();
+    final normalizedSubjectName = _normalizeLessonValue(subject.name);
+    final sessionSubjectId = session.subjectId.trim();
+    final sessionSubjectName = _normalizeLessonValue(session.subjectName);
+    final subjectMatches =
+        (normalizedSubjectId.isNotEmpty &&
+            sessionSubjectId.isNotEmpty &&
+            normalizedSubjectId == sessionSubjectId) ||
+        (normalizedSubjectName.isNotEmpty &&
+            normalizedSubjectName == sessionSubjectName);
+    if (!subjectMatches) {
+      return false;
+    }
+
+    if (_normalizeLessonValue(session.sessionType) !=
+        _normalizeLessonValue(lessonLabel)) {
+      return false;
+    }
+
+    final sessionDateKey = session.dateKey.trim();
+    if (sessionDateKey.isNotEmpty) {
+      return sessionDateKey == _dateKey(selectedDate);
+    }
+
+    final savedAt = _sessionSummaryTimestamp(session);
+    if (savedAt == null) {
+      return false;
+    }
+    return _isSameDateOnly(savedAt, selectedDate);
+  }
+
+  DateTime? _sessionSummaryTimestamp(SessionSummary session) {
+    final rawValue = session.updatedAt ?? session.createdAt ?? '';
+    if (rawValue.trim().isEmpty) {
+      return null;
+    }
+    return DateTime.tryParse(rawValue)?.toLocal();
+  }
+
+  String _teacherSessionCommentKey({
+    required String studentId,
+    required String subjectId,
+    required String subjectName,
+    required String sessionType,
+    required String dateKey,
+  }) {
+    final normalizedSubject = subjectId.trim().isNotEmpty
+        ? subjectId.trim()
+        : _normalizeLessonValue(subjectName);
+    return <String>[
+      studentId.trim(),
+      normalizedSubject,
+      _normalizeLessonValue(sessionType),
+      dateKey.trim(),
+    ].join('::');
+  }
+
+  String _formatTeacherSessionCommentDateTime(DateTime value) {
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '${value.year}-$month-$day $hour:$minute';
+  }
+
+  Future<void> _createTarget(
+    TeacherWorkspaceData workspace,
+    SubjectSummary? selectedSubject,
+    String lessonLabel,
+  ) async {
+    if (selectedSubject == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pick a scheduled lesson before saving a target.'),
+        ),
+      );
+      return;
+    }
+
     final titleController = TextEditingController();
     final descriptionController = TextEditingController();
     String selectedDifficulty = 'medium';
@@ -1242,6 +1540,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         targetType: 'custom',
         stars: 0,
         awardDateKey: _dateKey(_selectedLessonDate),
+        subjectId: selectedSubject.id,
+        sessionType: lessonLabel.toLowerCase(),
       );
 
       if (!mounted) {
@@ -1275,9 +1575,21 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   Future<void> _setTargetStars({
     required TeacherWorkspaceData workspace,
     required TargetSummary target,
+    required SubjectSummary? selectedSubject,
+    required String lessonLabel,
     required int stars,
   }) async {
     final nextStars = target.stars == stars ? 0 : stars;
+    final targetSubjectId = target.targetType == 'custom'
+        ? target.subjectId.trim().isNotEmpty
+              ? target.subjectId.trim()
+              : selectedSubject?.id ?? ''
+        : '';
+    final targetSessionType = target.targetType == 'custom'
+        ? (target.sessionType.trim().isNotEmpty
+              ? target.sessionType.trim().toLowerCase()
+              : lessonLabel.toLowerCase())
+        : '';
     setState(() => _isUpdatingTargets = true);
     try {
       final updated = await _api.updateTarget(
@@ -1285,6 +1597,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         targetId: target.id,
         stars: nextStars,
         awardDateKey: _dateKey(_selectedLessonDate),
+        subjectId: targetSubjectId,
+        sessionType: targetSessionType,
       );
       if (!mounted) {
         return;
@@ -6847,6 +7161,20 @@ class _TargetStarsRow extends StatelessWidget {
   final bool enabled;
   final ValueChanged<int> onSetStars;
 
+  String _formatAuditDateTime(String? rawValue) {
+    final parsed = rawValue == null
+        ? null
+        : DateTime.tryParse(rawValue)?.toLocal();
+    if (parsed == null) {
+      return '';
+    }
+    final month = parsed.month.toString().padLeft(2, '0');
+    final day = parsed.day.toString().padLeft(2, '0');
+    final hour = parsed.hour.toString().padLeft(2, '0');
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '${parsed.year}-$month-$day $hour:$minute';
+  }
+
   @override
   Widget build(BuildContext context) {
     final statusLabel = target.status.replaceAll('_', ' ');
@@ -6855,6 +7183,15 @@ class _TargetStarsRow extends StatelessWidget {
         : target.targetType == 'fixed_assessment'
         ? 'Default · Assessment'
         : 'Custom target';
+    final savedAtLabel = _formatAuditDateTime(
+      target.updatedAt ?? target.createdAt,
+    );
+    final creatorName = target.createdByName.trim();
+    final auditParts = <String>[
+      'For ${target.awardDateKey.trim().isEmpty ? 'selected date' : target.awardDateKey.trim()}',
+      if (savedAtLabel.isNotEmpty) 'Saved $savedAtLabel',
+      if (creatorName.isNotEmpty) 'By $creatorName',
+    ];
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.item),
@@ -6890,6 +7227,16 @@ class _TargetStarsRow extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          if (auditParts.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              auditParts.join(' · '),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppPalette.textMuted,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
           const SizedBox(height: 8),
@@ -7159,6 +7506,16 @@ class _TeacherTimetableInlineEditor extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TeacherSessionCommentPreview {
+  const _TeacherSessionCommentPreview({
+    required this.comment,
+    required this.metaLabel,
+  });
+
+  final String comment;
+  final String metaLabel;
 }
 
 class _TeacherTimetableRoomPair {
