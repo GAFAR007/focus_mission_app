@@ -43,11 +43,14 @@ class _LoginScreenState extends State<LoginScreen> {
   final FocusMissionApi _api = FocusMissionApi();
   final AuthSessionStore _sessionStore = AuthSessionStore();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final FocusNode _emailFocusNode = FocusNode();
+  final FocusNode _passwordFocusNode = FocusNode();
   late final TextEditingController _emailController;
   late final TextEditingController _passwordController;
   late final Future<List<DemoAccount>> _demoAccountsFuture;
 
   bool _isSubmitting = false;
+  bool _isPasswordVisible = false;
   bool _canRequestPasswordReset = false;
   String? _errorMessage;
 
@@ -56,8 +59,8 @@ class _LoginScreenState extends State<LoginScreen> {
     super.initState();
     _emailController = TextEditingController();
     _emailController.addListener(_handleEmailChanged);
-    // WHY: Password should never be auto-filled so sign-in always requires
-    // explicit user entry.
+    // WHY: Password visibility always starts hidden, while the controller stays
+    // unchanged when the user explicitly asks to reveal it.
     _passwordController = TextEditingController();
     _demoAccountsFuture = _loadDemoAccounts();
   }
@@ -67,237 +70,422 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.removeListener(_handleEmailChanged);
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return FocusScaffold(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.screen),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _RoundIconButton(
-                  icon: Icons.arrow_back_ios_new_rounded,
-                  onTap: () => Navigator.of(context).pop(),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    widget.role.title,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.section),
-            SoftPanel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      AvatarBadge(
-                        icon: widget.role.icon,
-                        colors: widget.role.colors,
-                        size: 64,
-                      ),
-                      const SizedBox(width: AppSpacing.item),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Sign in to your space',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              widget.role.subtitle,
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: AppPalette.textMuted),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.section),
-                  if (_errorMessage != null) ...[
-                    _StatusBanner(message: _errorMessage!),
-                    const SizedBox(height: AppSpacing.item),
-                  ],
-                  Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Email',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          autofillHints: const [AutofillHints.username],
-                          decoration: const InputDecoration(
-                            hintText: 'name@focusmission.app',
-                          ),
-                          validator: (value) {
-                            final email = value?.trim() ?? '';
-                            if (email.isEmpty) {
-                              return 'Enter an email address.';
-                            }
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final horizontalPadding = constraints.maxWidth < 600
+              ? AppSpacing.item
+              : AppSpacing.screen;
 
-                            if (!email.contains('@')) {
-                              return 'Use a valid email address.';
-                            }
-
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: AppSpacing.item),
-                        Text(
-                          'Password',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: true,
-                          autofillHints: const [AutofillHints.password],
-                          decoration: const InputDecoration(
-                            hintText: 'Enter your password',
-                          ),
-                          validator: (value) {
-                            if ((value ?? '').isEmpty) {
-                              return 'Enter a password.';
-                            }
-
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _canRequestPasswordReset
-                                    ? 'Wrong password 3 times? Use email reset.'
-                                    : 'Reset by email becomes available after 3 wrong password attempts.',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(color: AppPalette.textMuted),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: _canRequestPasswordReset
-                                  ? _openPasswordReset
-                                  : null,
-                              child: const Text('Reset password'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (widget.role == UserRole.student) ...[
-                    const SizedBox(height: AppSpacing.item),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(AppSpacing.item),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.72),
-                        borderRadius: BorderRadius.circular(
-                          AppSpacing.radiusMd,
-                        ),
-                      ),
-                      child: Text(
-                        'Seed password for seeded accounts: ${SeedCredentials.passwordForRole(widget.role)}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppPalette.navy,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: AppSpacing.section),
-                  GradientButton(
-                    label: _isSubmitting ? 'Signing In...' : 'Enter Mission',
-                    colors: widget.role.colors,
-                    onPressed: _isSubmitting ? () {} : _submit,
-                  ),
-                ],
+          return GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+            child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                AppSpacing.item,
+                horizontalPadding,
+                AppSpacing.screen,
               ),
-            ),
-            const SizedBox(height: AppSpacing.section),
-            FutureBuilder<List<DemoAccount>>(
-              future: _demoAccountsFuture,
-              builder: (context, snapshot) {
-                final demoAccounts = snapshot.data ?? const <DemoAccount>[];
-                final hasError = snapshot.hasError;
-                final isLoading =
-                    snapshot.connectionState != ConnectionState.done &&
-                    !snapshot.hasData;
-
-                return SoftPanel(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  // WHY: A bounded desktop canvas keeps the sign-in form calm
+                  // and readable without sacrificing full-width phone layouts.
+                  constraints: const BoxConstraints(maxWidth: 1120),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Quick fill accounts',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Use MongoDB users for this role when the live backend is available.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppPalette.textMuted,
+                      Align(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
+                          child: Row(
+                            children: [
+                              _RoundIconButton(
+                                icon: Icons.arrow_back_ios_new_rounded,
+                                onTap: () => Navigator.of(context).pop(),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(
+                                  widget.role.title,
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: AppSpacing.item),
-                      if (isLoading)
-                        Text(
-                          'Loading accounts...',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        )
-                      else if (hasError && demoAccounts.isEmpty)
-                        Text(
-                          'Could not load MongoDB users. Showing no quick-fill accounts right now.',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: AppPalette.textMuted),
-                        )
-                      else if (demoAccounts.isEmpty)
-                        Text(
-                          'No MongoDB users were found for this role yet.',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: AppPalette.textMuted),
-                        )
-                      else
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: demoAccounts
-                              .map(
-                                (account) => _DemoAccountChip(
-                                  account: account,
-                                  isSelected:
-                                      _emailController.text.trim() ==
-                                      account.email,
-                                  onTap: () => _applyDemoAccount(account),
+                      Align(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
+                          child: SoftPanel(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    AvatarBadge(
+                                      icon: widget.role.icon,
+                                      colors: widget.role.colors,
+                                      size: 60,
+                                    ),
+                                    const SizedBox(width: AppSpacing.item),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Sign in to your space',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.titleLarge,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            widget.role.subtitle,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color: AppPalette.textMuted,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              )
-                              .toList(growable: false),
+                                const SizedBox(height: AppSpacing.section),
+                                if (_errorMessage != null) ...[
+                                  _StatusBanner(message: _errorMessage!),
+                                  const SizedBox(height: AppSpacing.item),
+                                ],
+                                AutofillGroup(
+                                  child: Form(
+                                    key: _formKey,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Email',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleMedium,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        TextFormField(
+                                          controller: _emailController,
+                                          focusNode: _emailFocusNode,
+                                          keyboardType:
+                                              TextInputType.emailAddress,
+                                          textInputAction: TextInputAction.next,
+                                          autofillHints: const [
+                                            AutofillHints.username,
+                                            AutofillHints.email,
+                                          ],
+                                          autocorrect: false,
+                                          enableSuggestions: false,
+                                          decoration: const InputDecoration(
+                                            hintText: 'name@focusmission.app',
+                                            prefixIcon: Icon(
+                                              Icons.mail_outline_rounded,
+                                            ),
+                                            errorMaxLines: 2,
+                                          ),
+                                          onFieldSubmitted: (_) {
+                                            _passwordFocusNode.requestFocus();
+                                          },
+                                          validator: (value) {
+                                            final email = value?.trim() ?? '';
+                                            if (email.isEmpty) {
+                                              return 'Enter an email address.';
+                                            }
+
+                                            if (!email.contains('@')) {
+                                              return 'Use a valid email address.';
+                                            }
+
+                                            return null;
+                                          },
+                                        ),
+                                        const SizedBox(height: AppSpacing.item),
+                                        Text(
+                                          'Password',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleMedium,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        TextFormField(
+                                          controller: _passwordController,
+                                          focusNode: _passwordFocusNode,
+                                          obscureText: !_isPasswordVisible,
+                                          textInputAction: TextInputAction.done,
+                                          autofillHints: const [
+                                            AutofillHints.password,
+                                          ],
+                                          autocorrect: false,
+                                          enableSuggestions: false,
+                                          decoration: InputDecoration(
+                                            hintText: 'Enter your password',
+                                            prefixIcon: const Icon(
+                                              Icons.lock_outline_rounded,
+                                            ),
+                                            errorMaxLines: 2,
+                                            suffixIcon: IconButton(
+                                              key: const Key(
+                                                'password_visibility_toggle',
+                                              ),
+                                              tooltip: _isPasswordVisible
+                                                  ? 'Hide password'
+                                                  : 'Show password',
+                                              onPressed: () {
+                                                setState(() {
+                                                  // WHY: Only presentation
+                                                  // changes; the existing
+                                                  // password controller and its
+                                                  // value remain untouched.
+                                                  _isPasswordVisible =
+                                                      !_isPasswordVisible;
+                                                });
+                                              },
+                                              icon: Icon(
+                                                _isPasswordVisible
+                                                    ? Icons
+                                                          .visibility_off_rounded
+                                                    : Icons.visibility_rounded,
+                                              ),
+                                            ),
+                                          ),
+                                          onFieldSubmitted: (_) {
+                                            // WHY: Keyboard submission follows
+                                            // the same guarded authentication
+                                            // path as the visible primary CTA.
+                                            if (!_isSubmitting) {
+                                              _submit();
+                                            }
+                                          },
+                                          validator: (value) {
+                                            if ((value ?? '').isEmpty) {
+                                              return 'Enter a password.';
+                                            }
+
+                                            return null;
+                                          },
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                _canRequestPasswordReset
+                                                    ? 'Wrong password 3 times? Use email reset.'
+                                                    : 'Reset by email becomes available after 3 wrong password attempts.',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color:
+                                                          AppPalette.textMuted,
+                                                    ),
+                                              ),
+                                            ),
+                                            TextButton(
+                                              onPressed:
+                                                  _canRequestPasswordReset
+                                                  ? _openPasswordReset
+                                                  : null,
+                                              child: const Text(
+                                                'Reset password',
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                if (widget.role == UserRole.student) ...[
+                                  const SizedBox(height: AppSpacing.item),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(
+                                      AppSpacing.item,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.72,
+                                      ),
+                                      borderRadius: BorderRadius.circular(
+                                        AppSpacing.radiusMd,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Seed password for seeded accounts: ${SeedCredentials.passwordForRole(widget.role)}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(color: AppPalette.navy),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: AppSpacing.section),
+                                Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    IgnorePointer(
+                                      ignoring: _isSubmitting,
+                                      child: GradientButton(
+                                        label: _isSubmitting ? ' ' : 'Sign in',
+                                        colors: widget.role.colors,
+                                        onPressed: _submit,
+                                      ),
+                                    ),
+                                    if (_isSubmitting)
+                                      const IgnorePointer(
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.4,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            SizedBox(width: 10),
+                                            Text(
+                                              'Signing in...',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
+                      ),
+                      const SizedBox(height: AppSpacing.section),
+                      FutureBuilder<List<DemoAccount>>(
+                        future: _demoAccountsFuture,
+                        builder: (context, snapshot) {
+                          final demoAccounts =
+                              snapshot.data ?? const <DemoAccount>[];
+                          final hasError = snapshot.hasError;
+                          final isLoading =
+                              snapshot.connectionState !=
+                                  ConnectionState.done &&
+                              !snapshot.hasData;
+
+                          return SoftPanel(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Quick fill accounts',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Use MongoDB users for this role when the live backend is available.',
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(color: AppPalette.textMuted),
+                                ),
+                                const SizedBox(height: AppSpacing.item),
+                                if (isLoading)
+                                  Text(
+                                    'Loading accounts...',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  )
+                                else if (hasError && demoAccounts.isEmpty)
+                                  Text(
+                                    'Could not load MongoDB users. Showing no quick-fill accounts right now.',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: AppPalette.textMuted),
+                                  )
+                                else if (demoAccounts.isEmpty)
+                                  Text(
+                                    'No MongoDB users were found for this role yet.',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: AppPalette.textMuted),
+                                  )
+                                else
+                                  LayoutBuilder(
+                                    builder: (context, accountConstraints) {
+                                      final maxWidth =
+                                          accountConstraints.maxWidth;
+                                      final accountWidth = maxWidth < 560
+                                          ? maxWidth
+                                          : maxWidth < 900
+                                          ? (maxWidth - 10) / 2
+                                          : (maxWidth - 20) / 3;
+
+                                      return Wrap(
+                                        spacing: 10,
+                                        runSpacing: 10,
+                                        children: demoAccounts
+                                            .map(
+                                              (account) => SizedBox(
+                                                width: accountWidth,
+                                                child: _DemoAccountChip(
+                                                  account: account,
+                                                  isSelected:
+                                                      _emailController.text
+                                                          .trim() ==
+                                                      account.email,
+                                                  onTap: () =>
+                                                      _applyDemoAccount(
+                                                        account,
+                                                      ),
+                                                ),
+                                              ),
+                                            )
+                                            .toList(growable: false),
+                                      );
+                                    },
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ),
-                );
-              },
+                ),
+              ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

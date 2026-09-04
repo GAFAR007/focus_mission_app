@@ -44,8 +44,10 @@ const List<String> _availableCertificationTaskCodes = <String>[
   'P4',
   'P5',
   'P6',
+  'P7',
   'M1',
   'M2',
+  'M3',
   'D1',
   'D2',
 ];

@@ -62,8 +62,10 @@ const List<String> _certificationTaskCodeOptions = [
   'P4',
   'P5',
   'P6',
+  'P7',
   'M1',
   'M2',
+  'M3',
   'D1',
   'D2',
 ];
