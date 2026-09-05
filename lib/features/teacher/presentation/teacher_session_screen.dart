@@ -31,6 +31,7 @@ import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import '../../auth/presentation/role_selection_screen.dart';
+import 'assessment_mode_screen.dart';
 import 'criterion_review_sheet.dart';
 import 'mission_builder_sheet.dart';
 import 'result_report_screen.dart';
@@ -1829,7 +1830,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     required TeacherWorkspaceData workspace,
     required SubjectSummary subject,
     required String lessonLabel,
-    List<String> lockedAssessmentTaskCodes = const [],
+    Map<String, int> assessmentDraftCounts = const {},
     bool openAssessmentOnStart = false,
     MissionPayload? initialDraft,
   }) async {
@@ -1841,7 +1842,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       sessionType: initialDraft?.sessionType ?? lessonLabel.toLowerCase(),
       targetDate: _selectedLessonDate,
       timetableEntries: workspace.timetable,
-      lockedAssessmentTaskCodes: lockedAssessmentTaskCodes,
+      assessmentDraftCounts: assessmentDraftCounts,
       openAssessmentOnStart: openAssessmentOnStart,
       api: _api,
       initialDraft: initialDraft,
@@ -2232,18 +2233,45 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     SubjectSummary? selectedSubject,
     required String lessonLabel,
   }) async {
+    final assessmentSubject =
+        selectedSubject ??
+        (missions.isNotEmpty && missions.first.subject != null
+            ? SubjectSummary(
+                id: missions.first.subject!.id,
+                name: missions.first.subject!.name,
+              )
+            : null);
+    var assessmentDraftCounts = <String, int>{};
+
+    if (assessmentSubject != null && assessmentSubject.id.isNotEmpty) {
+      try {
+        assessmentDraftCounts = await _api.fetchTeacherAssessmentDraftCounts(
+          token: workspace.session.token,
+          studentId: workspace.selectedStudent.id,
+          subjectId: assessmentSubject.id,
+        );
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        return;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+
     final result = await Navigator.of(context).push<_AssessmentDraftListResult>(
       MaterialPageRoute(
         builder: (_) => _AssessmentDraftListScreen(
           studentName: workspace.selectedStudent.name,
           studentXp: workspace.selectedStudent.xp,
           missions: missions,
-          lockedTaskCodes: missions
-              .expand((mission) => mission.taskCodes)
-              .map((code) => code.trim().toUpperCase())
-              .where((code) => code.isNotEmpty)
-              .toSet()
-              .toList(growable: false),
+          assessmentDraftCounts: assessmentDraftCounts,
         ),
       ),
     );
@@ -2253,15 +2281,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     }
 
     if (result.createNew) {
-      final fallbackSubject =
-          selectedSubject ??
-          (missions.isNotEmpty && missions.first.subject != null
-              ? SubjectSummary(
-                  id: missions.first.subject!.id,
-                  name: missions.first.subject!.name,
-                )
-              : null);
-      if (fallbackSubject == null || fallbackSubject.id.isEmpty) {
+      if (assessmentSubject == null || assessmentSubject.id.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -2274,10 +2294,10 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
 
       await _openMissionBuilder(
         workspace: workspace,
-        subject: fallbackSubject,
+        subject: assessmentSubject,
         lessonLabel: lessonLabel,
         openAssessmentOnStart: true,
-        lockedAssessmentTaskCodes: result.lockedTaskCodes,
+        assessmentDraftCounts: assessmentDraftCounts,
       );
       return;
     }
@@ -5990,28 +6010,18 @@ class _AssessmentDraftListResult {
   const _AssessmentDraftListResult._({
     required this.createNew,
     required this.mission,
-    required this.lockedTaskCodes,
   });
 
   factory _AssessmentDraftListResult.open(MissionPayload mission) {
-    return _AssessmentDraftListResult._(
-      createNew: false,
-      mission: mission,
-      lockedTaskCodes: const [],
-    );
+    return _AssessmentDraftListResult._(createNew: false, mission: mission);
   }
 
-  factory _AssessmentDraftListResult.createNew(List<String> lockedTaskCodes) {
-    return _AssessmentDraftListResult._(
-      createNew: true,
-      mission: null,
-      lockedTaskCodes: lockedTaskCodes,
-    );
+  factory _AssessmentDraftListResult.createNew() {
+    return const _AssessmentDraftListResult._(createNew: true, mission: null);
   }
 
   final bool createNew;
   final MissionPayload? mission;
-  final List<String> lockedTaskCodes;
 }
 
 class _DailyDraftListResult {
@@ -6170,13 +6180,13 @@ class _AssessmentDraftListScreen extends StatelessWidget {
     required this.studentName,
     required this.studentXp,
     required this.missions,
-    required this.lockedTaskCodes,
+    required this.assessmentDraftCounts,
   });
 
   final String studentName;
   final int studentXp;
   final List<MissionPayload> missions;
-  final List<String> lockedTaskCodes;
+  final Map<String, int> assessmentDraftCounts;
 
   @override
   Widget build(BuildContext context) {
@@ -6231,9 +6241,9 @@ class _AssessmentDraftListScreen extends StatelessWidget {
                     ),
                   ),
                   TextButton.icon(
-                    onPressed: () => Navigator.of(context).pop(
-                      _AssessmentDraftListResult.createNew(lockedTaskCodes),
-                    ),
+                    onPressed: () => Navigator.of(
+                      context,
+                    ).pop(_AssessmentDraftListResult.createNew()),
                     icon: const Icon(
                       Icons.add_circle_outline_rounded,
                       size: 18,
@@ -6309,10 +6319,18 @@ class _AssessmentDraftListScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              if (lockedTaskCodes.isNotEmpty) ...[
+              if (assessmentDraftCounts.values.any((count) => count > 0)) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Locked task focus codes from existing drafts: ${lockedTaskCodes.join(', ')}',
+                  assessmentDraftCounts.entries
+                      .where((entry) => entry.value > 0)
+                      .map(
+                        (entry) => assessmentTaskCodeAvailabilityMessage(
+                          entry.key,
+                          entry.value,
+                        ),
+                      )
+                      .join('\n'),
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),

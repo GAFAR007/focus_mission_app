@@ -989,6 +989,30 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<Map<String, int>> fetchTeacherAssessmentDraftCounts({
+    required String token,
+    required String studentId,
+    required String subjectId,
+  }) async {
+    final encodedSubjectId = Uri.encodeQueryComponent(subjectId.trim());
+    final json = await _requestJson(
+      'GET',
+      '/teacher/missions/assessment-draft-counts/$studentId?subjectId=$encodedSubjectId',
+      token: token,
+    );
+    final rawCounts =
+        (json['counts'] as Map<dynamic, dynamic>? ?? const <dynamic, dynamic>{})
+            .cast<String, dynamic>();
+
+    // WHY: Missing codes intentionally mean zero existing assessments. Only
+    // non-negative server counts should influence the teacher's chip state.
+    return rawCounts.map((rawCode, rawCount) {
+      final code = rawCode.trim().toUpperCase();
+      final parsedCount = int.tryParse(rawCount.toString()) ?? 0;
+      return MapEntry(code, parsedCount < 0 ? 0 : parsedCount);
+    });
+  }
+
   Future<MentorOverviewData> fetchMentorOverview({
     required String token,
     required String studentId,

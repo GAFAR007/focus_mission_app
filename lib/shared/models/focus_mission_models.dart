@@ -1007,6 +1007,7 @@ class MissionPayload {
     required this.sessionType,
     required this.difficulty,
     required this.taskCodes,
+    this.assessmentSequenceByTaskCode = const {},
     required this.xpReward,
     required this.xpEarned,
     required this.questionCount,
@@ -1038,6 +1039,7 @@ class MissionPayload {
   final String sessionType;
   final String difficulty;
   final List<String> taskCodes;
+  final Map<String, String> assessmentSequenceByTaskCode;
   final int xpReward;
   final int xpEarned;
   final int questionCount;
@@ -1082,6 +1084,7 @@ class MissionPayload {
     String? sessionType,
     String? difficulty,
     List<String>? taskCodes,
+    Map<String, String>? assessmentSequenceByTaskCode,
     int? xpReward,
     int? xpEarned,
     int? questionCount,
@@ -1113,6 +1116,8 @@ class MissionPayload {
       sessionType: sessionType ?? this.sessionType,
       difficulty: difficulty ?? this.difficulty,
       taskCodes: taskCodes ?? this.taskCodes,
+      assessmentSequenceByTaskCode:
+          assessmentSequenceByTaskCode ?? this.assessmentSequenceByTaskCode,
       xpReward: xpReward ?? this.xpReward,
       xpEarned: xpEarned ?? this.xpEarned,
       questionCount: questionCount ?? this.questionCount,
@@ -1148,6 +1153,9 @@ class MissionPayload {
       sessionType: (json['sessionType'] ?? '').toString(),
       difficulty: (json['difficulty'] ?? '').toString(),
       taskCodes: _asStringList(json['taskCodes']),
+      assessmentSequenceByTaskCode: _asStringMap(
+        json['assessmentSequenceByTaskCode'],
+      ),
       xpReward: _asInt(json['xpReward']),
       xpEarned: _asInt(json['xpEarned']),
       questionCount: _asInt(json['questionCount']),
@@ -3469,6 +3477,14 @@ List<String> _asStringList(Object? value) {
   }
 
   return const [];
+}
+
+Map<String, String> _asStringMap(Object? value) {
+  if (value is Map<dynamic, dynamic>) {
+    return value.map((key, item) => MapEntry(key.toString(), item.toString()));
+  }
+
+  return const {};
 }
 
 String? _asOptionalString(Object? value) {

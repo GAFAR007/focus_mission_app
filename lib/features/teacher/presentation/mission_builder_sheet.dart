@@ -36,7 +36,7 @@ Future<MissionPayload?> showMissionBuilderSheet(
   required String sessionType,
   required DateTime targetDate,
   List<TodaySchedule> timetableEntries = const [],
-  List<String> lockedAssessmentTaskCodes = const [],
+  Map<String, int> assessmentDraftCounts = const {},
   bool openAssessmentOnStart = false,
   FocusMissionApi? api,
   MissionPayload? initialDraft,
@@ -61,7 +61,7 @@ Future<MissionPayload?> showMissionBuilderSheet(
       sessionType: sessionType,
       targetDate: targetDate,
       timetableEntries: timetableEntries,
-      lockedAssessmentTaskCodes: lockedAssessmentTaskCodes,
+      assessmentDraftCounts: assessmentDraftCounts,
       openAssessmentOnStart: openAssessmentOnStart,
       api: api ?? FocusMissionApi(),
       initialDraft: initialDraft,
@@ -81,7 +81,7 @@ class _MissionBuilderSheet extends StatefulWidget {
     required this.sessionType,
     required this.targetDate,
     required this.timetableEntries,
-    required this.lockedAssessmentTaskCodes,
+    required this.assessmentDraftCounts,
     required this.openAssessmentOnStart,
     required this.api,
     this.initialDraft,
@@ -93,7 +93,7 @@ class _MissionBuilderSheet extends StatefulWidget {
   final String sessionType;
   final DateTime targetDate;
   final List<TodaySchedule> timetableEntries;
-  final List<String> lockedAssessmentTaskCodes;
+  final Map<String, int> assessmentDraftCounts;
   final bool openAssessmentOnStart;
   final FocusMissionApi api;
   final MissionPayload? initialDraft;
@@ -4376,7 +4376,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               subjectId: widget.subject.id,
               missionDraftId: _draftMission?.id ?? '',
               api: widget.api,
-              lockedTaskCodes: widget.lockedAssessmentTaskCodes,
+              assessmentDraftCounts: widget.assessmentDraftCounts,
             ),
           ),
         );

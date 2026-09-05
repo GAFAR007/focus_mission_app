@@ -22,6 +22,43 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 
+const int maxAssessmentDraftsPerTaskCode = 2;
+
+Map<String, int> normalizeAssessmentDraftCounts(Map<String, int> counts) {
+  return counts.map((rawCode, rawCount) {
+    final code = rawCode.trim().toUpperCase();
+    return MapEntry(code, rawCount < 0 ? 0 : rawCount);
+  });
+}
+
+int assessmentDraftCountForTaskCode(Map<String, int> counts, String taskCode) {
+  return counts[taskCode.trim().toUpperCase()] ?? 0;
+}
+
+bool assessmentTaskCodeIsLocked(Map<String, int> counts, String taskCode) {
+  // WHY: One assessment is a complete valid state. The optional B slot stays
+  // selectable until two drafts already exist for this exact code.
+  return assessmentDraftCountForTaskCode(counts, taskCode) >=
+      maxAssessmentDraftsPerTaskCode;
+}
+
+String assessmentTaskCodeAvailabilityMessage(
+  String taskCode,
+  int existingCount,
+) {
+  final code = taskCode.trim().toUpperCase();
+  if (existingCount <= 0) {
+    return '$code — no assessment yet';
+  }
+  if (existingCount == 1) {
+    return '$code already has one assessment. You can create one optional second assessment.';
+  }
+  if (existingCount == 2) {
+    return '$code already has two assessments.';
+  }
+  return '$code already has $existingCount assessments. No more can be created.';
+}
+
 class AssessmentModeSelectionResult {
   const AssessmentModeSelectionResult({
     required this.taskCodes,
@@ -75,7 +112,7 @@ class AssessmentModeScreen extends StatefulWidget {
     required this.authToken,
     required this.subjectId,
     required this.studentId,
-    this.lockedTaskCodes = const [],
+    this.assessmentDraftCounts = const {},
     this.missionDraftId = '',
     this.api,
   });
@@ -92,7 +129,7 @@ class AssessmentModeScreen extends StatefulWidget {
   final String authToken;
   final String subjectId;
   final String studentId;
-  final List<String> lockedTaskCodes;
+  final Map<String, int> assessmentDraftCounts;
   final String missionDraftId;
   final FocusMissionApi? api;
 
@@ -116,7 +153,7 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
   late List<_DateSlotOption> _availableDateOptions;
   _DateSlotOption? _selectedDateOption;
   late final FocusMissionApi _api;
-  late final Set<String> _lockedTaskCodes;
+  late final Map<String, int> _assessmentDraftCounts;
   UploadedSourceDraft? _uploadedSource;
   String _rawUploadedSourceText = '';
   bool _showFullRawUploadText = false;
@@ -129,13 +166,16 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
   void initState() {
     super.initState();
     _api = widget.api ?? FocusMissionApi();
-    _lockedTaskCodes = widget.lockedTaskCodes
-        .map((code) => code.trim().toUpperCase())
-        .where((code) => code.isNotEmpty)
-        .toSet();
+    _assessmentDraftCounts = normalizeAssessmentDraftCounts(
+      widget.assessmentDraftCounts,
+    );
     _selectedTaskCodes = widget.initialTaskCodes
         .map((code) => code.trim().toUpperCase())
-        .where((code) => code.isNotEmpty && !_lockedTaskCodes.contains(code))
+        .where(
+          (code) =>
+              code.isNotEmpty &&
+              !assessmentTaskCodeIsLocked(_assessmentDraftCounts, code),
+        )
         .toSet()
         .toList(growable: false);
     _availableDateOptions = _buildAvailableDateOptions(enforceTeacherId: true);
@@ -286,7 +326,8 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
                         children: widget.taskCodeOptions
                             .map((code) {
                               final normalizedCode = code.trim().toUpperCase();
-                              final isLocked = _lockedTaskCodes.contains(
+                              final isLocked = assessmentTaskCodeIsLocked(
+                                _assessmentDraftCounts,
                                 normalizedCode,
                               );
                               return _TaskChip(
@@ -302,13 +343,30 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
                             })
                             .toList(growable: false),
                       ),
-                      if (_lockedTaskCodes.isNotEmpty) ...[
+                      if (_assessmentDraftCounts.values.any(
+                        (count) => count > 0,
+                      )) ...[
                         const SizedBox(height: 8),
-                        Text(
-                          'Locked because already drafted: ${_lockedTaskCodes.join(', ')}. Select any other task code.',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AppPalette.textMuted),
-                        ),
+                        ...widget.taskCodeOptions.map((code) {
+                          final existingCount = assessmentDraftCountForTaskCode(
+                            _assessmentDraftCounts,
+                            code,
+                          );
+                          if (existingCount <= 0) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              assessmentTaskCodeAvailabilityMessage(
+                                code,
+                                existingCount,
+                              ),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: AppPalette.textMuted),
+                            ),
+                          );
+                        }),
                       ],
                       if (_errorMessage != null) ...[
                         const SizedBox(height: 8),
