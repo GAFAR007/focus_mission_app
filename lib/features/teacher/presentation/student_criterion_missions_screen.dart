@@ -80,13 +80,13 @@ class MissionCriterionPathwayGroup {
   String get achievementLabel {
     switch (achievementEvidence?.status) {
       case 'passed':
-        return 'Passed';
+        return 'Achieved';
       case 'pending_review':
-        return 'Pending review';
+        return 'Not yet achieved · Theory review pending';
       case 'not_passed':
-        return 'Not passed';
+        return 'Not yet achieved';
       case 'not_started':
-        return 'Not started';
+        return 'Not yet achieved';
       case null:
         return 'Not configured';
       default:
@@ -158,7 +158,17 @@ MissionCriterionPathwayGroup _buildMissionCriterionPathwayGroup({
     });
 
   final evidence = _evidenceForTaskCode(certifications, taskCode);
-  final usedAssessmentSequences = <String>{};
+  final usedAssessmentSequences = sortedMissions
+      .where(
+        (mission) =>
+            _stageForMission(mission) == MissionPathwayStage.assessment,
+      )
+      .map(
+        (mission) =>
+            mission.assessmentSequenceByTaskCode[taskCode]?.toUpperCase() ?? '',
+      )
+      .where((sequence) => sequence == 'A' || sequence == 'B')
+      .toSet();
   final entries = <MissionPathwayEntry>[];
 
   for (final mission in sortedMissions) {
@@ -179,22 +189,12 @@ MissionCriterionPathwayGroup _buildMissionCriterionPathwayGroup({
       }
     }
 
-    final isPendingReview =
-        evidence?.isPendingReview == true &&
-        evidence?.bestMissionId == mission.id;
-    final isPassedAssessment =
-        stage == MissionPathwayStage.assessment &&
-        evidence?.isPassed == true &&
-        evidence?.bestMissionId == mission.id;
-    final statusLabel = mission.isDraft
-        ? 'Draft'
-        : isPendingReview
-        ? 'Needs review'
-        : isPassedAssessment
-        ? 'Passed'
-        : mission.latestResultPackageId.trim().isNotEmpty
-        ? 'Completed'
-        : 'Assigned';
+    final statusLabel = _pathwayStatusLabel(
+      mission: mission,
+      stage: stage,
+      assessmentSequence: assessmentSequence,
+      evidence: evidence,
+    );
     entries.add(
       MissionPathwayEntry(
         mission: mission,
@@ -221,6 +221,100 @@ MissionCriterionPathwayGroup _buildMissionCriterionPathwayGroup({
     entries: entries,
     achievementEvidence: evidence,
   );
+}
+
+String _pathwayStatusLabel({
+  required MissionPayload mission,
+  required MissionPathwayStage stage,
+  required String assessmentSequence,
+  required CertificationEvidenceRow? evidence,
+}) {
+  if (mission.isDraft) {
+    return 'Draft';
+  }
+  if (mission.latestResultPackageId.trim().isEmpty) {
+    return 'Assigned';
+  }
+
+  switch (stage) {
+    case MissionPathwayStage.q5:
+    case MissionPathwayStage.q8:
+      final requiredCorrect = stage == MissionPathwayStage.q5 ? 4 : 6;
+      return mission.scoreCorrect >= requiredCorrect
+          ? 'Passed ${mission.scoreCorrect}/${mission.scoreTotal}'
+          : 'Not passed ${mission.scoreCorrect}/${mission.scoreTotal}';
+    case MissionPathwayStage.essay:
+      // WHY: Essay is completed learning progress, not qualification
+      // achievement evidence.
+      return 'Completed';
+    case MissionPathwayStage.theory:
+      if (evidence?.theoryMissionId != mission.id) {
+        return 'Completed';
+      }
+      return _theoryEvidenceLabel(evidence!);
+    case MissionPathwayStage.assessment:
+      return _assessmentEvidenceLabel(
+        mission: mission,
+        sequence: assessmentSequence,
+        evidence: evidence,
+      );
+  }
+}
+
+String _theoryEvidenceLabel(CertificationEvidenceRow evidence) {
+  final score = _pathwayPercent(evidence.theoryScorePercent);
+  switch (evidence.theoryStatus) {
+    case 'passed':
+      return 'Passed $score';
+    case 'pending_review':
+      return 'Needs review';
+    case 'not_passed':
+      return 'Not passed $score';
+    default:
+      return 'Completed';
+  }
+}
+
+String _assessmentEvidenceLabel({
+  required MissionPayload mission,
+  required String sequence,
+  required CertificationEvidenceRow? evidence,
+}) {
+  final isAssessmentB = sequence == 'B';
+  final evidenceMissionId = isAssessmentB
+      ? evidence?.assessmentBMissionId ?? ''
+      : evidence?.assessmentAMissionId ?? '';
+  if (evidenceMissionId != mission.id) {
+    return 'Completed';
+  }
+
+  final status = isAssessmentB
+      ? evidence?.assessmentBStatus ?? 'not_started'
+      : evidence?.assessmentAStatus ?? 'not_started';
+  final correct = isAssessmentB
+      ? evidence?.assessmentBCorrect ?? mission.scoreCorrect
+      : evidence?.assessmentACorrect ?? mission.scoreCorrect;
+  final total = isAssessmentB
+      ? evidence?.assessmentBTotal ?? mission.scoreTotal
+      : evidence?.assessmentATotal ?? mission.scoreTotal;
+  final score = '$correct/$total';
+  switch (status) {
+    case 'passed':
+      return isAssessmentB ? 'Optional · Passed $score' : 'Passed $score';
+    case 'not_passed':
+      return isAssessmentB
+          ? 'Optional · Not passed $score'
+          : 'Not passed $score';
+    default:
+      return 'Completed';
+  }
+}
+
+String _pathwayPercent(double value) {
+  final rounded = value.roundToDouble();
+  return value == rounded
+      ? '${rounded.toInt()}%'
+      : '${value.toStringAsFixed(1)}%';
 }
 
 CertificationEvidenceRow? _evidenceForTaskCode(

@@ -28,6 +28,7 @@ void main() {
     required List<String> taskCodes,
     String resultPackageId = '',
     Map<String, String> assessmentSequence = const {},
+    int scoreCorrect = 0,
   }) {
     return MissionPayload.fromJson({
       'id': id,
@@ -37,6 +38,11 @@ void main() {
       'taskCodes': taskCodes,
       'status': 'published',
       'latestResultPackageId': resultPackageId,
+      'scoreCorrect': scoreCorrect,
+      'scoreTotal': questionCount,
+      'scorePercent': questionCount == 0
+          ? 0
+          : ((scoreCorrect / questionCount) * 100).round(),
       'availableOnDate': '2026-09-10',
       'assessmentSequenceByTaskCode': assessmentSequence,
     });
@@ -46,6 +52,7 @@ void main() {
     required String taskCode,
     required String status,
     String bestMissionId = '',
+    Map<String, dynamic> evidence = const {},
   }) {
     return SubjectCertificationSummary.fromJson({
       'subjectId': 'business-id',
@@ -58,6 +65,7 @@ void main() {
           'status': status,
           'bestMissionId': bestMissionId,
           'reason': 'Backend-owned evidence',
+          ...evidence,
         },
       ],
     });
@@ -152,7 +160,69 @@ void main() {
     ).single;
 
     expect(group.completedLearningCount, 1);
-    expect(group.achievementLabel, 'Not started');
+    expect(group.achievementLabel, 'Not yet achieved');
+  });
+
+  test('shows Essay as completed learning without achievement', () {
+    final group = buildMissionCriterionPathwayGroups(
+      missions: [
+        mission(
+          id: 'essay-completed',
+          format: 'ESSAY_BUILDER',
+          questionCount: 10,
+          taskCodes: ['P1'],
+          resultPackageId: 'essay-result',
+        ),
+      ],
+      certifications: [certification(taskCode: 'P1', status: 'not_started')],
+    ).single;
+
+    expect(group.learningEntries.single.statusLabel, 'Completed');
+    expect(group.achievementLabel, 'Not yet achieved');
+  });
+
+  test('shows separate Theory and Assessment A scores when achieved', () {
+    final group = buildMissionCriterionPathwayGroups(
+      missions: [
+        mission(
+          id: 'theory-passed',
+          format: 'THEORY',
+          questionCount: 3,
+          taskCodes: ['P1'],
+          resultPackageId: 'theory-result',
+        ),
+        mission(
+          id: 'assessment-a-passed',
+          format: 'QUESTIONS',
+          questionCount: 10,
+          taskCodes: ['P1'],
+          resultPackageId: 'assessment-result',
+          assessmentSequence: {'P1': 'A'},
+          scoreCorrect: 8,
+        ),
+      ],
+      certifications: [
+        certification(
+          taskCode: 'P1',
+          status: 'passed',
+          evidence: const {
+            'theoryPassed': true,
+            'theoryStatus': 'passed',
+            'theoryScorePercent': 78,
+            'theoryMissionId': 'theory-passed',
+            'assessmentAPassed': true,
+            'assessmentAStatus': 'passed',
+            'assessmentACorrect': 8,
+            'assessmentATotal': 10,
+            'assessmentAMissionId': 'assessment-a-passed',
+          },
+        ),
+      ],
+    ).single;
+
+    expect(group.learningEntries.single.statusLabel, 'Passed 78%');
+    expect(group.assessmentEntries.single.statusLabel, 'Passed 8/10');
+    expect(group.achievementLabel, 'Achieved');
   });
 
   test(

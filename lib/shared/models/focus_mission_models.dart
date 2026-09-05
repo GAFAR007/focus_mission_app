@@ -596,6 +596,25 @@ class CertificationEvidenceRow {
   const CertificationEvidenceRow({
     required this.taskCode,
     required this.status,
+    this.theoryPassed = false,
+    this.theoryStatus = 'not_started',
+    this.theoryScorePercent = 0,
+    this.theoryMissionId = '',
+    this.theoryResultPackageId = '',
+    this.assessmentAPassed = false,
+    this.assessmentAStatus = 'not_started',
+    this.assessmentAScorePercent = 0,
+    this.assessmentACorrect = 0,
+    this.assessmentATotal = 10,
+    this.assessmentAMissionId = '',
+    this.assessmentAResultPackageId = '',
+    this.assessmentBPassed = false,
+    this.assessmentBStatus = 'not_started',
+    this.assessmentBScorePercent = 0,
+    this.assessmentBCorrect = 0,
+    this.assessmentBTotal = 10,
+    this.assessmentBMissionId = '',
+    this.assessmentBResultPackageId = '',
     required this.bestScorePercent,
     required this.bestMissionId,
     required this.bestResultPackageId,
@@ -606,6 +625,25 @@ class CertificationEvidenceRow {
 
   final String taskCode;
   final String status;
+  final bool theoryPassed;
+  final String theoryStatus;
+  final double theoryScorePercent;
+  final String theoryMissionId;
+  final String theoryResultPackageId;
+  final bool assessmentAPassed;
+  final String assessmentAStatus;
+  final double assessmentAScorePercent;
+  final int assessmentACorrect;
+  final int assessmentATotal;
+  final String assessmentAMissionId;
+  final String assessmentAResultPackageId;
+  final bool assessmentBPassed;
+  final String assessmentBStatus;
+  final double assessmentBScorePercent;
+  final int assessmentBCorrect;
+  final int assessmentBTotal;
+  final String assessmentBMissionId;
+  final String assessmentBResultPackageId;
   final double bestScorePercent;
   final String bestMissionId;
   final String bestResultPackageId;
@@ -621,6 +659,33 @@ class CertificationEvidenceRow {
     return CertificationEvidenceRow(
       taskCode: (json['taskCode'] ?? '').toString(),
       status: (json['status'] ?? 'not_started').toString(),
+      theoryPassed: json['theoryPassed'] == true,
+      theoryStatus: (json['theoryStatus'] ?? 'not_started').toString(),
+      theoryScorePercent: _asDouble(json['theoryScorePercent']),
+      theoryMissionId: (json['theoryMissionId'] ?? '').toString(),
+      theoryResultPackageId: (json['theoryResultPackageId'] ?? '').toString(),
+      assessmentAPassed: json['assessmentAPassed'] == true,
+      assessmentAStatus: (json['assessmentAStatus'] ?? 'not_started')
+          .toString(),
+      assessmentAScorePercent: _asDouble(json['assessmentAScorePercent']),
+      assessmentACorrect: _asInt(json['assessmentACorrect']),
+      assessmentATotal: _asInt(json['assessmentATotal']) > 0
+          ? _asInt(json['assessmentATotal'])
+          : 10,
+      assessmentAMissionId: (json['assessmentAMissionId'] ?? '').toString(),
+      assessmentAResultPackageId: (json['assessmentAResultPackageId'] ?? '')
+          .toString(),
+      assessmentBPassed: json['assessmentBPassed'] == true,
+      assessmentBStatus: (json['assessmentBStatus'] ?? 'not_started')
+          .toString(),
+      assessmentBScorePercent: _asDouble(json['assessmentBScorePercent']),
+      assessmentBCorrect: _asInt(json['assessmentBCorrect']),
+      assessmentBTotal: _asInt(json['assessmentBTotal']) > 0
+          ? _asInt(json['assessmentBTotal'])
+          : 10,
+      assessmentBMissionId: (json['assessmentBMissionId'] ?? '').toString(),
+      assessmentBResultPackageId: (json['assessmentBResultPackageId'] ?? '')
+          .toString(),
       bestScorePercent: _asDouble(json['bestScorePercent']),
       bestMissionId: (json['bestMissionId'] ?? '').toString(),
       bestResultPackageId: (json['bestResultPackageId'] ?? '').toString(),
