@@ -11,6 +11,8 @@
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,8 +21,10 @@ import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
+import '../../../core/utils/youtube_video.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/gradient_button.dart';
+import '../../../shared/widgets/learning_video_card.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'assessment_mode_screen.dart';
 
@@ -37,10 +41,19 @@ Future<MissionPayload?> showMissionBuilderSheet(
   FocusMissionApi? api,
   MissionPayload? initialDraft,
 }) {
+  final viewport = MediaQuery.sizeOf(context);
+  final isCompact = viewport.width < 700;
   return showModalBottomSheet<MissionPayload>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
+    isDismissible: false,
+    enableDrag: false,
     backgroundColor: Colors.transparent,
+    constraints: BoxConstraints(
+      maxWidth: isCompact ? viewport.width : viewport.width * 0.96,
+      maxHeight: viewport.height,
+    ),
     builder: (_) => _MissionBuilderSheet(
       session: session,
       student: student,
@@ -142,6 +155,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   MissionSourceReadiness? _sourceUploadReadiness;
   List<_EditableQuestionController> _questionEditors = const [];
   bool _didAutoOpenAssessmentMode = false;
+  bool _allowPop = false;
+  String _editorBaseline = '';
   List<SubjectCertificationSummary> _studentCertification = const [];
 
   bool get _hasDraft => _draftMission != null;
@@ -211,6 +226,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
     if (widget.initialDraft != null) {
       _applyDraft(widget.initialDraft!);
+    } else {
+      _captureEditorBaseline();
     }
 
     if (widget.openAssessmentOnStart && widget.initialDraft == null) {
@@ -242,145 +259,210 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     final isAssessmentPublishLockedForActions =
         !_isPublishedMission && _isAssessmentPublishLocked;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final isCompact = MediaQuery.sizeOf(context).width < 700;
+    final pagePadding = isCompact ? AppSpacing.item : AppSpacing.screen;
 
-    return SafeArea(
-      child: FractionallySizedBox(
-        heightFactor: 0.94,
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: AppPalette.backgroundGradient,
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
+    return PopScope(
+      canPop: _allowPop,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          _requestClose();
+        }
+      },
+      child: SafeArea(
+        child: FractionallySizedBox(
+          heightFactor: isCompact ? 1 : 0.96,
+          widthFactor: 1,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: AppPalette.backgroundGradient,
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: isCompact
+                  ? BorderRadius.zero
+                  : BorderRadius.circular(32),
             ),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.screen),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 60,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.72),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.section),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        !_hasDraft
-                            ? 'Build Mission Draft'
-                            : _isPublishedMission
-                            ? 'Edit Mission'
-                            : 'Review Draft',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                    ),
-                    _TopButton(icon: Icons.close_rounded, onTap: _closeSheet),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.item),
-                Text(
-                  !_hasDraft
-                      ? _isTheoryDraft
-                            ? 'Upload a doc or scan and Groq will draft a fast-focus theory check for ${widget.student.name}. You set 2 to 5 questions, then review the draft before it goes live.'
-                            : 'Paste the unit text and Groq will draft calm, SEN-friendly questions for ${widget.student.name}. You review the draft before the mission goes live.'
-                      : _isPublishedMission
-                      ? 'This mission is already live. Update the wording, answers, or teacher note here, then save the changes.'
-                      : 'The student cannot begin this mission until you publish it. Review the draft, tune the questions, and then publish when it is ready.',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-                ),
-                const SizedBox(height: AppSpacing.section),
-                SoftPanel(
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
+            child: Padding(
+              padding: EdgeInsets.all(pagePadding),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      _InfoPill(label: widget.student.name),
-                      _InfoPill(label: widget.subject.name),
-                      _InfoPill(label: _selectedSessionType.toUpperCase()),
-                      _InfoPill(label: _formatTargetDate(_resolvedTargetDate)),
-                      if (_selectedTaskCodes.isNotEmpty)
-                        _InfoPill(
-                          label: 'Tasks: ${_selectedTaskCodes.join(', ')}',
+                      TextButton.icon(
+                        onPressed: _requestClose,
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        label: const Text('Back'),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          !_hasDraft
+                              ? 'Build Mission Draft'
+                              : _isPublishedMission
+                              ? 'Edit Mission'
+                              : 'Review Draft',
+                          style: isCompact
+                              ? Theme.of(context).textTheme.titleLarge
+                              : Theme.of(context).textTheme.headlineSmall,
                         ),
-                      if (_hasDraft)
+                      ),
+                      if (_hasDraft && !isCompact) ...[
                         _InfoPill(
                           label: _draftMission!.isDraft
                               ? 'Draft only'
                               : 'Live mission',
                         ),
+                        const SizedBox(width: 10),
+                      ],
+                      _TopButton(
+                        icon: Icons.close_rounded,
+                        onTap: _requestClose,
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: _isSaving || _isGenerating
-                        ? null
-                        : _openMissionDatePicker,
-                    icon: const Icon(Icons.calendar_month_rounded, size: 18),
-                    label: const Text('Change mission date'),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                if (_errorMessage != null) ...[
-                  SoftPanel(
-                    colors: const [Color(0xFFFFF4F4), Color(0xFFFFE6E6)],
-                    child: Text(
-                      _errorMessage!,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                  const SizedBox(height: 8),
+                  Text(
+                    !_hasDraft
+                        ? _isTheoryDraft
+                              ? 'Upload a doc or scan and Groq will draft a fast-focus theory check for ${widget.student.name}. You set 2 to 5 questions, then review the draft before it goes live.'
+                              : 'Paste the unit text and Groq will draft calm, SEN-friendly questions for ${widget.student.name}. You review the draft before the mission goes live.'
+                        : _isPublishedMission
+                        ? 'This mission is already live. Update the wording, answers, learning videos, or teacher note here, then save the changes.'
+                        : 'The student cannot begin this mission until you publish it. Review the draft, tune the questions, and then publish when it is ready.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppPalette.textMuted,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.item),
-                ],
-                if (_isTargetDateInPast) ...[
                   SoftPanel(
-                    colors: const [Color(0xFFFFF4F4), Color(0xFFFFE6E6)],
-                    child: Text(
-                      'Teachers can only prepare missions for today or an upcoming class date. Pick a future lesson date before generating or publishing.',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.item),
-                ],
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.only(
-                      bottom: AppSpacing.section + bottomPadding,
-                    ),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildMissionSetup(context),
-                          if (_hasDraft) ...[
-                            const SizedBox(height: AppSpacing.section),
-                            _buildDraftPreview(context),
-                          ],
-                          const SizedBox(height: AppSpacing.section),
-                          _buildActionSection(
-                            context,
-                            isAssessmentPublishLockedForActions:
-                                isAssessmentPublishLockedForActions,
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    child: Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _InfoPill(label: widget.student.name),
+                        _InfoPill(label: widget.subject.name),
+                        _InfoPill(label: _selectedSessionType.toUpperCase()),
+                        _InfoPill(
+                          label: _formatTargetDate(_resolvedTargetDate),
+                        ),
+                        if (_selectedTaskCodes.isNotEmpty)
+                          _InfoPill(
+                            label: 'Tasks: ${_selectedTaskCodes.join(', ')}',
                           ),
-                        ],
+                        if (_hasDraft && isCompact)
+                          _InfoPill(
+                            label: _draftMission!.isDraft
+                                ? 'Draft only'
+                                : 'Live mission',
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _isSaving || _isGenerating
+                          ? null
+                          : _openMissionDatePicker,
+                      icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                      label: const Text('Change mission date'),
+                    ),
+                  ),
+                  if (_errorMessage != null) ...[
+                    SoftPanel(
+                      colors: const [Color(0xFFFFF4F4), Color(0xFFFFE6E6)],
+                      child: Text(
+                        _errorMessage!,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.item),
+                  ],
+                  if (_isTargetDateInPast) ...[
+                    SoftPanel(
+                      colors: const [Color(0xFFFFF4F4), Color(0xFFFFE6E6)],
+                      child: Text(
+                        'Teachers can only prepare missions for today or an upcoming class date. Pick a future lesson date before generating or publishing.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.item),
+                  ],
+                  Expanded(
+                    child: SingleChildScrollView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: EdgeInsets.only(
+                        bottom: AppSpacing.section + bottomPadding,
+                      ),
+                      child: Form(
+                        key: _formKey,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final useWorkspaceColumns =
+                                _hasDraft && constraints.maxWidth >= 1050;
+                            if (useWorkspaceColumns) {
+                              // WHY: Wide screens reserve readable question
+                              // width while keeping settings and publish actions
+                              // visible in a clear secondary column.
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 7,
+                                    child: _buildDraftPreview(context),
+                                  ),
+                                  const SizedBox(width: AppSpacing.section),
+                                  SizedBox(
+                                    width: 390,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        _buildMissionSetup(context),
+                                        const SizedBox(
+                                          height: AppSpacing.section,
+                                        ),
+                                        _buildActionSection(
+                                          context,
+                                          isAssessmentPublishLockedForActions:
+                                              isAssessmentPublishLockedForActions,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildMissionSetup(context),
+                                if (_hasDraft) ...[
+                                  const SizedBox(height: AppSpacing.section),
+                                  _buildDraftPreview(context),
+                                ],
+                                const SizedBox(height: AppSpacing.section),
+                                _buildActionSection(
+                                  context,
+                                  isAssessmentPublishLockedForActions:
+                                      isAssessmentPublishLockedForActions,
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -959,10 +1041,12 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                         : 'Send lesson text to Groq for mission drafting.',
                     icon: Icons.auto_awesome_rounded,
                     colors: AppPalette.teacherGradient,
-                    active: _activeSourceUploadMode == _SourceUploadMode.aiDraft,
+                    active:
+                        _activeSourceUploadMode == _SourceUploadMode.aiDraft,
                     onPressed: _isExtractingSource || _isTargetDateInPast
                         ? null
-                        : () => _pickAndExtractSource(_SourceUploadMode.aiDraft),
+                        : () =>
+                              _pickAndExtractSource(_SourceUploadMode.aiDraft),
                   ),
                 ),
                 SizedBox(
@@ -976,15 +1060,16 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                     icon: Icons.quiz_outlined,
                     colors: const [AppPalette.primaryBlue, AppPalette.aqua],
                     active:
-                        _activeSourceUploadMode == _SourceUploadMode.populateDraft &&
+                        _activeSourceUploadMode ==
+                            _SourceUploadMode.populateDraft &&
                         (_pendingPopulateDraftFormat ?? _draftFormat) ==
                             'QUESTIONS',
                     onPressed: _isExtractingSource || _isTargetDateInPast
                         ? null
                         : () => _pickAndExtractSource(
-                              _SourceUploadMode.populateDraft,
-                              draftFormatOverride: 'QUESTIONS',
-                            ),
+                            _SourceUploadMode.populateDraft,
+                            draftFormatOverride: 'QUESTIONS',
+                          ),
                   ),
                 ),
                 SizedBox(
@@ -998,15 +1083,16 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                     icon: Icons.short_text_rounded,
                     colors: const [AppPalette.mint, AppPalette.aqua],
                     active:
-                        _activeSourceUploadMode == _SourceUploadMode.populateDraft &&
+                        _activeSourceUploadMode ==
+                            _SourceUploadMode.populateDraft &&
                         (_pendingPopulateDraftFormat ?? _draftFormat) ==
                             'THEORY',
                     onPressed: _isExtractingSource || _isTargetDateInPast
                         ? null
                         : () => _pickAndExtractSource(
-                              _SourceUploadMode.populateDraft,
-                              draftFormatOverride: 'THEORY',
-                            ),
+                            _SourceUploadMode.populateDraft,
+                            draftFormatOverride: 'THEORY',
+                          ),
                   ),
                 ),
                 SizedBox(
@@ -1020,15 +1106,16 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                     icon: Icons.edit_note_rounded,
                     colors: const [AppPalette.sun, AppPalette.orange],
                     active:
-                        _activeSourceUploadMode == _SourceUploadMode.populateDraft &&
+                        _activeSourceUploadMode ==
+                            _SourceUploadMode.populateDraft &&
                         (_pendingPopulateDraftFormat ?? _draftFormat) ==
                             'ESSAY_BUILDER',
                     onPressed: _isExtractingSource || _isTargetDateInPast
                         ? null
                         : () => _pickAndExtractSource(
-                              _SourceUploadMode.populateDraft,
-                              draftFormatOverride: 'ESSAY_BUILDER',
-                            ),
+                            _SourceUploadMode.populateDraft,
+                            draftFormatOverride: 'ESSAY_BUILDER',
+                          ),
                   ),
                 ),
               ],
@@ -1348,6 +1435,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                   : _QuestionEditorCard(
                       index: index,
                       editor: _questionEditors[index],
+                      allowLearningVideo: !_isAssessmentMode,
                       onCorrectIndexChanged: (value) {
                         setState(
                           () => _questionEditors[index].correctIndex = value,
@@ -1893,7 +1981,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         return;
       }
 
-      Navigator.of(context).pop(mission);
+      // WHY: PopScope protects dirty edits, so a successful explicit save must
+      // authorize the route pop and return the saved server response.
+      _captureEditorBaseline();
+      _finishClose(mission);
     } catch (error) {
       if (!mounted) {
         return;
@@ -2954,6 +3045,15 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         return 'Question ${index + 1} needs a short teaching note before the question.';
       }
 
+      final learningVideoError = validateOptionalYouTubeVideoUrl(
+        question.learningVideoUrlController.text,
+      );
+      if (learningVideoError != null) {
+        // WHY: Only recognized YouTube IDs may be saved, so malformed links
+        // fail beside the relevant question instead of reaching persistence.
+        return 'Question ${index + 1}: $learningVideoError';
+      }
+
       if (_draftFormat == 'THEORY') {
         if (question.expectedAnswerController.text.trim().isEmpty) {
           return 'Theory question ${index + 1} needs an expected answer.';
@@ -3521,10 +3621,12 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     String? draftFormatOverride,
   }) async {
     try {
-      final resolvedDraftFormat =
-          (draftFormatOverride ?? _draftFormat).trim().toUpperCase();
-      final resolvedEssayMode =
-          resolvedDraftFormat == 'ESSAY_BUILDER' ? _essayMode : '';
+      final resolvedDraftFormat = (draftFormatOverride ?? _draftFormat)
+          .trim()
+          .toUpperCase();
+      final resolvedEssayMode = resolvedDraftFormat == 'ESSAY_BUILDER'
+          ? _essayMode
+          : '';
       final resolvedQuestionCount = _normalizedQuestionCountForDraftFormat(
         _questionCount,
         draftFormat: resolvedDraftFormat,
@@ -3561,8 +3663,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       setState(() {
         _isExtractingSource = true;
         _activeSourceUploadMode = mode;
-        _pendingPopulateDraftFormat =
-            mode == _SourceUploadMode.populateDraft
+        _pendingPopulateDraftFormat = mode == _SourceUploadMode.populateDraft
             ? resolvedDraftFormat
             : null;
         _errorMessage = null;
@@ -3769,6 +3870,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     _questionEditors = mission.questions
         .map(_EditableQuestionController.fromMissionQuestion)
         .toList(growable: false);
+    _captureEditorBaseline();
   }
 
   int _normalizedQuestionCountForDraftFormat(
@@ -3842,13 +3944,93 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     _draftFormat = 'QUESTIONS';
   }
 
-  void _closeSheet() {
-    if (_createdDraftThisSession && _draftMission != null) {
-      Navigator.of(context).pop(_draftMission);
+  String _buildEditorSignature() {
+    return jsonEncode({
+      'title': _titleController.text,
+      'teacherNote': _teacherNoteController.text,
+      'unitText': _unitTextController.text,
+      'rawSource': _rawUploadedSourceText,
+      'sessionType': _selectedSessionType,
+      'targetDate': _dateKey(_resolvedTargetDate),
+      'difficulty': _difficulty,
+      'questionCount': _questionCount,
+      'draftFormat': _draftFormat,
+      'essayMode': _essayMode,
+      'taskCodes': _selectedTaskCodes,
+      'draftJson': _draftMission?.draftJson,
+      'questions': _questionEditors
+          .map(
+            (editor) => {
+              'learningText': editor.learningTextController.text,
+              'learningVideoUrl': editor.learningVideoUrlController.text,
+              'learningVideoPlacement': editor.learningVideoPlacement,
+              'prompt': editor.promptController.text,
+              'options': editor.optionControllers
+                  .map((controller) => controller.text)
+                  .toList(growable: false),
+              'correctIndex': editor.correctIndex,
+              'explanation': editor.explanationController.text,
+              'expectedAnswer': editor.expectedAnswerController.text,
+              'minWordCount': editor.minWordCountController.text,
+            },
+          )
+          .toList(growable: false),
+    });
+  }
+
+  void _captureEditorBaseline() {
+    _editorBaseline = _buildEditorSignature();
+  }
+
+  bool get _hasUnsavedEdits => _buildEditorSignature() != _editorBaseline;
+
+  Future<void> _requestClose() async {
+    if (_isSaving || _isGenerating || _isExtractingSource) {
       return;
     }
 
-    Navigator.of(context).pop();
+    if (!_hasUnsavedEdits) {
+      _finishClose();
+      return;
+    }
+
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Leave Review Draft?'),
+        content: const Text(
+          'You have unsaved edits. Stay here to save them, or discard only the changes made since the draft was last loaded.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Discard edits'),
+          ),
+        ],
+      ),
+    );
+
+    if (discard == true && mounted) {
+      // WHY: Back navigation must never silently discard teacher-authored
+      // changes; only this explicit confirmation unlocks the route pop.
+      _captureEditorBaseline();
+      _finishClose();
+    }
+  }
+
+  void _finishClose([MissionPayload? savedResult]) {
+    final result =
+        savedResult ?? (_createdDraftThisSession ? _draftMission : null);
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.of(context).pop(result);
+      }
+    });
   }
 
   DateTime get _resolvedTargetDate {
@@ -4899,6 +5081,8 @@ class _EditableQuestionController {
       _originalOptions = const <String>[],
       _originalCorrectIndex = 0,
       learningTextController = TextEditingController(),
+      learningVideoUrlController = TextEditingController(),
+      learningVideoPlacement = LearningVideoPlacements.afterLearnFirst,
       promptController = TextEditingController(),
       explanationController = TextEditingController(),
       expectedAnswerController = TextEditingController(),
@@ -4929,6 +5113,12 @@ class _EditableQuestionController {
       learningTextController = TextEditingController(
         text: question.learningText,
       ),
+      learningVideoUrlController = TextEditingController(
+        text: question.learningVideoUrl,
+      ),
+      learningVideoPlacement = LearningVideoPlacements.normalize(
+        question.learningVideoPlacement,
+      ),
       promptController = TextEditingController(text: question.prompt),
       explanationController = TextEditingController(text: question.explanation),
       expectedAnswerController = TextEditingController(
@@ -4954,11 +5144,13 @@ class _EditableQuestionController {
   final List<String> _originalOptions;
   final int _originalCorrectIndex;
   final TextEditingController learningTextController;
+  final TextEditingController learningVideoUrlController;
   final TextEditingController promptController;
   final TextEditingController explanationController;
   final TextEditingController expectedAnswerController;
   final TextEditingController minWordCountController;
   final List<TextEditingController> optionControllers;
+  String learningVideoPlacement;
   int correctIndex;
 
   bool get isTheoryShortAnswer => answerMode == 'short_answer';
@@ -5031,6 +5223,12 @@ class _EditableQuestionController {
       id: '',
       answerMode: answerMode,
       learningText: learningTextController.text.trim(),
+      learningVideoUrl:
+          parseYouTubeVideoUrl(learningVideoUrlController.text)?.canonicalUrl ??
+          learningVideoUrlController.text.trim(),
+      learningVideoPlacement: LearningVideoPlacements.normalize(
+        learningVideoPlacement,
+      ),
       prompt: promptController.text.trim(),
       options: isTheoryShortAnswer
           ? const []
@@ -5046,6 +5244,7 @@ class _EditableQuestionController {
 
   void dispose() {
     learningTextController.dispose();
+    learningVideoUrlController.dispose();
     promptController.dispose();
     explanationController.dispose();
     expectedAnswerController.dispose();
@@ -5060,11 +5259,13 @@ class _QuestionEditorCard extends StatelessWidget {
   const _QuestionEditorCard({
     required this.index,
     required this.editor,
+    required this.allowLearningVideo,
     required this.onCorrectIndexChanged,
   });
 
   final int index;
   final _EditableQuestionController editor;
+  final bool allowLearningVideo;
   final ValueChanged<int> onCorrectIndexChanged;
 
   @override
@@ -5111,6 +5312,11 @@ class _QuestionEditorCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.item),
+          const _EditorSectionLabel(
+            icon: Icons.menu_book_rounded,
+            label: 'LEARN FIRST',
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: editor.learningTextController,
             minLines: 3,
@@ -5152,6 +5358,20 @@ class _QuestionEditorCard extends StatelessWidget {
             },
           ),
           const SizedBox(height: AppSpacing.item),
+          if (allowLearningVideo) ...[
+            const _EditorSectionLabel(
+              icon: Icons.ondemand_video_rounded,
+              label: 'LEARNING VIDEO',
+            ),
+            const SizedBox(height: 8),
+            _LearningVideoEditor(editor: editor),
+            const SizedBox(height: AppSpacing.item),
+          ],
+          const _EditorSectionLabel(
+            icon: Icons.help_outline_rounded,
+            label: 'QUESTION',
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: editor.promptController,
             maxLines: 3,
@@ -5160,6 +5380,11 @@ class _QuestionEditorCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.item),
+          const _EditorSectionLabel(
+            icon: Icons.format_list_bulleted_rounded,
+            label: 'ANSWERS',
+          ),
+          const SizedBox(height: 10),
           ...List.generate(
             4,
             (optionIndex) => Padding(
@@ -5182,7 +5407,10 @@ class _QuestionEditorCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Text('Correct answer', style: Theme.of(context).textTheme.titleSmall),
+          const _EditorSectionLabel(
+            icon: Icons.check_circle_outline_rounded,
+            label: 'CORRECT ANSWER',
+          ),
           const SizedBox(height: 10),
           Wrap(
             spacing: 10,
@@ -5197,6 +5425,11 @@ class _QuestionEditorCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.item),
+          const _EditorSectionLabel(
+            icon: Icons.lightbulb_outline_rounded,
+            label: 'EXPLANATION',
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: editor.explanationController,
             minLines: 2,
@@ -5273,6 +5506,11 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.item),
+          const _EditorSectionLabel(
+            icon: Icons.menu_book_rounded,
+            label: 'LEARN FIRST',
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: editor.learningTextController,
             minLines: 4,
@@ -5314,6 +5552,18 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
             },
           ),
           const SizedBox(height: AppSpacing.item),
+          const _EditorSectionLabel(
+            icon: Icons.ondemand_video_rounded,
+            label: 'LEARNING VIDEO',
+          ),
+          const SizedBox(height: 8),
+          _LearningVideoEditor(editor: editor),
+          const SizedBox(height: AppSpacing.item),
+          const _EditorSectionLabel(
+            icon: Icons.help_outline_rounded,
+            label: 'QUESTION',
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: editor.promptController,
             minLines: 2,
@@ -5323,6 +5573,11 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.item),
+          const _EditorSectionLabel(
+            icon: Icons.fact_check_outlined,
+            label: 'EXPECTED ANSWER',
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: editor.expectedAnswerController,
             minLines: 3,
@@ -5374,6 +5629,126 @@ String _normalizeDraftReviewValue(String value) {
       .toLowerCase()
       .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ');
+}
+
+class _EditorSectionLabel extends StatelessWidget {
+  const _EditorSectionLabel({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 19, color: AppPalette.primaryBlue),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: AppPalette.navy,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LearningVideoEditor extends StatefulWidget {
+  const _LearningVideoEditor({required this.editor});
+
+  final _EditableQuestionController editor;
+
+  @override
+  State<_LearningVideoEditor> createState() => _LearningVideoEditorState();
+}
+
+class _LearningVideoEditorState extends State<_LearningVideoEditor> {
+  final FocusNode _urlFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _urlFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final editor = widget.editor;
+    final video = parseYouTubeVideoUrl(editor.learningVideoUrlController.text);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: editor.learningVideoUrlController,
+          focusNode: _urlFocusNode,
+          keyboardType: TextInputType.url,
+          textInputAction: TextInputAction.done,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          decoration: const InputDecoration(
+            labelText: 'Learning video (optional)',
+            hintText: 'Paste YouTube URL',
+            prefixIcon: Icon(Icons.link_rounded),
+          ),
+          validator: validateOptionalYouTubeVideoUrl,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Recommended: use a focused 30-second to 2-minute learning clip.',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+        ),
+        if (editor.learningVideoUrlController.text.trim().isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.item),
+          Text(
+            'Video placement',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: LearningVideoPlacements.values
+                .map((placement) {
+                  final selected = editor.learningVideoPlacement == placement;
+                  return ChoiceChip(
+                    label: Text(LearningVideoPlacements.label(placement)),
+                    selected: selected,
+                    onSelected: (_) {
+                      setState(() {
+                        // WHY: Placement changes presentation only; watching the
+                        // optional clip never changes scoring or progression.
+                        editor.learningVideoPlacement = placement;
+                      });
+                    },
+                  );
+                })
+                .toList(growable: false),
+          ),
+        ],
+        if (video != null) ...[
+          const SizedBox(height: AppSpacing.item),
+          LearningVideoCard(
+            url: video.canonicalUrl,
+            placement: editor.learningVideoPlacement,
+            onChange: _urlFocusNode.requestFocus,
+            onRemove: () {
+              setState(() {
+                editor.learningVideoUrlController.clear();
+                editor.learningVideoPlacement =
+                    LearningVideoPlacements.afterLearnFirst;
+              });
+            },
+          ),
+        ],
+      ],
+    );
+  }
 }
 
 class _OptionBadge extends StatelessWidget {

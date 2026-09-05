@@ -884,6 +884,8 @@ class MissionQuestion {
     required this.id,
     required this.answerMode,
     required this.learningText,
+    this.learningVideoUrl = '',
+    this.learningVideoPlacement = 'afterLearnFirst',
     required this.prompt,
     required this.options,
     required this.correctIndex,
@@ -895,6 +897,8 @@ class MissionQuestion {
   final String id;
   final String answerMode;
   final String learningText;
+  final String learningVideoUrl;
+  final String learningVideoPlacement;
   final String prompt;
   final List<String> options;
   final int correctIndex;
@@ -908,6 +912,8 @@ class MissionQuestion {
     String? id,
     String? answerMode,
     String? learningText,
+    String? learningVideoUrl,
+    String? learningVideoPlacement,
     String? prompt,
     List<String>? options,
     int? correctIndex,
@@ -919,6 +925,9 @@ class MissionQuestion {
       id: id ?? this.id,
       answerMode: answerMode ?? this.answerMode,
       learningText: learningText ?? this.learningText,
+      learningVideoUrl: learningVideoUrl ?? this.learningVideoUrl,
+      learningVideoPlacement:
+          learningVideoPlacement ?? this.learningVideoPlacement,
       prompt: prompt ?? this.prompt,
       options: options ?? this.options,
       correctIndex: correctIndex ?? this.correctIndex,
@@ -944,6 +953,9 @@ class MissionQuestion {
                   json['explanation'] ??
                   '')
               .toString(),
+      learningVideoUrl: (json['learningVideoUrl'] ?? '').toString(),
+      learningVideoPlacement:
+          (json['learningVideoPlacement'] ?? 'afterLearnFirst').toString(),
       prompt: (json['prompt'] ?? '').toString(),
       options: _asStringList(json['options']),
       correctIndex: _asInt(json['correctIndex']),

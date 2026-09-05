@@ -64,6 +64,8 @@ Map<String, dynamic> _missionPayloadToJson(MissionPayload mission) {
         .map(
           (question) => <String, dynamic>{
             'learningText': question.learningText,
+            'learningVideoUrl': question.learningVideoUrl,
+            'learningVideoPlacement': question.learningVideoPlacement,
             'prompt': question.prompt,
             'options': question.options,
             'correctIndex': question.correctIndex,
@@ -2157,6 +2159,8 @@ class FocusMissionApi {
                 'answerMode': question.answerMode,
                 'prompt': question.prompt,
                 'learningText': question.learningText,
+                'learningVideoUrl': question.learningVideoUrl,
+                'learningVideoPlacement': question.learningVideoPlacement,
                 'options': question.options,
                 'correctIndex': question.correctIndex,
                 'explanation': question.explanation,

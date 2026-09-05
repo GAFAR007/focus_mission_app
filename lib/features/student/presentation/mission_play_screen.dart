@@ -22,9 +22,11 @@ import 'package:flutter/services.dart';
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/utils/focus_mission_api.dart';
+import '../../../core/utils/youtube_video.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/gradient_button.dart';
+import '../../../shared/widgets/learning_video_card.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'celebration_sound_stub.dart'
     if (dart.library.html) 'celebration_sound_web.dart'
@@ -90,6 +92,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   MissionPayload get _mission => widget.startedMission.mission;
   bool get _isEssayBuilderMission => _essayDraft != null;
   bool get _isTheoryMission => _mission.draftFormat == 'THEORY';
+  bool get _allowsLearningVideoSupport => supportsLearningVideosForMission(
+    draftFormat: _mission.draftFormat,
+    questionCount: _mission.questions.length,
+  );
   bool get _usesScoreBasedObjectiveXp =>
       !_isTheoryMission &&
       !_isEssayBuilderMission &&
@@ -577,9 +583,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (learnStageOnly) ...[
-                      _LearningPanel(
-                        text: question.learningText,
+                      _LearningSequence(
+                        question: question,
                         questionIndex: _currentIndex + 1,
+                        showVideo: _allowsLearningVideoSupport,
                       ),
                       const SizedBox(height: AppSpacing.section),
                       SoftPanel(
@@ -592,9 +599,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                       ),
                     ] else ...[
                       if (question.learningText.isNotEmpty) ...[
-                        _LearningPanel(
-                          text: question.learningText,
+                        _LearningSequence(
+                          question: question,
                           questionIndex: _currentIndex + 1,
+                          showVideo: _allowsLearningVideoSupport,
                         ),
                         const SizedBox(height: AppSpacing.section),
                       ],
@@ -628,6 +636,20 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                           answerText: question.options[question.correctIndex],
                           assessmentFlow: _usesAssessmentRetryFlow,
                         ),
+                        if (_allowsLearningVideoSupport &&
+                            LearningVideoPlacements.normalize(
+                                  question.learningVideoPlacement,
+                                ) ==
+                                LearningVideoPlacements.afterExplanation &&
+                            parseYouTubeVideoUrl(question.learningVideoUrl) !=
+                                null) ...[
+                          const SizedBox(height: AppSpacing.item),
+                          LearningVideoCard(
+                            url: question.learningVideoUrl,
+                            placement: question.learningVideoPlacement,
+                            showStudentGuidance: true,
+                          ),
+                        ],
                       ],
                     ],
                   ],
@@ -892,9 +914,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (learnStageOnly) ...[
-                      _LearningPanel(
-                        text: question.learningText,
+                      _LearningSequence(
+                        question: question,
                         questionIndex: _currentIndex + 1,
+                        showVideo: _allowsLearningVideoSupport,
                       ),
                       const SizedBox(height: AppSpacing.section),
                       SoftPanel(
@@ -907,9 +930,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                       ),
                     ] else ...[
                       if (question.learningText.trim().isNotEmpty) ...[
-                        _LearningPanel(
-                          text: question.learningText,
+                        _LearningSequence(
+                          question: question,
                           questionIndex: _currentIndex + 1,
+                          showVideo: _allowsLearningVideoSupport,
                         ),
                         const SizedBox(height: AppSpacing.section),
                       ],
@@ -993,6 +1017,20 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                             ? () {}
                             : _submitTheoryAnswer,
                       ),
+                      if (answerLocked &&
+                          LearningVideoPlacements.normalize(
+                                question.learningVideoPlacement,
+                              ) ==
+                              LearningVideoPlacements.afterExplanation &&
+                          parseYouTubeVideoUrl(question.learningVideoUrl) !=
+                              null) ...[
+                        const SizedBox(height: AppSpacing.item),
+                        LearningVideoCard(
+                          url: question.learningVideoUrl,
+                          placement: question.learningVideoPlacement,
+                          showStudentGuidance: true,
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -2973,6 +3011,58 @@ class _XpPulsePill extends StatelessWidget {
           context,
         ).textTheme.titleSmall?.copyWith(color: AppPalette.navy),
       ),
+    );
+  }
+}
+
+class _LearningSequence extends StatelessWidget {
+  const _LearningSequence({
+    required this.question,
+    required this.questionIndex,
+    required this.showVideo,
+  });
+
+  final MissionQuestion question;
+  final int questionIndex;
+  final bool showVideo;
+
+  @override
+  Widget build(BuildContext context) {
+    final video = showVideo
+        ? parseYouTubeVideoUrl(question.learningVideoUrl)
+        : null;
+    final placement = LearningVideoPlacements.normalize(
+      question.learningVideoPlacement,
+    );
+    final showBefore =
+        video != null && placement == LearningVideoPlacements.beforeLearnFirst;
+    final showAfter =
+        video != null && placement == LearningVideoPlacements.afterLearnFirst;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showBefore) ...[
+          LearningVideoCard(
+            url: video.canonicalUrl,
+            placement: placement,
+            showStudentGuidance: true,
+          ),
+          const SizedBox(height: AppSpacing.item),
+        ],
+        _LearningPanel(
+          text: question.learningText,
+          questionIndex: questionIndex,
+        ),
+        if (showAfter) ...[
+          const SizedBox(height: AppSpacing.item),
+          LearningVideoCard(
+            url: video.canonicalUrl,
+            placement: placement,
+            showStudentGuidance: true,
+          ),
+        ],
+      ],
     );
   }
 }
