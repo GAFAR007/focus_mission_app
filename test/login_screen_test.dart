@@ -18,6 +18,12 @@ import 'package:focus_mission_app/features/auth/presentation/login_screen.dart';
 import 'package:focus_mission_app/shared/models/user_role.dart';
 
 void main() {
+  test('builds private quick-fill avatars from first and last names', () {
+    expect(accountAvatarLetters('Ahmed Stockwin'), 'AHST');
+    expect(accountAvatarLetters('Asia-Lei Waller'), 'ASWA');
+    expect(accountAvatarLetters('Mohammed'), 'MO');
+  });
+
   Future<void> pumpLogin(
     WidgetTester tester, {
     Size size = const Size(1280, 900),
@@ -107,6 +113,20 @@ void main() {
     final fields = tester.widgetList<EditableText>(find.byType(EditableText));
     expect(fields.elementAt(0).controller.text, 'ict.teacher@focusmission.app');
     expect(fields.elementAt(1).controller.text, isEmpty);
+  });
+
+  testWidgets('Quick Fill uses initials and does not list account emails', (
+    tester,
+  ) async {
+    await pumpLogin(tester);
+
+    final accountFinder = find.text('Mashrur Hossain');
+    await tester.ensureVisible(accountFinder);
+    await tester.pump();
+
+    expect(find.text('MAHO'), findsOneWidget);
+    expect(find.text('ICT teacher'), findsOneWidget);
+    expect(find.text('ict.teacher@focusmission.app'), findsNothing);
   });
 
   testWidgets('lays out without overflow on a narrow phone', (tester) async {

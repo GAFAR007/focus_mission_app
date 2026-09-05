@@ -652,22 +652,46 @@ class _DemoAccountChip extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: borderColor),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
-              Text(
-                account.name,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(color: AppPalette.navy),
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(colors: AppPalette.teacherGradient),
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  accountAvatarLetters(account.name),
+                  key: Key('quick_fill_avatar_${account.name}'),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: AppPalette.navy,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                _accountLabel(account),
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      account.name,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleSmall?.copyWith(color: AppPalette.navy),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _accountLabel(account),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -677,13 +701,42 @@ class _DemoAccountChip extends StatelessWidget {
   }
 
   String _accountLabel(DemoAccount account) {
-    if (account.subject == null || account.subject!.isEmpty) {
-      return account.email;
+    if (account.subject != null && account.subject!.isNotEmpty) {
+      final suffix = account.isPlaceholder ? ' bot' : ' teacher';
+      return '${account.subject}$suffix';
     }
 
-    final suffix = account.isPlaceholder ? ' bot' : '';
-    return '${account.subject}$suffix · ${account.email}';
+    switch (account.role) {
+      case UserRole.student:
+        return 'Student';
+      case UserRole.teacher:
+        return account.isPlaceholder ? 'Teacher bot' : 'Teacher';
+      case UserRole.mentor:
+        return 'Mentor';
+      case UserRole.management:
+        return 'Management';
+    }
   }
+}
+
+String accountAvatarLetters(String name) {
+  final parts = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList(growable: false);
+  if (parts.isEmpty) {
+    return '--';
+  }
+
+  String firstTwo(String value) {
+    final characters = value.characters;
+    return characters.take(2).join().toUpperCase();
+  }
+
+  final first = firstTwo(parts.first);
+  final last = parts.length > 1 ? firstTwo(parts.last) : '';
+  return '$first$last';
 }
 
 class _RoundIconButton extends StatelessWidget {

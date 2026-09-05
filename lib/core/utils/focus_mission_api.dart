@@ -479,6 +479,21 @@ class FocusMissionApi {
         .toList(growable: false);
   }
 
+  Future<TeacherMissionPathwayData> fetchTeacherMissionPathway({
+    required String token,
+    required String studentId,
+    required String subjectId,
+  }) async {
+    final encodedSubjectId = Uri.encodeQueryComponent(subjectId.trim());
+    final json = await _requestJson(
+      'GET',
+      '/teacher/students/$studentId/mission-pathway?subjectId=$encodedSubjectId',
+      token: token,
+    );
+
+    return TeacherMissionPathwayData.fromJson(json);
+  }
+
   Future<List<ResultHistoryItem>> fetchTeacherStudentResults({
     required String token,
     required String studentId,
@@ -987,6 +1002,34 @@ class FocusMissionApi {
           ),
         )
         .toList(growable: false);
+  }
+
+  Future<MissionPayload> reuseTeacherMissionDraft({
+    required String token,
+    required String missionId,
+    required String targetStudentId,
+    required String targetDate,
+    required String sessionType,
+    bool shuffleQuestionOrder = false,
+    bool shuffleAnswerOptions = false,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/missions/$missionId/reuse',
+      token: token,
+      body: {
+        'targetStudentId': targetStudentId,
+        'targetDate': targetDate,
+        'sessionType': sessionType,
+        'shuffleQuestionOrder': shuffleQuestionOrder,
+        'shuffleAnswerOptions': shuffleAnswerOptions,
+      },
+    );
+
+    return MissionPayload.fromJson(
+      (json['mission'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
   }
 
   Future<Map<String, int>> fetchTeacherAssessmentDraftCounts({

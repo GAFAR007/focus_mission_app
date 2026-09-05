@@ -19,6 +19,7 @@ import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/constants/task_focus_codes.dart';
 import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../core/utils/youtube_video.dart';
@@ -110,20 +111,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   static const int _essayXpReward = 20;
   static const int _theoryQuestionCountMin = 2;
   static const int _theoryQuestionCountMax = 5;
-  static const List<String> _taskCodeOptions = [
-    'P1',
-    'P2',
-    'P3',
-    'P4',
-    'P5',
-    'P6',
-    'P7',
-    'M1',
-    'M2',
-    'M3',
-    'D1',
-    'D2',
-  ];
   static const int _scheduleSearchWindowDays = 120;
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
@@ -164,8 +151,11 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   bool get _isTargetDateInPast =>
       _resolvedTargetDate.isBefore(_dateOnly(DateTime.now()));
   bool get _isAssessmentMode => _questionCount == _assessmentQuestionCount;
+  bool get _isBusinessTaskFocusRequired =>
+      widget.subject.name.trim().toLowerCase() == 'business';
   bool get _isAssessmentPublishLocked =>
-      _isAssessmentMode && _selectedTaskCodes.isEmpty;
+      (_isAssessmentMode || _isBusinessTaskFocusRequired) &&
+      _selectedTaskCodes.isEmpty;
   bool get _isTheoryDraft => _draftFormat == 'THEORY';
   bool get _isEssayDraft => _draftFormat == 'ESSAY_BUILDER';
   bool get _isCertificationQualifyingFormat =>
@@ -351,7 +341,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                         ),
                         if (_selectedTaskCodes.isNotEmpty)
                           _InfoPill(
-                            label: 'Tasks: ${_selectedTaskCodes.join(', ')}',
+                            label:
+                                'Task Focus: ${_selectedTaskCodes.join(', ')}',
                           ),
                         if (_hasDraft && isCompact)
                           _InfoPill(
@@ -879,7 +870,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: _taskCodeOptions
+          children: kTaskFocusCodes
               .map(
                 (taskCode) => _CountChip(
                   label: taskCode,
@@ -892,7 +883,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         const SizedBox(height: 8),
         Text(
           _selectedTaskCodes.isEmpty
-              ? 'Select one or more task codes (for example P1 and P2) so Groq drafts mission questions for those tasks.'
+              ? _isBusinessTaskFocusRequired
+                    ? 'Required for Business: choose the criterion this mission supports. Task Focus does not mark the criterion as achieved.'
+                    : 'Select one or more task codes (for example P1 and P2) so Groq drafts mission questions for those tasks.'
               : 'Groq will target ${_selectedTaskCodes.join(', ')} while generating and regenerating this draft.',
           style: Theme.of(
             context,
@@ -1681,6 +1674,14 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       return;
     }
 
+    if (_isBusinessTaskFocusRequired && _selectedTaskCodes.isEmpty) {
+      setState(() {
+        _errorMessage =
+            'Choose at least one Task Focus before generating this Business mission.';
+      });
+      return;
+    }
+
     setState(() {
       _isGenerating = true;
       _errorMessage = null;
@@ -1779,6 +1780,14 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     }
 
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    if (_isBusinessTaskFocusRequired && _selectedTaskCodes.isEmpty) {
+      setState(() {
+        _errorMessage =
+            'Choose at least one Task Focus before regenerating this Business mission.';
+      });
       return;
     }
 
@@ -1920,7 +1929,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     if (publish && _isAssessmentPublishLocked) {
       setState(() {
         _errorMessage =
-            'Select at least one Task Focus before publishing assessment mode.';
+            'Select at least one Task Focus before publishing this mission.';
       });
       return;
     }
@@ -4367,7 +4376,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               subjectName: widget.subject.name,
               sessionType: _selectedSessionType,
               targetDateLabel: _formatTargetDate(_resolvedTargetDate),
-              taskCodeOptions: _taskCodeOptions,
+              taskCodeOptions: kTaskFocusCodes,
               initialTaskCodes: _selectedTaskCodes,
               timetableEntries: widget.timetableEntries,
               initialTargetDate: _resolvedTargetDate,

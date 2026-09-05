@@ -33,6 +33,7 @@ void main() {
     expect(tester.getSize(workspace).width, greaterThan(1250));
     expect(find.text('Review Draft'), findsOneWidget);
     expect(find.text('Draft only'), findsOneWidget);
+    expect(find.text('Task Focus: P1'), findsOneWidget);
 
     await tester.enterText(find.byType(TextFormField).first, 'Changed title');
     await tester.tap(find.text('Back'));

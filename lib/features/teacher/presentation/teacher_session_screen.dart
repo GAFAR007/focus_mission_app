@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/student_year_groups.dart';
+import '../../../core/constants/task_focus_codes.dart';
 import '../../../core/utils/auth_session_store.dart';
 import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
@@ -28,30 +29,19 @@ import '../../../shared/widgets/notification_panel.dart';
 import '../../../shared/widgets/profile_avatar_button.dart';
 import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
+import '../../../shared/widgets/student_year_group_filter.dart';
 import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import '../../auth/presentation/role_selection_screen.dart';
 import 'assessment_mode_screen.dart';
 import 'criterion_review_sheet.dart';
 import 'mission_builder_sheet.dart';
+import 'mission_reuse_sheet.dart';
 import 'result_report_screen.dart';
 import 'standalone_paper_screen.dart';
+import 'student_criterion_missions_screen.dart';
 import 'teacher_analytics_screen.dart';
 
-const List<String> _availableCertificationTaskCodes = <String>[
-  'P1',
-  'P2',
-  'P3',
-  'P4',
-  'P5',
-  'P6',
-  'P7',
-  'M1',
-  'M2',
-  'M3',
-  'D1',
-  'D2',
-];
 const String _allTeacherResultSubjectsFilterLabel = 'My subjects';
 const String _allTeacherResultDatesFilterLabel = 'All dates';
 const List<String> _teacherTimetableRoomOptions = <String>[
@@ -485,6 +475,16 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                         icon: const Icon(Icons.insights_rounded),
                         label: const Text('Open analytics'),
                       ),
+                      TextButton.icon(
+                        onPressed: workspace.teacherSubjects.isEmpty
+                            ? null
+                            : () => _openStudentMissionPathway(
+                                workspace,
+                                selectedSubject,
+                              ),
+                        icon: const Icon(Icons.account_tree_rounded),
+                        label: const Text('Task Focus work'),
+                      ),
                     ],
                   ),
                 ),
@@ -667,6 +667,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                         : 'Morning',
                     initialDraft: mission,
                   ),
+                  onReuse: (mission) => _reuseMissionDraft(workspace, mission),
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _StandalonePapersPanel(
@@ -1809,6 +1810,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     final selectedStudentId = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (context) => _StudentPickerSheet(
         students: workspace.students,
         selectedStudentId: workspace.selectedStudent.id,
@@ -1881,6 +1883,98 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openStudentMissionPathway(
+    TeacherWorkspaceData workspace,
+    SubjectSummary? selectedSubject,
+  ) async {
+    final mission = await Navigator.of(context).push<MissionPayload>(
+      MaterialPageRoute(
+        builder: (_) => StudentCriterionMissionsScreen(
+          session: _session,
+          student: workspace.selectedStudent,
+          subjects: workspace.teacherSubjects,
+          initialSubject: selectedSubject,
+          api: _api,
+        ),
+      ),
+    );
+
+    if (!mounted || mission == null) {
+      return;
+    }
+
+    if (mission.latestResultPackageId.trim().isNotEmpty) {
+      // WHY: Completed pathway rows represent evidence, so open their existing
+      // result report instead of sending the teacher back into content editing.
+      await _openResultReport(workspace, mission);
+      return;
+    }
+
+    await _openMissionBuilder(
+      workspace: workspace,
+      subject: SubjectSummary(
+        id: mission.subject?.id ?? '',
+        name: mission.subject?.name ?? 'Mission',
+      ),
+      lessonLabel: mission.sessionType == 'afternoon' ? 'Afternoon' : 'Morning',
+      initialDraft: mission,
+    );
+  }
+
+  Future<void> _reuseMissionDraft(
+    TeacherWorkspaceData workspace,
+    MissionPayload sourceMission,
+  ) async {
+    final result = await showMissionReuseSheet(
+      context,
+      session: _session,
+      sourceMission: sourceMission,
+      sourceStudentId: workspace.selectedStudent.id,
+      students: workspace.students,
+      api: _api,
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    setState(() {
+      _reloadTeacherWorkspaceForStudent(result.targetStudentId);
+    });
+
+    if (!result.openDraft) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('The new student draft is ready.')),
+      );
+      return;
+    }
+
+    try {
+      final targetWorkspace = await _future;
+      if (!mounted) {
+        return;
+      }
+      await _openMissionBuilder(
+        workspace: targetWorkspace,
+        subject: SubjectSummary(
+          id: result.mission.subject?.id ?? '',
+          name: result.mission.subject?.name ?? 'Mission',
+        ),
+        lessonLabel: result.mission.sessionType == 'afternoon'
+            ? 'Afternoon'
+            : 'Morning',
+        initialDraft: result.mission,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 
   Future<void> _moveMissionBackToDraft(
@@ -2307,6 +2401,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       return;
     }
 
+    if (result.reuseExisting) {
+      await _reuseMissionDraft(workspace, selected);
+      return;
+    }
+
     await _openMissionBuilder(
       workspace: workspace,
       subject: SubjectSummary(
@@ -2452,6 +2551,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
 
     final selected = result.mission;
     if (selected == null) {
+      return;
+    }
+
+    if (result.reuseExisting) {
+      await _reuseMissionDraft(workspace, selected);
       return;
     }
 
@@ -3978,7 +4082,7 @@ body { margin: 0; font-family: Arial, sans-serif; background: #eef6ff; color: #1
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: _availableCertificationTaskCodes
+                        children: kTaskFocusCodes
                             .map((taskCode) {
                               final isSelected = selectedTaskCodes.contains(
                                 taskCode,
@@ -4325,7 +4429,7 @@ class _StudentPickerCard extends StatelessWidget {
   }
 }
 
-class _StudentPickerSheet extends StatelessWidget {
+class _StudentPickerSheet extends StatefulWidget {
   const _StudentPickerSheet({
     required this.students,
     required this.selectedStudentId,
@@ -4335,81 +4439,125 @@ class _StudentPickerSheet extends StatelessWidget {
   final String selectedStudentId;
 
   @override
+  State<_StudentPickerSheet> createState() => _StudentPickerSheetState();
+}
+
+class _StudentPickerSheetState extends State<_StudentPickerSheet> {
+  String _selectedYearGroup = kAllStudentYearGroups;
+
+  @override
   Widget build(BuildContext context) {
+    final visibleStudents = filterStudentsByYearGroup(
+      widget.students,
+      _selectedYearGroup,
+    );
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.screen,
-          AppSpacing.item,
-          AppSpacing.screen,
-          AppSpacing.section,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Choose Student',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.compact),
-            Text(
-              'Switch student before assigning missions or saving lesson sessions.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-            ),
-            const SizedBox(height: AppSpacing.item),
-            ...students.map(
-              (student) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: InkWell(
-                  onTap: () => Navigator.of(context).pop(student.id),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                  child: Ink(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.item,
-                      vertical: AppSpacing.compact,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.78),
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                      border: Border.all(
-                        color: student.id == selectedStudentId
-                            ? AppPalette.primaryBlue
-                            : Colors.white,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.person_rounded,
-                          color: AppPalette.textMuted,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            [
-                              student.name,
-                              '${student.xp} XP',
-                              if (student.yearGroup.trim().isNotEmpty)
-                                student.yearGroup.trim(),
-                            ].join(' · '),
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                        ),
-                        if (student.id == selectedStudentId)
-                          const Icon(
-                            Icons.check_circle_rounded,
-                            color: AppPalette.primaryBlue,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
+      child: FractionallySizedBox(
+        heightFactor: 0.85,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.screen,
+            AppSpacing.item,
+            AppSpacing.screen,
+            AppSpacing.section,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Choose Student',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-            ),
-          ],
+              const SizedBox(height: AppSpacing.compact),
+              Text(
+                'Switch student before assigning missions or saving lesson sessions.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+              ),
+              const SizedBox(height: AppSpacing.item),
+              StudentYearGroupFilter(
+                selectedYearGroup: _selectedYearGroup,
+                onChanged: (yearGroup) {
+                  setState(() => _selectedYearGroup = yearGroup);
+                },
+              ),
+              const SizedBox(height: AppSpacing.item),
+              Expanded(
+                child: visibleStudents.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No students are saved in this year group.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: visibleStudents.length,
+                        itemBuilder: (context, index) {
+                          final student = visibleStudents[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: InkWell(
+                              onTap: () =>
+                                  Navigator.of(context).pop(student.id),
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.radiusMd,
+                              ),
+                              child: Ink(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.item,
+                                  vertical: AppSpacing.compact,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.78),
+                                  borderRadius: BorderRadius.circular(
+                                    AppSpacing.radiusMd,
+                                  ),
+                                  border: Border.all(
+                                    color:
+                                        student.id == widget.selectedStudentId
+                                        ? AppPalette.primaryBlue
+                                        : Colors.white,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.person_rounded,
+                                      color: AppPalette.textMuted,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        [
+                                          student.name,
+                                          '${student.xp} XP',
+                                          if (student.yearGroup
+                                              .trim()
+                                              .isNotEmpty)
+                                            student.yearGroup.trim(),
+                                        ].join(' · '),
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyLarge,
+                                      ),
+                                    ),
+                                    if (student.id == widget.selectedStudentId)
+                                      const Icon(
+                                        Icons.check_circle_rounded,
+                                        color: AppPalette.primaryBlue,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -4812,6 +4960,7 @@ class _DraftMissionsPanel extends StatelessWidget {
     required this.onToggleDraftSelection,
     required this.onDeleteSelectedDrafts,
     required this.onEdit,
+    required this.onReuse,
   });
 
   final List<MissionPayload> missions;
@@ -4827,6 +4976,7 @@ class _DraftMissionsPanel extends StatelessWidget {
   final ValueChanged<MissionPayload> onToggleDraftSelection;
   final VoidCallback onDeleteSelectedDrafts;
   final ValueChanged<MissionPayload> onEdit;
+  final ValueChanged<MissionPayload> onReuse;
 
   @override
   Widget build(BuildContext context) {
@@ -5016,6 +5166,12 @@ class _DraftMissionsPanel extends StatelessWidget {
                   showSelectionControl: isSelectingDrafts,
                   isSelected: isSelected,
                   onSelectionTap: () => onToggleDraftSelection(mission),
+                  quaternaryActionLabel: isSelectingDrafts
+                      ? null
+                      : 'Use for another student',
+                  onQuaternaryTap: isSelectingDrafts
+                      ? null
+                      : () => onReuse(mission),
                   onTap: isSelectingDrafts
                       ? () => onToggleDraftSelection(mission)
                       : () => onEdit(mission),
@@ -5912,7 +6068,7 @@ class _TeacherStudentResultCard extends StatelessWidget {
           if (result.taskCodes.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
-              'Tasks: ${result.taskCodes.join(', ')}',
+              'Task Focus: ${result.taskCodes.join(', ')}',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -6009,36 +6165,72 @@ class _TeacherResultExportRow {
 class _AssessmentDraftListResult {
   const _AssessmentDraftListResult._({
     required this.createNew,
+    required this.reuseExisting,
     required this.mission,
   });
 
   factory _AssessmentDraftListResult.open(MissionPayload mission) {
-    return _AssessmentDraftListResult._(createNew: false, mission: mission);
+    return _AssessmentDraftListResult._(
+      createNew: false,
+      reuseExisting: false,
+      mission: mission,
+    );
+  }
+
+  factory _AssessmentDraftListResult.reuse(MissionPayload mission) {
+    return _AssessmentDraftListResult._(
+      createNew: false,
+      reuseExisting: true,
+      mission: mission,
+    );
   }
 
   factory _AssessmentDraftListResult.createNew() {
-    return const _AssessmentDraftListResult._(createNew: true, mission: null);
+    return const _AssessmentDraftListResult._(
+      createNew: true,
+      reuseExisting: false,
+      mission: null,
+    );
   }
 
   final bool createNew;
+  final bool reuseExisting;
   final MissionPayload? mission;
 }
 
 class _DailyDraftListResult {
   const _DailyDraftListResult._({
     required this.createNew,
+    required this.reuseExisting,
     required this.mission,
   });
 
   factory _DailyDraftListResult.open(MissionPayload mission) {
-    return _DailyDraftListResult._(createNew: false, mission: mission);
+    return _DailyDraftListResult._(
+      createNew: false,
+      reuseExisting: false,
+      mission: mission,
+    );
+  }
+
+  factory _DailyDraftListResult.reuse(MissionPayload mission) {
+    return _DailyDraftListResult._(
+      createNew: false,
+      reuseExisting: true,
+      mission: mission,
+    );
   }
 
   factory _DailyDraftListResult.createNew() {
-    return const _DailyDraftListResult._(createNew: true, mission: null);
+    return const _DailyDraftListResult._(
+      createNew: true,
+      reuseExisting: false,
+      mission: null,
+    );
   }
 
   final bool createNew;
+  final bool reuseExisting;
   final MissionPayload? mission;
 }
 
@@ -6126,6 +6318,10 @@ class _DailyDraftListScreen extends StatelessWidget {
                               mission.availableOnDate ?? mission.createdAt,
                             ),
                             actionLabel: 'Open daily draft',
+                            quaternaryActionLabel: 'Use for another student',
+                            onQuaternaryTap: () => Navigator.of(
+                              context,
+                            ).pop(_DailyDraftListResult.reuse(mission)),
                             onTap: () => Navigator.of(
                               context,
                             ).pop(_DailyDraftListResult.open(mission)),
@@ -6372,6 +6568,10 @@ class _AssessmentDraftListScreen extends StatelessWidget {
                               mission.availableOnDate ?? mission.createdAt,
                             ),
                             actionLabel: 'Open assessment draft',
+                            quaternaryActionLabel: 'Use for another student',
+                            onQuaternaryTap: () => Navigator.of(
+                              context,
+                            ).pop(_AssessmentDraftListResult.reuse(mission)),
                             topProgressRatio: xpProgress.ratio,
                             topProgressLabel:
                                 '${xpProgress.filledXp}/${xpProgress.totalXp} XP filled',
@@ -6902,7 +7102,7 @@ class _MissionCard extends StatelessWidget {
                         if (mission.taskCodes.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
-                            'Tasks: ${mission.taskCodes.join(', ')}',
+                            'Task Focus: ${mission.taskCodes.join(', ')}',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
                                   color: AppPalette.primaryBlue,

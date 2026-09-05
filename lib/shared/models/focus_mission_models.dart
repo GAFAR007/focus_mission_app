@@ -2848,6 +2848,27 @@ class AppNotification {
   }
 }
 
+class TeacherMissionPathwayData {
+  const TeacherMissionPathwayData({
+    required this.missions,
+    required this.certifications,
+  });
+
+  final List<MissionPayload> missions;
+  final List<SubjectCertificationSummary> certifications;
+
+  factory TeacherMissionPathwayData.fromJson(Map<String, dynamic> json) {
+    return TeacherMissionPathwayData(
+      missions: (json['missions'] as List<dynamic>? ?? const [])
+          .map((item) => MissionPayload.fromJson(_asMap(item)))
+          .toList(growable: false),
+      certifications: (json['certifications'] as List<dynamic>? ?? const [])
+          .map((item) => SubjectCertificationSummary.fromJson(_asMap(item)))
+          .toList(growable: false),
+    );
+  }
+}
+
 class NotificationInboxData {
   const NotificationInboxData({
     required this.unreadCount,
