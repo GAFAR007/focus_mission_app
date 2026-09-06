@@ -22,6 +22,7 @@ import '../../shared/models/user_role.dart';
 import '../../features/teacher/models/analytics_models.dart';
 import '../../features/teacher/models/standalone_paper_models.dart';
 import '../../shared/models/focus_mission_models.dart';
+import '../../shared/models/school_access_session.dart';
 
 Map<String, dynamic> _missionPayloadToJson(MissionPayload mission) {
   return <String, dynamic>{
@@ -83,6 +84,16 @@ class FocusMissionApi {
 
   final http.Client _client;
 
+  Future<SchoolAccessSession> verifySchoolAccess({required String code}) async {
+    final json = await _requestJson(
+      'POST',
+      '/auth/access-gate/verify',
+      body: {'code': code},
+    );
+
+    return SchoolAccessSession.fromJson(json);
+  }
+
   Future<AuthSession> login({
     required String email,
     required String password,
@@ -129,10 +140,14 @@ class FocusMissionApi {
     return AuthSession.fromJson(json);
   }
 
-  Future<List<DemoAccount>> fetchDemoAccounts({required UserRole role}) async {
+  Future<List<DemoAccount>> fetchDemoAccounts({
+    required UserRole role,
+    required String gateToken,
+  }) async {
     final json = await _requestJson(
       'GET',
       '/auth/demo-accounts?role=${_authRoleValue(role)}',
+      gateToken: gateToken,
     );
     final accounts = json['accounts'] as List<dynamic>? ?? const [];
 
@@ -2578,12 +2593,14 @@ class FocusMissionApi {
     String method,
     String path, {
     String? token,
+    String? gateToken,
     Map<String, dynamic>? body,
   }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
     final headers = <String, String>{
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
+      'X-School-Access-Token': ?gateToken,
     };
 
     late final http.Response response;

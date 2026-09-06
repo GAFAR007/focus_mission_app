@@ -1,21 +1,26 @@
 /**
  * WHAT:
- * Widget tests cover the production login form interactions and responsive
- * layout without changing authentication or Quick Fill implementation.
+ * Widget tests cover the production gated login form, protected Quick Fill
+ * interactions, and responsive layout.
  * WHY:
  * Password visibility, keyboard flow, and demo-account linkage are easy to
  * regress during presentation changes and directly affect sign-in usability.
  * HOW:
- * Pump the real LoginScreen, exercise its existing controls, and assert field
- * state and layout at desktop and narrow-phone sizes.
+ * Pump the real LoginScreen with a mocked protected directory response,
+ * exercise its controls, and assert request headers, state, and layout.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
+
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:focus_mission_app/core/theme/app_theme.dart';
+import 'package:focus_mission_app/core/utils/focus_mission_api.dart';
 import 'package:focus_mission_app/features/auth/presentation/login_screen.dart';
 import 'package:focus_mission_app/shared/models/user_role.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
   test('builds private quick-fill avatars from first and last names', () {
@@ -27,14 +32,39 @@ void main() {
   Future<void> pumpLogin(
     WidgetTester tester, {
     Size size = const Size(1280, 900),
+    void Function(http.Request request)? onRequest,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
+    final api = FocusMissionApi(
+      client: MockClient((request) async {
+        onRequest?.call(request);
+        return http.Response(
+          jsonEncode({
+            'accounts': [
+              {
+                'name': 'Synthetic Teacher',
+                'email': 'teacher@example.invalid',
+                'role': 'teacher',
+                'subject': 'ICT',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.lightTheme,
-        home: const LoginScreen(role: UserRole.teacher),
+        home: LoginScreen(
+          role: UserRole.teacher,
+          gateToken: 'synthetic-gate-token',
+          api: api,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -105,13 +135,13 @@ void main() {
     await tester.enterText(emailFinder, 'temporary@example.com');
     await tester.enterText(passwordFinder, 'temporary-password');
 
-    final accountFinder = find.text('Mashrur Hossain');
+    final accountFinder = find.text('Synthetic Teacher');
     await tester.ensureVisible(accountFinder);
     await tester.tap(accountFinder);
     await tester.pump();
 
     final fields = tester.widgetList<EditableText>(find.byType(EditableText));
-    expect(fields.elementAt(0).controller.text, 'ict.teacher@focusmission.app');
+    expect(fields.elementAt(0).controller.text, 'teacher@example.invalid');
     expect(fields.elementAt(1).controller.text, isEmpty);
   });
 
@@ -120,13 +150,39 @@ void main() {
   ) async {
     await pumpLogin(tester);
 
-    final accountFinder = find.text('Mashrur Hossain');
+    final accountFinder = find.text('Synthetic Teacher');
     await tester.ensureVisible(accountFinder);
     await tester.pump();
 
-    expect(find.text('MAHO'), findsOneWidget);
+    expect(find.text('SYTE'), findsOneWidget);
     expect(find.text('ICT teacher'), findsOneWidget);
-    expect(find.text('ict.teacher@focusmission.app'), findsNothing);
+    final accountChip = find
+        .ancestor(
+          of: find.text('Synthetic Teacher'),
+          matching: find.byType(InkWell),
+        )
+        .first;
+    expect(
+      find.descendant(
+        of: accountChip,
+        matching: find.text('teacher@example.invalid'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Quick Fill request carries the school access token', (
+    tester,
+  ) async {
+    http.Request? capturedRequest;
+    await pumpLogin(tester, onRequest: (request) => capturedRequest = request);
+
+    expect(capturedRequest, isNotNull);
+    expect(
+      capturedRequest!.headers['X-School-Access-Token'],
+      'synthetic-gate-token',
+    );
+    expect(capturedRequest!.url.queryParameters['role'], 'teacher');
   });
 
   testWidgets('lays out without overflow on a narrow phone', (tester) async {

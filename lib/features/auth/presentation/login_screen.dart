@@ -1,13 +1,13 @@
 /**
  * WHAT:
- * LoginScreen handles role-specific sign-in and routes the user into the
+ * LoginScreen handles school-gated role sign-in and routes the user into the
  * correct workspace after authentication.
  * WHY:
  * The app starts with explicit role login, so auth needs one focused screen
  * that keeps sign-in simple and low-friction.
  * HOW:
- * Validate the form, call the auth API, and route the authenticated session to
- * the correct role dashboard.
+ * Request only the gate-authorised Quick Fill group, validate the form, call
+ * the auth API, and route the authenticated session to the correct dashboard.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -31,16 +31,23 @@ import '../../teacher/presentation/teacher_session_screen.dart';
 import 'password_reset_sheet.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.role});
+  const LoginScreen({
+    super.key,
+    required this.role,
+    required this.gateToken,
+    this.api,
+  });
 
   final UserRole role;
+  final String gateToken;
+  final FocusMissionApi? api;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final FocusMissionApi _api = FocusMissionApi();
+  late final FocusMissionApi _api;
   final AuthSessionStore _sessionStore = AuthSessionStore();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final FocusNode _emailFocusNode = FocusNode();
@@ -57,6 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? FocusMissionApi();
     _emailController = TextEditingController();
     _emailController.addListener(_handleEmailChanged);
     // WHY: Password visibility always starts hidden, while the controller stays
@@ -319,30 +327,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   ),
                                 ),
-                                if (widget.role == UserRole.student) ...[
-                                  const SizedBox(height: AppSpacing.item),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(
-                                      AppSpacing.item,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.72,
-                                      ),
-                                      borderRadius: BorderRadius.circular(
-                                        AppSpacing.radiusMd,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'Seed password for seeded accounts: ${SeedCredentials.passwordForRole(widget.role)}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(color: AppPalette.navy),
-                                    ),
-                                  ),
-                                ],
                                 const SizedBox(height: AppSpacing.section),
                                 Stack(
                                   alignment: Alignment.center,
@@ -492,7 +476,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<List<DemoAccount>> _loadDemoAccounts() async {
     try {
-      final accounts = await _api.fetchDemoAccounts(role: widget.role);
+      final accounts = await _api.fetchDemoAccounts(
+        role: widget.role,
+        gateToken: widget.gateToken,
+      );
       if (_emailController.text.trim().isEmpty && accounts.isNotEmpty) {
         // WHY: Prefill the first live account so the login screen still feels
         // guided even though the account list now comes from MongoDB.
@@ -500,13 +487,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       return accounts;
     } catch (_) {
-      // WHY: Older deployed backends may not expose the MongoDB login-directory
-      // endpoint yet, so the seeded fallback keeps the screen usable during rollout.
-      final fallbackAccounts = SeedCredentials.forRole(widget.role);
-      if (_emailController.text.trim().isEmpty && fallbackAccounts.isNotEmpty) {
-        _emailController.text = fallbackAccounts.first.email;
-      }
-      return fallbackAccounts;
+      // WHY: Falling back to bundled identities would expose account metadata
+      // before backend authorisation, so a failed gated request shows no list.
+      return const <DemoAccount>[];
     }
   }
 
