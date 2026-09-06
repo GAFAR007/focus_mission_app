@@ -24,6 +24,7 @@ import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
+import '../../../shared/widgets/criterion_filter_bar.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/notification_panel.dart';
 import '../../../shared/widgets/profile_avatar_button.dart';
@@ -114,6 +115,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   bool _isUpdatingTargets = false;
   bool _isRefreshingTargets = false;
   bool _isSelectingDraftMissions = false;
+  bool _isArchivingDraftMissions = false;
   bool _isDeletingDraftMissions = false;
   final Set<String> _selectedDraftMissionIds = <String>{};
   final Set<String> _sendingResultMissionIds = <String>{};
@@ -629,10 +631,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _DraftMissionsPanel(
-                  missions: dailyDraftMissions,
+                  missions: dailyDraftMissions.take(5).toList(growable: false),
                   dailyDraftCount: dailyDraftMissions.length,
                   assessmentDraftCount: assessmentDraftMissions.length,
                   isSelectingDrafts: _isSelectingDraftMissions,
+                  isArchivingDrafts: _isArchivingDraftMissions,
                   isDeletingDrafts: _isDeletingDraftMissions,
                   selectedDraftMissionIds: _selectedDraftMissionIds,
                   onOpenDailyDrafts: () => _openDailyDraftsList(
@@ -647,10 +650,13 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                     selectedSubject: selectedSubject,
                     lessonLabel: activeLesson,
                   ),
-                  onToggleDraftSelectionMode: () =>
-                      _toggleDraftSelectionMode(dailyDraftMissions),
+                  onToggleDraftSelectionMode: () => _toggleDraftSelectionMode(
+                    dailyDraftMissions.take(5).toList(growable: false),
+                  ),
                   onCancelDraftSelection: _clearDraftSelection,
                   onToggleDraftSelection: _toggleDraftSelection,
+                  onArchiveSelectedDrafts: () =>
+                      _archiveSelectedDraftMissions(workspace),
                   onDeleteSelectedDrafts: () =>
                       _deleteSelectedDraftMissions(workspace),
                   onEdit: (mission) => _openMissionBuilder(
@@ -1867,7 +1873,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         nextRecent.insert(0, mission);
       }
 
-      _draftMissions = nextDrafts.take(5).toList(growable: false);
+      // WHY: Criterion list screens need the full active draft collection;
+      // only the compact dashboard preview is limited to five cards.
+      _draftMissions = nextDrafts.toList(growable: false);
       // WHY: Assigned mission history should stay visible after edits/publish
       // so teachers can open older result reports and resend outcomes.
       _recentMissions = nextRecent.toList(growable: false);
@@ -2000,7 +2008,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         nextRecent.removeWhere((item) => item.id == updatedMission.id);
         nextDrafts.insert(0, updatedMission);
 
-        _draftMissions = nextDrafts.take(5).toList(growable: false);
+        // WHY: Moving a mission back must not hide older P/M/D drafts from
+        // task-focus filtering; the dashboard preview applies its own limit.
+        _draftMissions = nextDrafts.toList(growable: false);
         _recentMissions = nextRecent.toList(growable: false);
         _pruneSelectedDraftMissions();
       });
@@ -2168,7 +2178,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   }
 
   void _toggleDraftSelectionMode(List<MissionPayload> visibleDraftMissions) {
-    if (visibleDraftMissions.isEmpty || _isDeletingDraftMissions) {
+    if (visibleDraftMissions.isEmpty ||
+        _isArchivingDraftMissions ||
+        _isDeletingDraftMissions) {
       return;
     }
 
@@ -2185,7 +2197,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   }
 
   void _toggleDraftSelection(MissionPayload mission) {
-    if (_isDeletingDraftMissions) {
+    if (_isArchivingDraftMissions || _isDeletingDraftMissions) {
       return;
     }
 
@@ -2218,6 +2230,129 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     if (_selectedDraftMissionIds.isEmpty) {
       _isSelectingDraftMissions = false;
     }
+  }
+
+  Future<bool> _archiveDraftMissions(
+    TeacherWorkspaceData workspace,
+    List<MissionPayload> drafts,
+  ) async {
+    try {
+      for (final mission in drafts) {
+        // WHY: Each archive request carries the visible student's id so the
+        // backend can enforce teacher, student, and draft ownership together.
+        await _api.archiveTeacherMission(
+          token: workspace.session.token,
+          studentId: workspace.selectedStudent.id,
+          missionId: mission.id,
+        );
+      }
+
+      if (!mounted) {
+        return false;
+      }
+
+      final archivedIds = drafts.map((mission) => mission.id).toSet();
+      setState(() {
+        final currentDrafts = _draftMissions ?? workspace.draftMissions;
+        _draftMissions = currentDrafts
+            .where((mission) => !archivedIds.contains(mission.id))
+            .toList(growable: false);
+        _selectedDraftMissionIds.removeAll(archivedIds);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            drafts.length == 1
+                ? 'Draft archived.'
+                : '${drafts.length} drafts archived.',
+          ),
+        ),
+      );
+      return true;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _deleteDraftMissions(
+    TeacherWorkspaceData workspace,
+    List<MissionPayload> drafts,
+  ) async {
+    try {
+      for (final mission in drafts) {
+        // WHY: The student scope is explicit at the API boundary so a stale
+        // selection can never delete another learner's teacher-owned draft.
+        await _api.deleteTeacherMission(
+          token: workspace.session.token,
+          studentId: workspace.selectedStudent.id,
+          missionId: mission.id,
+        );
+      }
+
+      if (!mounted) {
+        return false;
+      }
+
+      final deletedIds = drafts.map((mission) => mission.id).toSet();
+      setState(() {
+        final currentDrafts = _draftMissions ?? workspace.draftMissions;
+        _draftMissions = currentDrafts
+            .where((mission) => !deletedIds.contains(mission.id))
+            .toList(growable: false);
+        _selectedDraftMissionIds.removeAll(deletedIds);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            drafts.length == 1
+                ? 'Draft deleted.'
+                : '${drafts.length} drafts deleted.',
+          ),
+        ),
+      );
+      return true;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+      return false;
+    }
+  }
+
+  Future<void> _archiveSelectedDraftMissions(
+    TeacherWorkspaceData workspace,
+  ) async {
+    if (_isArchivingDraftMissions || _isDeletingDraftMissions) {
+      return;
+    }
+
+    final visibleDrafts = _draftMissions ?? workspace.draftMissions;
+    final selectedDrafts = visibleDrafts
+        .where((mission) => _selectedDraftMissionIds.contains(mission.id))
+        .toList(growable: false);
+    if (selectedDrafts.isEmpty) {
+      return;
+    }
+
+    setState(() => _isArchivingDraftMissions = true);
+    final archived = await _archiveDraftMissions(workspace, selectedDrafts);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isArchivingDraftMissions = false;
+      if (archived) {
+        _isSelectingDraftMissions = false;
+        _selectedDraftMissionIds.clear();
+      }
+    });
   }
 
   Future<void> _deleteSelectedDraftMissions(
@@ -2275,50 +2410,17 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       _isDeletingDraftMissions = true;
     });
 
-    try {
-      for (final mission in selectedDrafts) {
-        // WHY: Deleting one mission at a time keeps per-draft auth checks and
-        // error messages explicit at the same API boundary used by editing.
-        await _api.deleteTeacherMission(
-          token: workspace.session.token,
-          missionId: mission.id,
-        );
-      }
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isDeletingDraftMissions = false;
+    final deleted = await _deleteDraftMissions(workspace, selectedDrafts);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isDeletingDraftMissions = false;
+      if (deleted) {
         _isSelectingDraftMissions = false;
         _selectedDraftMissionIds.clear();
-        _draftMissions = null;
-        _future = _loadWorkspace();
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            selectedDrafts.length == 1
-                ? 'Draft deleted.'
-                : '${selectedDrafts.length} drafts deleted.',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
       }
-
-      setState(() {
-        _isDeletingDraftMissions = false;
-      });
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
-    }
+    });
   }
 
   Future<void> _openAssessmentDraftsList(
@@ -2361,11 +2463,13 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
 
     final result = await Navigator.of(context).push<_AssessmentDraftListResult>(
       MaterialPageRoute(
-        builder: (_) => _AssessmentDraftListScreen(
+        builder: (_) => AssessmentDraftListScreen(
           studentName: workspace.selectedStudent.name,
           studentXp: workspace.selectedStudent.xp,
           missions: missions,
           assessmentDraftCounts: assessmentDraftCounts,
+          onArchive: (drafts) => _archiveDraftMissions(workspace, drafts),
+          onDelete: (drafts) => _deleteDraftMissions(workspace, drafts),
         ),
       ),
     );
@@ -2383,6 +2487,28 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
             ),
           ),
         );
+        return;
+      }
+
+      try {
+        // WHY: A teacher may delete a draft before choosing Create new. Refresh
+        // server-owned A/B availability so the builder never uses stale counts.
+        assessmentDraftCounts = await _api.fetchTeacherAssessmentDraftCounts(
+          token: workspace.session.token,
+          studentId: workspace.selectedStudent.id,
+          subjectId: assessmentSubject.id,
+        );
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        return;
+      }
+
+      if (!mounted) {
         return;
       }
 
@@ -2510,9 +2636,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   }) async {
     final result = await Navigator.of(context).push<_DailyDraftListResult>(
       MaterialPageRoute(
-        builder: (_) => _DailyDraftListScreen(
+        builder: (_) => DailyDraftListScreen(
           studentName: workspace.selectedStudent.name,
           missions: missions,
+          onArchive: (drafts) => _archiveDraftMissions(workspace, drafts),
+          onDelete: (drafts) => _deleteDraftMissions(workspace, drafts),
         ),
       ),
     );
@@ -4951,6 +5079,7 @@ class _DraftMissionsPanel extends StatelessWidget {
     required this.dailyDraftCount,
     required this.assessmentDraftCount,
     required this.isSelectingDrafts,
+    required this.isArchivingDrafts,
     required this.isDeletingDrafts,
     required this.selectedDraftMissionIds,
     required this.onOpenDailyDrafts,
@@ -4958,6 +5087,7 @@ class _DraftMissionsPanel extends StatelessWidget {
     required this.onToggleDraftSelectionMode,
     required this.onCancelDraftSelection,
     required this.onToggleDraftSelection,
+    required this.onArchiveSelectedDrafts,
     required this.onDeleteSelectedDrafts,
     required this.onEdit,
     required this.onReuse,
@@ -4967,6 +5097,7 @@ class _DraftMissionsPanel extends StatelessWidget {
   final int dailyDraftCount;
   final int assessmentDraftCount;
   final bool isSelectingDrafts;
+  final bool isArchivingDrafts;
   final bool isDeletingDrafts;
   final Set<String> selectedDraftMissionIds;
   final VoidCallback onOpenDailyDrafts;
@@ -4974,6 +5105,7 @@ class _DraftMissionsPanel extends StatelessWidget {
   final VoidCallback onToggleDraftSelectionMode;
   final VoidCallback onCancelDraftSelection;
   final ValueChanged<MissionPayload> onToggleDraftSelection;
+  final VoidCallback onArchiveSelectedDrafts;
   final VoidCallback onDeleteSelectedDrafts;
   final ValueChanged<MissionPayload> onEdit;
   final ValueChanged<MissionPayload> onReuse;
@@ -5103,14 +5235,34 @@ class _DraftMissionsPanel extends StatelessWidget {
                       ),
                     ),
                     TextButton(
-                      onPressed: isDeletingDrafts
+                      onPressed: isDeletingDrafts || isArchivingDrafts
                           ? null
                           : onCancelDraftSelection,
                       child: const Text('Cancel'),
                     ),
                     TextButton.icon(
                       onPressed:
-                          isDeletingDrafts || selectedDraftMissionIds.isEmpty
+                          isArchivingDrafts ||
+                              isDeletingDrafts ||
+                              selectedDraftMissionIds.isEmpty
+                          ? null
+                          : onArchiveSelectedDrafts,
+                      icon: isArchivingDrafts
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.archive_outlined, size: 18),
+                      label: Text(
+                        isArchivingDrafts ? 'Archiving...' : 'Archive selected',
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed:
+                          isArchivingDrafts ||
+                              isDeletingDrafts ||
+                              selectedDraftMissionIds.isEmpty
                           ? null
                           : onDeleteSelectedDrafts,
                       icon: isDeletingDrafts
@@ -6234,14 +6386,327 @@ class _DailyDraftListResult {
   final MissionPayload? mission;
 }
 
-class _DailyDraftListScreen extends StatelessWidget {
-  const _DailyDraftListScreen({
+class _DraftSelectionControls extends StatelessWidget {
+  const _DraftSelectionControls({
+    required this.hasDrafts,
+    required this.isSelecting,
+    required this.isArchiving,
+    required this.isDeleting,
+    required this.selectedCount,
+    required this.onSelect,
+    required this.onCancel,
+    required this.onArchive,
+    required this.onDelete,
+  });
+
+  final bool hasDrafts;
+  final bool isSelecting;
+  final bool isArchiving;
+  final bool isDeleting;
+  final int selectedCount;
+  final VoidCallback onSelect;
+  final VoidCallback onCancel;
+  final VoidCallback onArchive;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isSelecting) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          key: const Key('select-drafts-button'),
+          onPressed: hasDrafts ? onSelect : null,
+          icon: const Icon(Icons.checklist_rtl_rounded, size: 18),
+          label: const Text('Select drafts'),
+        ),
+      );
+    }
+
+    final isBusy = isArchiving || isDeleting;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.item,
+        vertical: 10,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      ),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            selectedCount == 0
+                ? 'Selection mode active'
+                : '$selectedCount selected',
+            key: const Key('draft-selection-count'),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppPalette.navy,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          TextButton(
+            onPressed: isBusy ? null : onCancel,
+            child: const Text('Cancel'),
+          ),
+          TextButton.icon(
+            key: const Key('archive-selected-button'),
+            onPressed: isBusy || selectedCount == 0 ? null : onArchive,
+            icon: isArchiving
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.archive_outlined, size: 18),
+            label: const Text('Archive selected'),
+          ),
+          TextButton.icon(
+            key: const Key('delete-selected-button'),
+            onPressed: isBusy || selectedCount == 0 ? null : onDelete,
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFB3261E),
+            ),
+            icon: isDeleting
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.delete_outline_rounded, size: 18),
+            label: const Text('Delete selected'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DraftListHeader extends StatelessWidget {
+  const _DraftListHeader({
+    required this.title,
+    required this.createLabel,
+    required this.onBack,
+    required this.onCreate,
+  });
+
+  final String title;
+  final String createLabel;
+  final VoidCallback onBack;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    final titleRow = Row(
+      children: [
+        _HeaderButton(icon: Icons.arrow_back_ios_new_rounded, onTap: onBack),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+        ),
+      ],
+    );
+    final createButton = TextButton.icon(
+      onPressed: onCreate,
+      icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+      label: Text(createLabel),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 680) {
+          // WHY: The long create labels sit below the title on phones so the
+          // teacher never loses either action to horizontal overflow.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [titleRow, const SizedBox(height: 8), createButton],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: titleRow),
+            const SizedBox(width: 12),
+            createButton,
+          ],
+        );
+      },
+    );
+  }
+}
+
+typedef DraftManagementCallback =
+    Future<bool> Function(List<MissionPayload> missions);
+
+mixin _DraftListManagementState<T extends StatefulWidget> on State<T> {
+  List<MissionPayload> get initialDraftMissions;
+  DraftManagementCallback get archiveDrafts;
+  DraftManagementCallback get deleteDrafts;
+
+  void afterDraftsDeleted(List<MissionPayload> deletedMissions) {}
+
+  late List<MissionPayload> _missions;
+  String _selectedCriterion = kAllCriterionFilter;
+  bool _isSelecting = false;
+  bool _isArchiving = false;
+  bool _isDeleting = false;
+  final Set<String> _selectedMissionIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _missions = List<MissionPayload>.of(initialDraftMissions);
+  }
+
+  List<MissionPayload> get _filteredMissions =>
+      filterMissionsByTaskCode(_missions, _selectedCriterion);
+
+  void _selectCriterion(String criterion) {
+    setState(() {
+      _selectedCriterion = criterion;
+      // WHY: Filter changes clear selection so hidden drafts can never be
+      // archived or deleted accidentally.
+      _selectedMissionIds.clear();
+    });
+  }
+
+  void _toggleSelectionMode() {
+    if (_filteredMissions.isEmpty || _isArchiving || _isDeleting) {
+      return;
+    }
+    setState(() {
+      _isSelecting = !_isSelecting;
+      _selectedMissionIds.clear();
+    });
+  }
+
+  void _cancelSelection() {
+    setState(() {
+      _isSelecting = false;
+      _selectedMissionIds.clear();
+    });
+  }
+
+  void _toggleSelection(MissionPayload mission) {
+    if (_isArchiving || _isDeleting) {
+      return;
+    }
+    setState(() {
+      _isSelecting = true;
+      if (!_selectedMissionIds.add(mission.id)) {
+        _selectedMissionIds.remove(mission.id);
+      }
+    });
+  }
+
+  List<MissionPayload> get _selectedVisibleMissions => _filteredMissions
+      .where((mission) => _selectedMissionIds.contains(mission.id))
+      .toList(growable: false);
+
+  Future<void> _archiveSelected() async {
+    final selected = _selectedVisibleMissions;
+    if (selected.isEmpty || _isArchiving || _isDeleting) {
+      return;
+    }
+    setState(() => _isArchiving = true);
+    final archived = await archiveDrafts(selected);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isArchiving = false;
+      if (archived) {
+        _removeManagedMissions(selected);
+      }
+    });
+  }
+
+  Future<void> _deleteSelected() async {
+    final selected = _selectedVisibleMissions;
+    if (selected.isEmpty || _isArchiving || _isDeleting) {
+      return;
+    }
+    final count = selected.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete selected drafts?'),
+        content: Text(
+          count == 1
+              ? '1 draft will be permanently deleted.'
+              : '$count drafts will be permanently deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFB3261E),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    setState(() => _isDeleting = true);
+    final deleted = await deleteDrafts(selected);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isDeleting = false;
+      if (deleted) {
+        afterDraftsDeleted(selected);
+        _removeManagedMissions(selected);
+      }
+    });
+  }
+
+  void _removeManagedMissions(List<MissionPayload> managedMissions) {
+    final ids = managedMissions.map((mission) => mission.id).toSet();
+    _missions.removeWhere((mission) => ids.contains(mission.id));
+    _selectedMissionIds.clear();
+    _isSelecting = false;
+  }
+}
+
+class DailyDraftListScreen extends StatefulWidget {
+  const DailyDraftListScreen({
+    super.key,
     required this.studentName,
     required this.missions,
+    required this.onArchive,
+    required this.onDelete,
   });
 
   final String studentName;
   final List<MissionPayload> missions;
+  final DraftManagementCallback onArchive;
+  final DraftManagementCallback onDelete;
+
+  @override
+  State<DailyDraftListScreen> createState() => _DailyDraftListScreenState();
+}
+
+class _DailyDraftListScreenState extends State<DailyDraftListScreen>
+    with _DraftListManagementState<DailyDraftListScreen> {
+  @override
+  List<MissionPayload> get initialDraftMissions => widget.missions;
+
+  @override
+  DraftManagementCallback get archiveDrafts => widget.onArchive;
+
+  @override
+  DraftManagementCallback get deleteDrafts => widget.onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -6252,45 +6717,45 @@ class _DailyDraftListScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  _HeaderButton(
-                    icon: Icons.arrow_back_ios_new_rounded,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(
-                      'Daily Draft Missions',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).pop(_DailyDraftListResult.createNew()),
-                    icon: const Icon(
-                      Icons.add_circle_outline_rounded,
-                      size: 18,
-                    ),
-                    label: const Text('Create new daily mission draft'),
-                  ),
-                ],
+              _DraftListHeader(
+                title: 'Daily Draft Missions',
+                createLabel: 'Create new daily mission draft',
+                onBack: () => Navigator.of(context).pop(),
+                onCreate: () => Navigator.of(
+                  context,
+                ).pop(_DailyDraftListResult.createNew()),
               ),
               const SizedBox(height: AppSpacing.compact),
               Text(
-                'Only daily draft missions for $studentName are shown here. Assessment drafts are in their own page.',
+                'Only daily draft missions for ${widget.studentName} are shown here. Assessment drafts are in their own page.',
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
               ),
               const SizedBox(height: AppSpacing.section),
+              CriterionFilterBar(
+                selectedCriterion: _selectedCriterion,
+                onCriterionSelected: _selectCriterion,
+              ),
+              const SizedBox(height: AppSpacing.compact),
+              _DraftSelectionControls(
+                hasDrafts: _filteredMissions.isNotEmpty,
+                isSelecting: _isSelecting,
+                isArchiving: _isArchiving,
+                isDeleting: _isDeleting,
+                selectedCount: _selectedMissionIds.length,
+                onSelect: _toggleSelectionMode,
+                onCancel: _cancelSelection,
+                onArchive: _archiveSelected,
+                onDelete: _deleteSelected,
+              ),
+              const SizedBox(height: AppSpacing.compact),
               SoftPanel(
                 colors: const [Color(0xFFF7FBFF), Color(0xFFE6F3FF)],
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (missions.isEmpty)
+                    if (_filteredMissions.isEmpty)
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(AppSpacing.item),
@@ -6301,12 +6766,14 @@ class _DailyDraftListScreen extends StatelessWidget {
                           ),
                         ),
                         child: Text(
-                          'No daily drafts yet. Create one from the lesson panel.',
+                          _selectedCriterion == kAllCriterionFilter
+                              ? 'No daily drafts yet. Create one from the lesson panel.'
+                              : 'No $_selectedCriterion daily drafts for this student yet.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       )
                     else
-                      ...missions.map(
+                      ..._filteredMissions.map(
                         (mission) => Padding(
                           padding: const EdgeInsets.only(
                             bottom: AppSpacing.compact,
@@ -6314,17 +6781,33 @@ class _DailyDraftListScreen extends StatelessWidget {
                           child: _MissionCard(
                             mission: mission,
                             badgeLabel: 'Daily Draft',
+                            compactOnNarrow: true,
                             dateLabel: _formatMissionDate(
                               mission.availableOnDate ?? mission.createdAt,
                             ),
-                            actionLabel: 'Open daily draft',
-                            quaternaryActionLabel: 'Use for another student',
-                            onQuaternaryTap: () => Navigator.of(
-                              context,
-                            ).pop(_DailyDraftListResult.reuse(mission)),
-                            onTap: () => Navigator.of(
-                              context,
-                            ).pop(_DailyDraftListResult.open(mission)),
+                            actionLabel: _isSelecting
+                                ? (_selectedMissionIds.contains(mission.id)
+                                      ? 'Selected'
+                                      : 'Tap to select')
+                                : 'Open daily draft',
+                            showSelectionControl: _isSelecting,
+                            isSelected: _selectedMissionIds.contains(
+                              mission.id,
+                            ),
+                            onSelectionTap: () => _toggleSelection(mission),
+                            quaternaryActionLabel: _isSelecting
+                                ? null
+                                : 'Use for another student',
+                            onQuaternaryTap: _isSelecting
+                                ? null
+                                : () => Navigator.of(
+                                    context,
+                                  ).pop(_DailyDraftListResult.reuse(mission)),
+                            onTap: _isSelecting
+                                ? () => _toggleSelection(mission)
+                                : () => Navigator.of(
+                                    context,
+                                  ).pop(_DailyDraftListResult.open(mission)),
                           ),
                         ),
                       ),
@@ -6371,35 +6854,77 @@ class _DailyDraftListScreen extends StatelessWidget {
   }
 }
 
-class _AssessmentDraftListScreen extends StatelessWidget {
-  const _AssessmentDraftListScreen({
+class AssessmentDraftListScreen extends StatefulWidget {
+  const AssessmentDraftListScreen({
+    super.key,
     required this.studentName,
     required this.studentXp,
     required this.missions,
     required this.assessmentDraftCounts,
+    required this.onArchive,
+    required this.onDelete,
   });
 
   final String studentName;
   final int studentXp;
   final List<MissionPayload> missions;
   final Map<String, int> assessmentDraftCounts;
+  final DraftManagementCallback onArchive;
+  final DraftManagementCallback onDelete;
+
+  @override
+  State<AssessmentDraftListScreen> createState() =>
+      _AssessmentDraftListScreenState();
+}
+
+class _AssessmentDraftListScreenState extends State<AssessmentDraftListScreen>
+    with _DraftListManagementState<AssessmentDraftListScreen> {
+  late Map<String, int> _assessmentDraftCounts;
+
+  @override
+  void initState() {
+    super.initState();
+    _assessmentDraftCounts = Map<String, int>.of(widget.assessmentDraftCounts);
+  }
+
+  @override
+  List<MissionPayload> get initialDraftMissions => widget.missions;
+
+  @override
+  DraftManagementCallback get archiveDrafts => widget.onArchive;
+
+  @override
+  DraftManagementCallback get deleteDrafts => widget.onDelete;
+
+  @override
+  void afterDraftsDeleted(List<MissionPayload> deletedMissions) {
+    for (final mission in deletedMissions) {
+      for (final taskCode in mission.taskCodes.toSet()) {
+        final normalizedCode = taskCode.trim().toUpperCase();
+        final currentCount = _assessmentDraftCounts[normalizedCode] ?? 0;
+        if (currentCount > 0) {
+          _assessmentDraftCounts[normalizedCode] = currentCount - 1;
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final totalAvailableXp = missions.fold<int>(
+    final totalAvailableXp = _missions.fold<int>(
       0,
       (total, mission) => total + (mission.xpReward < 0 ? 0 : mission.xpReward),
     );
-    final safeStudentXp = studentXp < 0 ? 0 : studentXp;
+    final safeStudentXp = widget.studentXp < 0 ? 0 : widget.studentXp;
     final cappedStudentXp = totalAvailableXp <= 0
         ? 0
         : (safeStudentXp > totalAvailableXp ? totalAvailableXp : safeStudentXp);
     final progressRatio = totalAvailableXp <= 0
         ? 0.0
         : cappedStudentXp / totalAvailableXp;
-    final missionProgress = <_MissionDraftProgress>[];
+    final missionProgress = <String, _MissionDraftProgress>{};
     var remainingMissionXp = cappedStudentXp;
-    for (final mission in missions) {
+    for (final mission in _missions) {
       final rewardXp = mission.xpReward < 0 ? 0 : mission.xpReward;
       final filledXp = rewardXp <= 0
           ? 0
@@ -6407,12 +6932,10 @@ class _AssessmentDraftListScreen extends StatelessWidget {
       if (remainingMissionXp > 0) {
         remainingMissionXp -= filledXp;
       }
-      missionProgress.add(
-        _MissionDraftProgress(
-          totalXp: rewardXp,
-          filledXp: filledXp,
-          ratio: rewardXp <= 0 ? 0 : filledXp / rewardXp,
-        ),
+      missionProgress[mission.id] = _MissionDraftProgress(
+        totalXp: rewardXp,
+        filledXp: filledXp,
+        ratio: rewardXp <= 0 ? 0 : filledXp / rewardXp,
       );
     }
 
@@ -6423,34 +6946,17 @@ class _AssessmentDraftListScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  _HeaderButton(
-                    icon: Icons.arrow_back_ios_new_rounded,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(
-                      'Assessment Draft Missions',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).pop(_AssessmentDraftListResult.createNew()),
-                    icon: const Icon(
-                      Icons.add_circle_outline_rounded,
-                      size: 18,
-                    ),
-                    label: const Text('Create new assessment draft'),
-                  ),
-                ],
+              _DraftListHeader(
+                title: 'Assessment Draft Missions',
+                createLabel: 'Create new assessment draft',
+                onBack: () => Navigator.of(context).pop(),
+                onCreate: () => Navigator.of(
+                  context,
+                ).pop(_AssessmentDraftListResult.createNew()),
               ),
               const SizedBox(height: AppSpacing.compact),
               Text(
-                'Only assessment drafts for $studentName are shown here. Daily drafts stay in the main Draft Missions section.',
+                'Only assessment drafts for ${widget.studentName} are shown here. Daily drafts stay in the main Draft Missions section.',
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
@@ -6515,10 +7021,10 @@ class _AssessmentDraftListScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              if (assessmentDraftCounts.values.any((count) => count > 0)) ...[
+              if (_assessmentDraftCounts.values.any((count) => count > 0)) ...[
                 const SizedBox(height: 8),
                 Text(
-                  assessmentDraftCounts.entries
+                  _assessmentDraftCounts.entries
                       .where((entry) => entry.value > 0)
                       .map(
                         (entry) => assessmentTaskCodeAvailabilityMessage(
@@ -6533,12 +7039,29 @@ class _AssessmentDraftListScreen extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: AppSpacing.section),
+              CriterionFilterBar(
+                selectedCriterion: _selectedCriterion,
+                onCriterionSelected: _selectCriterion,
+              ),
+              const SizedBox(height: AppSpacing.compact),
+              _DraftSelectionControls(
+                hasDrafts: _filteredMissions.isNotEmpty,
+                isSelecting: _isSelecting,
+                isArchiving: _isArchiving,
+                isDeleting: _isDeleting,
+                selectedCount: _selectedMissionIds.length,
+                onSelect: _toggleSelectionMode,
+                onCancel: _cancelSelection,
+                onArchive: _archiveSelected,
+                onDelete: _deleteSelected,
+              ),
+              const SizedBox(height: AppSpacing.compact),
               SoftPanel(
                 colors: const [Color(0xFFF7FBFF), Color(0xFFE6F3FF)],
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (missions.isEmpty)
+                    if (_filteredMissions.isEmpty)
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(AppSpacing.item),
@@ -6549,14 +7072,19 @@ class _AssessmentDraftListScreen extends StatelessWidget {
                           ),
                         ),
                         child: Text(
-                          'No assessment drafts yet. Build one from 10-question assessment mode.',
+                          _selectedCriterion == kAllCriterionFilter
+                              ? 'No assessment drafts yet. Build one from 10-question assessment mode.'
+                              : 'No $_selectedCriterion assessment drafts for this student yet.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       )
                     else
-                      ...missions.asMap().entries.map((entry) {
+                      ..._filteredMissions.asMap().entries.map((entry) {
                         final mission = entry.value;
-                        final xpProgress = missionProgress[entry.key];
+                        // WHY: Filtering must not reallocate the visual XP
+                        // fill between drafts, so progress is keyed from the
+                        // original full-list order rather than filtered index.
+                        final xpProgress = missionProgress[mission.id]!;
                         return Padding(
                           padding: const EdgeInsets.only(
                             bottom: AppSpacing.compact,
@@ -6564,20 +7092,36 @@ class _AssessmentDraftListScreen extends StatelessWidget {
                           child: _MissionCard(
                             mission: mission,
                             badgeLabel: 'Assessment Draft',
+                            compactOnNarrow: true,
                             dateLabel: _formatMissionDate(
                               mission.availableOnDate ?? mission.createdAt,
                             ),
-                            actionLabel: 'Open assessment draft',
-                            quaternaryActionLabel: 'Use for another student',
-                            onQuaternaryTap: () => Navigator.of(
-                              context,
-                            ).pop(_AssessmentDraftListResult.reuse(mission)),
+                            actionLabel: _isSelecting
+                                ? (_selectedMissionIds.contains(mission.id)
+                                      ? 'Selected'
+                                      : 'Tap to select')
+                                : 'Open assessment draft',
+                            showSelectionControl: _isSelecting,
+                            isSelected: _selectedMissionIds.contains(
+                              mission.id,
+                            ),
+                            onSelectionTap: () => _toggleSelection(mission),
+                            quaternaryActionLabel: _isSelecting
+                                ? null
+                                : 'Use for another student',
+                            onQuaternaryTap: _isSelecting
+                                ? null
+                                : () => Navigator.of(context).pop(
+                                    _AssessmentDraftListResult.reuse(mission),
+                                  ),
                             topProgressRatio: xpProgress.ratio,
                             topProgressLabel:
                                 '${xpProgress.filledXp}/${xpProgress.totalXp} XP filled',
-                            onTap: () => Navigator.of(
-                              context,
-                            ).pop(_AssessmentDraftListResult.open(mission)),
+                            onTap: _isSelecting
+                                ? () => _toggleSelection(mission)
+                                : () => Navigator.of(context).pop(
+                                    _AssessmentDraftListResult.open(mission),
+                                  ),
                           ),
                         );
                       }),
@@ -6978,6 +7522,7 @@ class _MissionCard extends StatelessWidget {
     this.showSelectionControl = false,
     this.isSelected = false,
     this.onSelectionTap,
+    this.compactOnNarrow = false,
   });
 
   final MissionPayload mission;
@@ -6996,10 +7541,13 @@ class _MissionCard extends StatelessWidget {
   final bool showSelectionControl;
   final bool isSelected;
   final VoidCallback? onSelectionTap;
+  final bool compactOnNarrow;
 
   @override
   Widget build(BuildContext context) {
     final handleSelectionTap = onSelectionTap ?? onTap;
+    final isCompactCard =
+        compactOnNarrow && MediaQuery.sizeOf(context).width < 430;
     final showProminentResultActions =
         secondaryActionLabel != null || tertiaryActionLabel != null;
     final hasDisabledResultAction =
@@ -7068,23 +7616,25 @@ class _MissionCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: AppPalette.teacherGradient,
+                  if (!isCompactCard) ...[
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: AppPalette.teacherGradient,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      borderRadius: BorderRadius.circular(14),
+                      child: Icon(
+                        mission.sessionType == 'morning'
+                            ? Icons.wb_sunny_rounded
+                            : Icons.nights_stay_rounded,
+                        color: Colors.white,
+                      ),
                     ),
-                    child: Icon(
-                      mission.sessionType == 'morning'
-                          ? Icons.wb_sunny_rounded
-                          : Icons.nights_stay_rounded,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.item),
+                    const SizedBox(width: AppSpacing.item),
+                  ],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

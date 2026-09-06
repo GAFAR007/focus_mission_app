@@ -2280,9 +2280,28 @@ class FocusMissionApi {
 
   Future<void> deleteTeacherMission({
     required String token,
+    required String studentId,
     required String missionId,
   }) async {
-    await _requestJson('DELETE', '/teacher/missions/$missionId', token: token);
+    final encodedStudentId = Uri.encodeQueryComponent(studentId.trim());
+    await _requestJson(
+      'DELETE',
+      '/teacher/missions/$missionId?studentId=$encodedStudentId',
+      token: token,
+    );
+  }
+
+  Future<void> archiveTeacherMission({
+    required String token,
+    required String studentId,
+    required String missionId,
+  }) async {
+    await _requestJson(
+      'POST',
+      '/teacher/missions/$missionId/archive',
+      token: token,
+      body: {'studentId': studentId},
+    );
   }
 
   Future<MissionPayload> reextractTeacherMissionSource({
