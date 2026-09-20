@@ -108,6 +108,60 @@ void main() {
     },
   });
 
+  StartedMission legacyCappedEssayMission() => StartedMission.fromJson({
+    'startedAt': '2026-09-20T09:00:00.000Z',
+    'studentId': 'student-id',
+    'subjectId': 'subject-id',
+    'sessionType': 'morning',
+    'maxQuestions': 1,
+    'mission': {
+      'id': 'mission-legacy-essay-cap',
+      'title': 'Legacy capped essay mission',
+      'draftFormat': 'ESSAY_BUILDER',
+      'status': 'published',
+      'sessionType': 'morning',
+      'questionCount': 1,
+      'subject': {'id': 'subject-id', 'name': 'Business'},
+      'draftJson': {
+        'type': 'ESSAY_BUILDER',
+        'mode': 'NORMAL',
+        'targets': {
+          'targetWordMin': 100,
+          'targetWordMax': 140,
+          'targetSentenceCount': 1,
+          'targetBlankCount': 1,
+        },
+        'sentences': [
+          {
+            'id': 's1',
+            'role': 'topic',
+            'learnFirst': {
+              'title': 'Learn first',
+              'bullets': ['One', 'Two', 'Three'],
+            },
+            'parts': [
+              {
+                'type': 'text',
+                'value': '${List.filled(144, 'guided').join(' ')} ',
+              },
+              {
+                'type': 'blank',
+                'blankId': 'b1',
+                'options': {
+                  'A': 'complete',
+                  'B': 'other',
+                  'C': 'another',
+                  'D': 'last',
+                },
+                'correctOption': 'A',
+              },
+            ],
+          },
+        ],
+      },
+    },
+  });
+
   testWidgets('Theory restores exact text and saves after the debounce', (
     tester,
   ) async {
@@ -296,5 +350,51 @@ void main() {
     expect(find.text('Online sales are useful.'), findsWidgets);
     expect(find.text('My exact saved final essay text'), findsOneWidget);
     expect(find.text('Sentence 2 of 1'), findsNothing);
+  });
+
+  testWidgets('legacy 140-word draft uses the current 100-500 range', (
+    tester,
+  ) async {
+    final api = FocusMissionApi(
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'workDraft': {
+              'missionId': 'mission-legacy-essay-cap',
+              'missionType': 'ESSAY_BUILDER',
+              'status': 'in_progress',
+              'version': 2,
+              'theoryResponses': [],
+              'essayBuilder': {
+                'selectedAnswers': [
+                  {'sentenceId': 's1', 'blankId': 'b1', 'selectedOption': 'A'},
+                ],
+                'currentSentenceIndex': 1,
+                'finalEssayText': List.filled(100, 'response').join(' '),
+              },
+            },
+          }),
+          200,
+          headers: const {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MissionPlayScreen(
+          session: session,
+          startedMission: legacyCappedEssayMission(),
+          api: api,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // WHY: Existing missions can retain their stored 140 cap, but students
+    // must receive the current policy without a production data rewrite.
+    expect(find.text('Target words: 100-500'), findsOneWidget);
+    expect(find.textContaining('above 140'), findsNothing);
+    expect(find.text('Submit Essay Mission'), findsOneWidget);
   });
 }

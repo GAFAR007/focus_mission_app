@@ -52,7 +52,11 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     with SingleTickerProviderStateMixin {
   final FocusMissionApi _defaultApi = FocusMissionApi();
   final math.Random _random = math.Random();
-  static const int _essaySubmissionMinWords = 100;
+  // WHY: Essay Builder has one clear qualification-safe range. Historical
+  // missions may still carry narrower generated ranges such as 100-140, but
+  // those old values must not block otherwise valid student work.
+  static const int _essayMinimumWords = 100;
+  static const int _essayMaximumWords = 500;
   static const int _objectiveMissionXpReward = 30;
   static const int _assessmentMissionXpReward = 50;
   static const int _essayMissionXpReward = 20;
@@ -1413,27 +1417,25 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     final targetBlankCount = _essayTargetBlankCount;
     final completedSentences = _essaySentences.length;
     final completedBlanks = _essayCompletedBlankCount;
-    final targetWordMin = draft.targets.targetWordMin;
-    final targetWordMax = draft.targets.targetWordMax;
     final currentWordCount = _essayWordCount;
-    final hasWordMinimum =
-        targetWordMin <= 0 || currentWordCount >= targetWordMin;
-    final exceedsWordMaximum =
-        targetWordMax > 0 && currentWordCount > targetWordMax;
+    final hasWordMinimum = currentWordCount >= _essayMinimumWords;
+    final exceedsWordMaximum = currentWordCount > _essayMaximumWords;
     final allRequiredBlanksComplete =
         targetBlankCount > 0 && completedBlanks >= targetBlankCount;
     final isComplete =
         completedSentences >= totalSentences && totalSentences > 0;
     final isSubmissionFormUnlocked = isComplete && allRequiredBlanksComplete;
     final submissionWordCount = _essaySubmissionWordCount;
-    final hasSubmissionEssayMinimum =
-        submissionWordCount >= _essaySubmissionMinWords;
+    final hasSubmissionEssayMinimum = submissionWordCount >= _essayMinimumWords;
+    final exceedsSubmissionEssayMaximum =
+        submissionWordCount > _essayMaximumWords;
     final canSubmit =
         isComplete &&
         allRequiredBlanksComplete &&
         hasWordMinimum &&
         !exceedsWordMaximum &&
-        hasSubmissionEssayMinimum;
+        hasSubmissionEssayMinimum &&
+        !exceedsSubmissionEssayMaximum;
     final currentSentenceIndex = math.min(
       completedSentences,
       math.max(0, displayedSentences.length - 1),
@@ -1496,7 +1498,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                     ),
                     const SizedBox(height: AppSpacing.item),
                     Text(
-                      'Target words: $targetWordMin-$targetWordMax',
+                      'Target words: $_essayMinimumWords-$_essayMaximumWords',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: AppPalette.textMuted,
                       ),
@@ -1542,7 +1544,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                 SoftPanel(
                   colors: const [Color(0xFFFFF9EE), Color(0xFFFFEED8)],
                   child: Text(
-                    'Add more detail to reach at least $targetWordMin words before submitting.',
+                    'Add more detail to reach at least $_essayMinimumWords words before submitting.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppPalette.navy,
                       fontWeight: FontWeight.w600,
@@ -1555,7 +1557,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                 SoftPanel(
                   colors: const [Color(0xFFFFEFEA), Color(0xFFFFE5DB)],
                   child: Text(
-                    'Word count is above $targetWordMax. Submission is blocked until the essay is within range.',
+                    'Word count is above $_essayMaximumWords. Submission is blocked until the essay is within range.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppPalette.orange,
                       fontWeight: FontWeight.w600,
@@ -1648,7 +1650,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Minimum $_essaySubmissionMinWords words',
+                        'Write between $_essayMinimumWords and $_essayMaximumWords words',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppPalette.textMuted,
                         ),
@@ -1706,14 +1708,27 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Final essay words: $submissionWordCount / $_essaySubmissionMinWords',
+                        'Final essay words: $submissionWordCount / $_essayMinimumWords-$_essayMaximumWords',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: hasSubmissionEssayMinimum
+                          color:
+                              hasSubmissionEssayMinimum &&
+                                  !exceedsSubmissionEssayMaximum
                               ? AppPalette.aqua
                               : AppPalette.orange,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      if (exceedsSubmissionEssayMaximum) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Your final essay is above $_essayMaximumWords words. Shorten it before submitting.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppPalette.orange,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ],
                       if (_workDraftStatusLabel.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
@@ -1747,6 +1762,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                     ? 'Reach minimum words to submit'
                     : !hasSubmissionEssayMinimum
                     ? 'Write at least 100 words to submit'
+                    : exceedsSubmissionEssayMaximum
+                    ? 'Reduce final essay to 500 words'
                     : 'Reduce words to submit',
                 colors: canSubmit
                     ? const [AppPalette.primaryBlue, AppPalette.sun]
@@ -2776,33 +2793,45 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
           return;
         }
 
-        if (_essayWordCount < essayDraft.targets.targetWordMin) {
+        if (_essayWordCount < _essayMinimumWords) {
           setState(() {
             _isSubmitting = false;
             // WHY: Submit should unlock only once the minimum word target is met.
             _errorMessage =
-                'Your essay needs at least ${essayDraft.targets.targetWordMin} words before submission.';
+                'Your essay needs at least $_essayMinimumWords words before submission.';
           });
           return;
         }
 
-        if (_essayWordCount > essayDraft.targets.targetWordMax) {
+        if (_essayWordCount > _essayMaximumWords) {
           setState(() {
             _isSubmitting = false;
-            // WHY: Word-cap gating keeps submissions inside the authored draft range.
+            // WHY: Keep the guided essay inside the same clear 100-500 policy
+            // even when an older mission stores a narrower generated range.
             _errorMessage =
-                'Your essay is above ${essayDraft.targets.targetWordMax} words. Reduce it before submitting.';
+                'Your essay is above $_essayMaximumWords words. Reduce it before submitting.';
           });
           return;
         }
 
-        if (_essaySubmissionWordCount < _essaySubmissionMinWords) {
+        if (_essaySubmissionWordCount < _essayMinimumWords) {
           setState(() {
             _isSubmitting = false;
             // WHY: Final submission requires a student-authored response after
             // completing guided sentence selections.
             _errorMessage =
-                'Write at least $_essaySubmissionMinWords words in the final essay response before submitting.';
+                'Write at least $_essayMinimumWords words in the final essay response before submitting.';
+          });
+          return;
+        }
+
+        if (_essaySubmissionWordCount > _essayMaximumWords) {
+          setState(() {
+            _isSubmitting = false;
+            // WHY: The API and student UI must enforce the same upper boundary
+            // so oversized final responses cannot bypass the visible policy.
+            _errorMessage =
+                'Keep the final essay response to $_essayMaximumWords words or fewer before submitting.';
           });
           return;
         }
