@@ -258,9 +258,59 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     late Uri requestedUri;
+    final requestedUris = <Uri>[];
     final api = FocusMissionApi(
       client: MockClient((request) async {
         requestedUri = request.url;
+        requestedUris.add(request.url);
+        if (request.url.path.endsWith('/draft-report')) {
+          final taskCode = request
+              .url
+              .pathSegments[request.url.pathSegments.indexOf('task-focus') + 1];
+          return http.Response(
+            jsonEncode({
+              'report': {
+                'title':
+                    'Ahmed Stockwin — $taskCode Business Online Draft Report',
+                'taskCode': taskCode,
+                'criterionWording': '$taskCode wording',
+                'criterionWordingAvailable': true,
+                'q5': {'label': 'Q5 Daily', 'status': 'pending'},
+                'q8': {'label': 'Q8 Revision', 'status': 'pending'},
+                'essay': {'status': 'pending'},
+                'theory': {'status': 'pending', 'questions': []},
+                'assessmentA': {
+                  'label': '$taskCode Assessment A',
+                  'status': 'pending',
+                },
+                'assessmentB': {
+                  'label': '$taskCode Assessment B',
+                  'status': 'not_created',
+                },
+                'calculation': {
+                  'status': 'pending',
+                  'overallPercent': null,
+                  'securedContribution': 0,
+                  'rows': [
+                    {
+                      'key': 'theory',
+                      'label': 'Theory',
+                      'weightPercent': 35,
+                      'status': 'pending',
+                    },
+                  ],
+                },
+                'criterionStatus': {
+                  'status': 'not_started',
+                  'passed': false,
+                  'reason': 'Pending evidence.',
+                },
+              },
+            }),
+            200,
+            headers: const {'content-type': 'application/json'},
+          );
+        }
         return http.Response(
           jsonEncode({
             'missions': [
@@ -325,7 +375,18 @@ void main() {
     expect(requestedUri.path, '/api/teacher/students/ahmed-id/mission-pathway');
     expect(requestedUri.queryParameters['subjectId'], 'business-id');
     expect(find.text('Ahmed P1 Q5'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Ahmed P2 Q8'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Ahmed P2 Q8'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('mission_pathway_filter_P1')),
+      -400,
+      scrollable: find.byType(Scrollable).first,
+    );
 
     await tester.tap(find.byKey(const Key('mission_pathway_filter_P1')));
     await tester.pumpAndSettle();
@@ -334,10 +395,36 @@ void main() {
     final optionalB = find.text('Assessment B · Optional · Not created');
     await tester.ensureVisible(optionalB);
     expect(optionalB, findsOneWidget);
+    expect(find.byKey(const Key('view_draft_report_P1')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('view_draft_report_P1')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Ahmed Stockwin — P1 Business Online Draft Report'),
+      findsOneWidget,
+    );
+    expect(
+      requestedUris.last.path,
+      '/api/teacher/students/ahmed-id/subjects/business-id/task-focus/P1/draft-report',
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('mission_pathway_filter_P2')));
     await tester.pumpAndSettle();
     expect(find.text('Ahmed P1 Q5'), findsNothing);
     expect(find.text('Ahmed P2 Q8'), findsOneWidget);
+    expect(find.byKey(const Key('view_draft_report_P2')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('view_draft_report_P2')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Ahmed Stockwin — P2 Business Online Draft Report'),
+      findsOneWidget,
+    );
+    expect(
+      requestedUris.last.path,
+      '/api/teacher/students/ahmed-id/subjects/business-id/task-focus/P2/draft-report',
+    );
   });
 }

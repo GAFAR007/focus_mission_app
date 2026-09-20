@@ -20,6 +20,7 @@ import '../../../core/constants/task_focus_codes.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/soft_panel.dart';
+import 'criterion_draft_report_screen.dart';
 
 enum MissionPathwayStage { q5, q8, essay, theory, assessment }
 
@@ -415,7 +416,30 @@ class _StudentCriterionMissionsScreenState
   }
 
   void _refresh() {
-    setState(() => _future = _loadPathway());
+    setState(() {
+      _future = _loadPathway();
+    });
+  }
+
+  Future<void> _openDraftReport(
+    MissionCriterionPathwayGroup group,
+    List<MissionPayload> missions,
+  ) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CriterionDraftReportScreen(
+          session: widget.session,
+          student: widget.student,
+          subjectId: _selectedSubjectId,
+          taskCode: group.taskCode,
+          missions: missions,
+          api: widget.api,
+        ),
+      ),
+    );
+    if (mounted) {
+      _refresh();
+    }
   }
 
   @override
@@ -568,6 +592,7 @@ class _StudentCriterionMissionsScreenState
             child: _CriterionPathwayPanel(
               group: group,
               onOpenMission: (mission) => Navigator.of(context).pop(mission),
+              onOpenDraftReport: () => _openDraftReport(group, data.missions),
             ),
           ),
         )
@@ -579,10 +604,12 @@ class _CriterionPathwayPanel extends StatelessWidget {
   const _CriterionPathwayPanel({
     required this.group,
     required this.onOpenMission,
+    required this.onOpenDraftReport,
   });
 
   final MissionCriterionPathwayGroup group;
   final ValueChanged<MissionPayload> onOpenMission;
+  final VoidCallback onOpenDraftReport;
 
   @override
   Widget build(BuildContext context) {
@@ -698,6 +725,16 @@ class _CriterionPathwayPanel extends StatelessWidget {
                   ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.item),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              key: Key('view_draft_report_${group.taskCode}'),
+              onPressed: onOpenDraftReport,
+              icon: const Icon(Icons.description_outlined),
+              label: const Text('View Draft Report'),
             ),
           ),
         ],

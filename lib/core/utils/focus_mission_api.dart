@@ -1313,6 +1313,44 @@ class FocusMissionApi {
     return StartedMission.fromJson(json);
   }
 
+  Future<MissionWorkDraftData> fetchMissionWorkDraft({
+    required String token,
+    required String missionId,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/student/missions/$missionId/work-draft',
+      token: token,
+    );
+    return MissionWorkDraftData.fromJson(
+      (json['workDraft'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<MissionWorkDraftData> saveMissionWorkDraft({
+    required String token,
+    required String missionId,
+    List<Map<String, dynamic>>? theoryResponses,
+    Map<String, dynamic>? essayBuilder,
+  }) async {
+    final json = await _requestJson(
+      'PUT',
+      '/student/missions/$missionId/work-draft',
+      token: token,
+      body: {
+        ...?theoryResponses == null
+            ? null
+            : {'theoryResponses': theoryResponses},
+        ...?essayBuilder == null ? null : {'essayBuilder': essayBuilder},
+      },
+    );
+    return MissionWorkDraftData.fromJson(
+      (json['workDraft'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
   Future<AppUser?> createSessionLog({
     required String token,
     required String studentId,
@@ -2334,6 +2372,75 @@ class FocusMissionApi {
       (json['resultPackage'] as Map<dynamic, dynamic>? ?? const {})
           .cast<String, dynamic>(),
     );
+  }
+
+  Future<CriterionDraftReportData> fetchCriterionDraftReport({
+    required String token,
+    required String studentId,
+    required String subjectId,
+    required String taskCode,
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/teacher/students/$studentId/subjects/$subjectId/task-focus/$taskCode/draft-report',
+      token: token,
+    );
+    return CriterionDraftReportData.fromJson(
+      (json['report'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<CriterionDraftReportData> saveCriterionDraftReport({
+    required String token,
+    required String studentId,
+    required String subjectId,
+    required String taskCode,
+    required String essayTeacherComment,
+    required String essayNextTime,
+    required List<Map<String, dynamic>> theoryQuestionComments,
+  }) async {
+    final json = await _requestJson(
+      'PUT',
+      '/teacher/students/$studentId/subjects/$subjectId/task-focus/$taskCode/draft-report',
+      token: token,
+      body: {
+        'essayTeacherComment': essayTeacherComment,
+        'essayNextTime': essayNextTime,
+        'theoryQuestionComments': theoryQuestionComments,
+      },
+    );
+    return CriterionDraftReportData.fromJson(
+      (json['report'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<List<int>> exportCriterionDraftReportPdf({
+    required String token,
+    required String studentId,
+    required String subjectId,
+    required String taskCode,
+  }) async {
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/teacher/students/$studentId/subjects/$subjectId/task-focus/$taskCode/draft-report.pdf',
+    );
+    final response = await _client.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode >= 400) {
+      String message = 'Draft Report PDF export failed.';
+      try {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        message = (decoded['message'] ?? message).toString();
+      } catch (_) {
+        // WHY: A binary/error proxy response may not be JSON; keep the calm
+        // stable fallback instead of hiding the original HTTP failure.
+      }
+      throw FocusMissionApiException(message);
+    }
+    return response.bodyBytes;
   }
 
   Future<ResultPackageData> createTeacherManualResultPackage({

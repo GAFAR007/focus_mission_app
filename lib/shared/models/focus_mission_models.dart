@@ -1450,11 +1450,18 @@ class EssayBuilderDraft {
   final List<EssayBuilderSentence> sentences;
 
   factory EssayBuilderDraft.fromJson(Map<String, dynamic> json) {
+    final builder = _asMap(json['builder']);
+    final targets = _asNullableMap(json['targets']) ?? builder;
+    final sentenceSource = json['sentences'] is List<dynamic>
+        ? json['sentences']
+        : builder['sentences'];
     return EssayBuilderDraft(
       type: (json['type'] ?? '').toString(),
       mode: (json['mode'] ?? '').toString(),
-      targets: EssayBuilderTargets.fromJson(_asMap(json['targets'])),
-      sentences: (json['sentences'] as List<dynamic>? ?? const [])
+      targets: EssayBuilderTargets.fromJson(targets),
+      // WHY: Direct Populate drafts use top-level sentences while older AI
+      // drafts retain a nested builder object; both are existing mission data.
+      sentences: (sentenceSource as List<dynamic>? ?? const [])
           .map((item) => EssayBuilderSentence.fromJson(_asMap(item)))
           .toList(growable: false),
     );
@@ -1544,7 +1551,8 @@ class EssayBuilderPart {
 
   factory EssayBuilderPart.fromJson(Map<String, dynamic> json) {
     final options = _asNullableMap(json['options']);
-    final normalizedCorrectOption = (json['correctOption'] ?? 'A')
+    final normalizedCorrectOption =
+        (json['correctOption'] ?? json['correctKey'] ?? 'A')
         .toString()
         .trim()
         .toUpperCase();
@@ -3501,6 +3509,316 @@ class CriterionReviewData {
       progress: CriterionProgress.fromJson(_asMap(json['progress'])),
       flags: CriterionFlags.fromJson(_asMap(json['flags'])),
       reviewAction: (json['reviewAction'] ?? '').toString(),
+    );
+  }
+}
+
+class TheoryWorkDraftResponse {
+  const TheoryWorkDraftResponse({
+    required this.questionIndex,
+    required this.answerText,
+    required this.wordCount,
+  });
+
+  final int questionIndex;
+  final String answerText;
+  final int wordCount;
+
+  factory TheoryWorkDraftResponse.fromJson(Map<String, dynamic> json) {
+    return TheoryWorkDraftResponse(
+      questionIndex: _asInt(json['questionIndex']),
+      answerText: (json['answerText'] ?? '').toString(),
+      wordCount: _asInt(json['wordCount']),
+    );
+  }
+}
+
+class EssayWorkDraftSelection {
+  const EssayWorkDraftSelection({
+    required this.sentenceId,
+    required this.blankId,
+    required this.selectedOption,
+  });
+
+  final String sentenceId;
+  final String blankId;
+  final String selectedOption;
+
+  factory EssayWorkDraftSelection.fromJson(Map<String, dynamic> json) {
+    return EssayWorkDraftSelection(
+      sentenceId: (json['sentenceId'] ?? '').toString(),
+      blankId: (json['blankId'] ?? '').toString(),
+      selectedOption: (json['selectedOption'] ?? '').toString(),
+    );
+  }
+}
+
+class MissionWorkDraftData {
+  const MissionWorkDraftData({
+    required this.missionId,
+    required this.missionType,
+    required this.theoryResponses,
+    required this.essaySelections,
+    required this.currentSentenceIndex,
+    required this.finalEssayText,
+    required this.status,
+    required this.version,
+  });
+
+  final String missionId;
+  final String missionType;
+  final List<TheoryWorkDraftResponse> theoryResponses;
+  final List<EssayWorkDraftSelection> essaySelections;
+  final int currentSentenceIndex;
+  final String finalEssayText;
+  final String status;
+  final int version;
+
+  factory MissionWorkDraftData.fromJson(Map<String, dynamic> json) {
+    final essayBuilder = _asMap(json['essayBuilder']);
+    return MissionWorkDraftData(
+      missionId: (json['missionId'] ?? '').toString(),
+      missionType: (json['missionType'] ?? '').toString(),
+      theoryResponses: (json['theoryResponses'] as List<dynamic>? ?? const [])
+          .map((item) => TheoryWorkDraftResponse.fromJson(_asMap(item)))
+          .toList(growable: false),
+      essaySelections:
+          (essayBuilder['selectedAnswers'] as List<dynamic>? ?? const [])
+              .map((item) => EssayWorkDraftSelection.fromJson(_asMap(item)))
+              .toList(growable: false),
+      currentSentenceIndex: _asInt(essayBuilder['currentSentenceIndex']),
+      finalEssayText: (essayBuilder['finalEssayText'] ?? '').toString(),
+      status: (json['status'] ?? 'in_progress').toString(),
+      version: _asInt(json['version']),
+    );
+  }
+}
+
+class CriterionReportObjectiveEvidence {
+  const CriterionReportObjectiveEvidence({
+    required this.label,
+    required this.status,
+    required this.resultPackageId,
+    required this.correct,
+    required this.total,
+    required this.percent,
+    required this.passed,
+  });
+
+  final String label;
+  final String status;
+  final String resultPackageId;
+  final int? correct;
+  final int? total;
+  final double? percent;
+  final bool passed;
+
+  factory CriterionReportObjectiveEvidence.fromJson(Map<String, dynamic> json) {
+    return CriterionReportObjectiveEvidence(
+      label: (json['label'] ?? '').toString(),
+      status: (json['status'] ?? 'pending').toString(),
+      resultPackageId: (json['resultPackageId'] ?? '').toString(),
+      correct: _asNullableInt(json['correct']),
+      total: _asNullableInt(json['total']),
+      percent: json['percent'] == null ? null : _asDouble(json['percent']),
+      passed: json['passed'] == true,
+    );
+  }
+}
+
+class CriterionReportEssayEvidence {
+  const CriterionReportEssayEvidence({
+    required this.status,
+    required this.resultPackageId,
+    required this.question,
+    required this.finalEssayText,
+    required this.scoreCorrect,
+    required this.scoreTotal,
+    required this.percent,
+    required this.teacherComment,
+    required this.nextTime,
+  });
+
+  final String status;
+  final String resultPackageId;
+  final String question;
+  final String finalEssayText;
+  final int? scoreCorrect;
+  final int? scoreTotal;
+  final double? percent;
+  final String teacherComment;
+  final String nextTime;
+
+  factory CriterionReportEssayEvidence.fromJson(Map<String, dynamic> json) {
+    return CriterionReportEssayEvidence(
+      status: (json['status'] ?? 'pending').toString(),
+      resultPackageId: (json['resultPackageId'] ?? '').toString(),
+      question: (json['question'] ?? '').toString(),
+      finalEssayText: (json['finalEssayText'] ?? '').toString(),
+      scoreCorrect: _asNullableInt(json['scoreCorrect']),
+      scoreTotal: _asNullableInt(json['scoreTotal']),
+      percent: json['percent'] == null ? null : _asDouble(json['percent']),
+      teacherComment: (json['teacherComment'] ?? '').toString(),
+      nextTime: (json['nextTime'] ?? '').toString(),
+    );
+  }
+}
+
+class CriterionReportTheoryQuestion {
+  const CriterionReportTheoryQuestion({
+    required this.questionIndex,
+    required this.prompt,
+    required this.studentAnswer,
+    required this.originalTeacherScore,
+    required this.teacherComment,
+  });
+
+  final int questionIndex;
+  final String prompt;
+  final String studentAnswer;
+  final double? originalTeacherScore;
+  final String teacherComment;
+
+  factory CriterionReportTheoryQuestion.fromJson(Map<String, dynamic> json) {
+    return CriterionReportTheoryQuestion(
+      questionIndex: _asInt(json['questionIndex']),
+      prompt: (json['prompt'] ?? '').toString(),
+      studentAnswer: (json['studentAnswer'] ?? '').toString(),
+      originalTeacherScore: json['originalTeacherScore'] == null
+          ? null
+          : _asDouble(json['originalTeacherScore']),
+      teacherComment: (json['teacherComment'] ?? '').toString(),
+    );
+  }
+}
+
+class CriterionReportTheoryEvidence {
+  const CriterionReportTheoryEvidence({
+    required this.status,
+    required this.resultPackageId,
+    required this.percent,
+    required this.passed,
+    required this.questions,
+  });
+
+  final String status;
+  final String resultPackageId;
+  final double? percent;
+  final bool passed;
+  final List<CriterionReportTheoryQuestion> questions;
+
+  factory CriterionReportTheoryEvidence.fromJson(Map<String, dynamic> json) {
+    return CriterionReportTheoryEvidence(
+      status: (json['status'] ?? 'pending').toString(),
+      resultPackageId: (json['resultPackageId'] ?? '').toString(),
+      percent: json['percent'] == null ? null : _asDouble(json['percent']),
+      passed: json['passed'] == true,
+      questions: (json['questions'] as List<dynamic>? ?? const [])
+          .map((item) => CriterionReportTheoryQuestion.fromJson(_asMap(item)))
+          .toList(growable: false),
+    );
+  }
+}
+
+class CriterionReportCalculationRow {
+  const CriterionReportCalculationRow({
+    required this.key,
+    required this.label,
+    required this.weightPercent,
+    required this.percent,
+    required this.contribution,
+    required this.status,
+  });
+
+  final String key;
+  final String label;
+  final double weightPercent;
+  final double? percent;
+  final double? contribution;
+  final String status;
+
+  factory CriterionReportCalculationRow.fromJson(Map<String, dynamic> json) {
+    return CriterionReportCalculationRow(
+      key: (json['key'] ?? '').toString(),
+      label: (json['label'] ?? '').toString(),
+      weightPercent: _asDouble(json['weightPercent']),
+      percent: json['percent'] == null ? null : _asDouble(json['percent']),
+      contribution: json['contribution'] == null
+          ? null
+          : _asDouble(json['contribution']),
+      status: (json['status'] ?? 'pending').toString(),
+    );
+  }
+}
+
+class CriterionDraftReportData {
+  const CriterionDraftReportData({
+    required this.title,
+    required this.taskCode,
+    required this.criterionWording,
+    required this.criterionWordingAvailable,
+    required this.q5,
+    required this.q8,
+    required this.essay,
+    required this.theory,
+    required this.assessmentA,
+    required this.assessmentB,
+    required this.calculationRows,
+    required this.calculationStatus,
+    required this.overallPercent,
+    required this.securedContribution,
+    required this.criterionStatus,
+    required this.criterionPassed,
+    required this.criterionReason,
+  });
+
+  final String title;
+  final String taskCode;
+  final String criterionWording;
+  final bool criterionWordingAvailable;
+  final CriterionReportObjectiveEvidence q5;
+  final CriterionReportObjectiveEvidence q8;
+  final CriterionReportEssayEvidence essay;
+  final CriterionReportTheoryEvidence theory;
+  final CriterionReportObjectiveEvidence assessmentA;
+  final CriterionReportObjectiveEvidence assessmentB;
+  final List<CriterionReportCalculationRow> calculationRows;
+  final String calculationStatus;
+  final double? overallPercent;
+  final double securedContribution;
+  final String criterionStatus;
+  final bool criterionPassed;
+  final String criterionReason;
+
+  factory CriterionDraftReportData.fromJson(Map<String, dynamic> json) {
+    final calculation = _asMap(json['calculation']);
+    final criterionStatus = _asMap(json['criterionStatus']);
+    return CriterionDraftReportData(
+      title: (json['title'] ?? '').toString(),
+      taskCode: (json['taskCode'] ?? '').toString(),
+      criterionWording: (json['criterionWording'] ?? '').toString(),
+      criterionWordingAvailable: json['criterionWordingAvailable'] == true,
+      q5: CriterionReportObjectiveEvidence.fromJson(_asMap(json['q5'])),
+      q8: CriterionReportObjectiveEvidence.fromJson(_asMap(json['q8'])),
+      essay: CriterionReportEssayEvidence.fromJson(_asMap(json['essay'])),
+      theory: CriterionReportTheoryEvidence.fromJson(_asMap(json['theory'])),
+      assessmentA: CriterionReportObjectiveEvidence.fromJson(
+        _asMap(json['assessmentA']),
+      ),
+      assessmentB: CriterionReportObjectiveEvidence.fromJson(
+        _asMap(json['assessmentB']),
+      ),
+      calculationRows: (calculation['rows'] as List<dynamic>? ?? const [])
+          .map((item) => CriterionReportCalculationRow.fromJson(_asMap(item)))
+          .toList(growable: false),
+      calculationStatus: (calculation['status'] ?? 'pending').toString(),
+      overallPercent: calculation['overallPercent'] == null
+          ? null
+          : _asDouble(calculation['overallPercent']),
+      securedContribution: _asDouble(calculation['securedContribution']),
+      criterionStatus: (criterionStatus['status'] ?? 'not_started').toString(),
+      criterionPassed: criterionStatus['passed'] == true,
+      criterionReason: (criterionStatus['reason'] ?? '').toString(),
     );
   }
 }

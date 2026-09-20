@@ -37,10 +37,12 @@ class MissionPlayScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.startedMission,
+    this.api,
   });
 
   final AuthSession session;
   final StartedMission startedMission;
+  final FocusMissionApi? api;
 
   @override
   State<MissionPlayScreen> createState() => _MissionPlayScreenState();
@@ -48,7 +50,7 @@ class MissionPlayScreen extends StatefulWidget {
 
 class _MissionPlayScreenState extends State<MissionPlayScreen>
     with SingleTickerProviderStateMixin {
-  final FocusMissionApi _api = FocusMissionApi();
+  final FocusMissionApi _defaultApi = FocusMissionApi();
   final math.Random _random = math.Random();
   static const int _essaySubmissionMinWords = 100;
   static const int _objectiveMissionXpReward = 30;
@@ -76,6 +78,11 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   bool _showQuestionStage = true;
   bool _showTheorySource = false;
   bool _isSubmitting = false;
+  bool _isDraftLoading = false;
+  _WorkDraftSaveStatus _workDraftSaveStatus = _WorkDraftSaveStatus.idle;
+  final Map<int, Timer> _theoryDraftSaveTimers = <int, Timer>{};
+  Timer? _essayDraftSaveTimer;
+  Future<void> _theoryDraftSaveQueue = Future<void>.value();
   CompleteMissionResult? _completedResult;
   _AssessmentRetryState? _assessmentRetryState;
   String? _errorMessage;
@@ -88,6 +95,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   List<_ConfettiParticle> _confettiParticles = const [];
   List<_FireworkSpark> _fireworkSparks = const [];
   AudioPlayer? _celebrationPlayer;
+
+  FocusMissionApi get _api => widget.api ?? _defaultApi;
 
   MissionPayload get _mission => widget.startedMission.mission;
   bool get _isEssayBuilderMission => _essayDraft != null;
@@ -149,7 +158,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         .length;
   }
 
-  String get _essaySubmissionText => _essaySubmissionController.text.trim();
+  String get _essaySubmissionText => _essaySubmissionController.text;
 
   int get _essaySubmissionWordCount {
     if (_essaySubmissionText.isEmpty) {
@@ -372,6 +381,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       unawaited(_preloadCelebrationSound());
     }
     _essayDraft = _mission.essayBuilderDraft;
+    if (_isTheoryMission || _isEssayBuilderMission) {
+      _isDraftLoading = true;
+      unawaited(_restoreMissionWorkDraft());
+    }
     if (!_isEssayBuilderMission) {
       _showQuestionStage = _shouldStartOnQuestion(
         _mission.questions.isEmpty ? null : _mission.questions.first,
@@ -382,6 +395,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
   @override
   void dispose() {
     _xpPulseTimer?.cancel();
+    for (final timer in _theoryDraftSaveTimers.values) {
+      timer.cancel();
+    }
+    _essayDraftSaveTimer?.cancel();
     _confettiController.dispose();
     _celebrationPlayer?.dispose();
     _essaySubmissionController.dispose();
@@ -393,6 +410,11 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isDraftLoading) {
+      return const FocusScaffold(
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
     return FocusScaffold(
       child: SafeArea(
         child: _completedResult != null
@@ -406,6 +428,193 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
             : _buildQuiz(context),
       ),
     );
+  }
+
+  Future<void> _restoreMissionWorkDraft() async {
+    try {
+      final draft = await _api.fetchMissionWorkDraft(
+        token: widget.session.token,
+        missionId: _mission.id,
+      );
+      if (!mounted || draft.status == 'submitted') {
+        return;
+      }
+      setState(() {
+        if (_isTheoryMission) {
+          for (final response in draft.theoryResponses) {
+            _theorySubmittedAnswers[response.questionIndex] =
+                response.answerText;
+            _theoryAnswerControllerFor(response.questionIndex).text =
+                response.answerText;
+          }
+          if (_mission.questions.isNotEmpty) {
+            _currentIndex =
+                List<int>.generate(
+                  _mission.questions.length,
+                  (index) => index,
+                ).firstWhere(
+                  (index) =>
+                      (_theorySubmittedAnswers[index] ?? '').trim().isEmpty,
+                  orElse: () => _mission.questions.length - 1,
+                );
+            _showQuestionStage = true;
+          }
+        } else if (_isEssayBuilderMission) {
+          _essaySelections
+            ..clear()
+            ..addEntries(
+              draft.essaySelections.map(
+                (item) => MapEntry(item.blankId, item.selectedOption),
+              ),
+            );
+          _essaySubmissionController.text = draft.finalEssayText;
+          _restoreCompletedEssaySentences(draft.currentSentenceIndex);
+        }
+        _workDraftSaveStatus = _WorkDraftSaveStatus.saved;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _workDraftSaveStatus = _WorkDraftSaveStatus.error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isDraftLoading = false);
+      }
+    }
+  }
+
+  void _restoreCompletedEssaySentences(int requestedCount) {
+    final draft = _essayDraft;
+    if (draft == null) {
+      return;
+    }
+    _essaySentences.clear();
+    final count = math.min(requestedCount, _essayTotalCount);
+    for (final sentence in draft.sentences.take(count)) {
+      final blankIds = sentence.parts
+          .where((part) => part.isBlank)
+          .map((part) => part.blankId)
+          .where((id) => id.isNotEmpty)
+          .toList(growable: false);
+      if (blankIds.isEmpty ||
+          !blankIds.every((id) => _essaySelections.containsKey(id))) {
+        break;
+      }
+      final text = _buildEssaySentenceText(sentence);
+      if (text.trim().isEmpty) {
+        break;
+      }
+      _essaySentences.add(text.trim());
+    }
+  }
+
+  void _scheduleTheoryDraftSave(int questionIndex) {
+    _theoryDraftSaveTimers.remove(questionIndex)?.cancel();
+    _theoryDraftSaveTimers[questionIndex] = Timer(
+      const Duration(milliseconds: 1500),
+      () {
+        _theoryDraftSaveTimers.remove(questionIndex);
+        // WHY: Each Theory question owns its debounce so moving to another
+        // question cannot cancel an earlier answer that is still waiting.
+        unawaited(_saveTheoryDraft(questionIndex));
+      },
+    );
+  }
+
+  Future<void> _saveTheoryDraft(int questionIndex) async {
+    // WHY: Different question debounces may expire together. Serial requests
+    // prevent the backend's per-question merge from racing against itself.
+    final queuedSave = _theoryDraftSaveQueue.then(
+      (_) => _persistTheoryDraft(questionIndex),
+    );
+    _theoryDraftSaveQueue = queuedSave;
+    await queuedSave;
+  }
+
+  Future<void> _persistTheoryDraft(int questionIndex) async {
+    final controller = _theoryAnswerControllerFor(questionIndex);
+    if (mounted) {
+      setState(() => _workDraftSaveStatus = _WorkDraftSaveStatus.saving);
+    }
+    try {
+      await _api.saveMissionWorkDraft(
+        token: widget.session.token,
+        missionId: _mission.id,
+        theoryResponses: [
+          {'questionIndex': questionIndex, 'answerText': controller.text},
+        ],
+      );
+      if (mounted) {
+        setState(() => _workDraftSaveStatus = _WorkDraftSaveStatus.saved);
+      }
+    } catch (_) {
+      if (mounted) {
+        // WHY: A failed autosave never clears the controller. The learner can
+        // keep editing and retry without losing the local answer.
+        setState(() => _workDraftSaveStatus = _WorkDraftSaveStatus.error);
+      }
+    }
+  }
+
+  void _scheduleEssayDraftSave() {
+    _essayDraftSaveTimer?.cancel();
+    _essayDraftSaveTimer = Timer(const Duration(milliseconds: 1500), () {
+      unawaited(_saveEssayDraft());
+    });
+  }
+
+  Future<void> _saveEssayDraft() async {
+    final draft = _essayDraft;
+    if (draft == null) {
+      return;
+    }
+    if (mounted) {
+      setState(() => _workDraftSaveStatus = _WorkDraftSaveStatus.saving);
+    }
+    final selectedAnswers = <Map<String, dynamic>>[];
+    for (final sentence in draft.sentences) {
+      for (final part in sentence.parts.where((item) => item.isBlank)) {
+        final selectedOption = _essaySelections[part.blankId];
+        if (selectedOption != null && selectedOption.isNotEmpty) {
+          selectedAnswers.add({
+            'sentenceId': sentence.id,
+            'blankId': part.blankId,
+            'selectedOption': selectedOption,
+          });
+        }
+      }
+    }
+    try {
+      await _api.saveMissionWorkDraft(
+        token: widget.session.token,
+        missionId: _mission.id,
+        essayBuilder: {
+          'selectedAnswers': selectedAnswers,
+          'currentSentenceIndex': _essaySentences.length,
+          'finalEssayText': _essaySubmissionController.text,
+        },
+      );
+      if (mounted) {
+        setState(() => _workDraftSaveStatus = _WorkDraftSaveStatus.saved);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _workDraftSaveStatus = _WorkDraftSaveStatus.error);
+      }
+    }
+  }
+
+  String get _workDraftStatusLabel {
+    switch (_workDraftSaveStatus) {
+      case _WorkDraftSaveStatus.saving:
+        return 'Saving...';
+      case _WorkDraftSaveStatus.saved:
+        return 'Saved';
+      case _WorkDraftSaveStatus.error:
+        return 'Could not save — retry';
+      case _WorkDraftSaveStatus.idle:
+        return '';
+    }
   }
 
   Widget _buildQuiz(BuildContext context) {
@@ -966,12 +1175,22 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                           controller: controller,
                           minLines: 5,
                           maxLines: 8,
-                          enabled: !answerLocked,
+                          enabled: !_isSubmitting,
                           enableInteractiveSelection: false,
-                          onChanged: (_) {
+                          onChanged: (value) {
                             setState(() {
                               _errorMessage = null;
+                              if (value.trim().isEmpty) {
+                                _theorySubmittedAnswers.remove(_currentIndex);
+                              } else {
+                                _theorySubmittedAnswers[_currentIndex] = value;
+                              }
+                              _workDraftSaveStatus =
+                                  _WorkDraftSaveStatus.saving;
                             });
+                            // WHY: Debounce avoids one network request per
+                            // keystroke while still protecting written work.
+                            _scheduleTheoryDraftSave(_currentIndex);
                           },
                           decoration: InputDecoration(
                             hintText:
@@ -1007,15 +1226,26 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      if (_workDraftStatusLabel.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _workDraftStatusLabel,
+                          key: const Key('theory_draft_save_status'),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color:
+                                    _workDraftSaveStatus ==
+                                        _WorkDraftSaveStatus.error
+                                    ? AppPalette.orange
+                                    : AppPalette.textMuted,
+                              ),
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.item),
                       GradientButton(
-                        label: answerLocked ? 'Answer Saved' : 'Submit Answer',
-                        colors: answerLocked
-                            ? const [Color(0xFFD7DDEA), Color(0xFFC7D2E7)]
-                            : AppPalette.teacherGradient,
-                        onPressed: answerLocked || _isSubmitting
-                            ? () {}
-                            : _submitTheoryAnswer,
+                        label: 'Save Answer',
+                        colors: AppPalette.teacherGradient,
+                        onPressed: _isSubmitting ? () {} : _submitTheoryAnswer,
                       ),
                       if (answerLocked &&
                           LearningVideoPlacements.normalize(
@@ -1093,6 +1323,27 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                         },
                 ),
               ],
+              if (_currentIndex > 0) ...[
+                const SizedBox(height: AppSpacing.compact),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: _isSubmitting
+                        ? null
+                        : () {
+                            setState(() {
+                              // WHY: Restored answers remain editable; a calm
+                              // secondary action lets learners revisit saved
+                              // work without competing with the primary CTA.
+                              _moveToQuestion(_currentIndex - 1);
+                              _showQuestionStage = true;
+                              _errorMessage = null;
+                            });
+                          },
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    label: const Text('Previous Question'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1114,63 +1365,26 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     );
   }
 
-  void _submitTheoryAnswer() {
-    final question = _mission.questions[_currentIndex];
+  Future<void> _submitTheoryAnswer() async {
     final controller = _theoryAnswerControllerFor(_currentIndex);
-    final answerText = controller.text.trim();
-    final minimumWords = question.minWordCount > 0 ? question.minWordCount : 12;
-    final wordCount = _countWords(answerText);
+    final answerText = controller.text;
 
-    if (answerText.isEmpty) {
+    if (answerText.trim().isEmpty) {
       setState(() {
-        _errorMessage =
-            'Write your answer before you submit this theory question.';
+        _errorMessage = 'Write your answer before saving this question.';
         _xpPulsePositive = false;
         _showXpPulse = false;
-      });
-      return;
-    }
-
-    if (wordCount < minimumWords) {
-      setState(() {
-        // WHY: Theory responses must meet the teacher-set word minimum before
-        // the student can lock that question and move to the next one.
-        _errorMessage =
-            'Add more detail. This answer needs at least $minimumWords words.';
-        _showXpPulse = true;
-        _xpPulsePositive = false;
-        _xpPulseValue = 0;
-      });
-      _xpPulseTimer?.cancel();
-      _xpPulseTimer = Timer(const Duration(milliseconds: 1300), () {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _showXpPulse = false;
-        });
       });
       return;
     }
 
     _xpPulseTimer?.cancel();
-    _triggerConfettiBurst(success: true);
     setState(() {
       _theorySubmittedAnswers[_currentIndex] = answerText;
       _errorMessage = null;
-      _showXpPulse = true;
-      _xpPulsePositive = true;
-      _xpPulseValue = _previewXpForAnswer(true);
     });
-
-    _xpPulseTimer = Timer(const Duration(milliseconds: 1300), () {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _showXpPulse = false;
-      });
-    });
+    _theoryDraftSaveTimers.remove(_currentIndex)?.cancel();
+    await _saveTheoryDraft(_currentIndex);
   }
 
   Widget _buildEssayBuilder(BuildContext context) {
@@ -1273,7 +1487,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                       children: [
                         _StatPill(
                           label:
-                              'Sentence ${completedSentences + 1} of $totalSentences',
+                              'Sentence ${math.min(completedSentences + 1, totalSentences)} of $totalSentences',
                         ),
                         _StatPill(label: _mission.subject?.name ?? 'Mission'),
                         _StatPill(label: draft.mode),
@@ -1461,7 +1675,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                           onChanged: (_) {
                             setState(() {
                               _errorMessage = null;
+                              _workDraftSaveStatus =
+                                  _WorkDraftSaveStatus.saving;
                             });
+                            _scheduleEssayDraftSave();
                           },
                           decoration: InputDecoration(
                             hintText:
@@ -1497,6 +1714,21 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      if (_workDraftStatusLabel.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _workDraftStatusLabel,
+                          key: const Key('essay_draft_save_status'),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color:
+                                    _workDraftSaveStatus ==
+                                        _WorkDraftSaveStatus.error
+                                    ? AppPalette.orange
+                                    : AppPalette.textMuted,
+                              ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1921,15 +2153,18 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         _errorMessage =
             'Not quite. Re-read LEARN FIRST and retry this sentence.';
       });
+      _scheduleEssayDraftSave();
       return;
     }
 
     setState(() {
       _essaySelections[part.blankId] = normalizedOption;
       _errorMessage = null;
+      _workDraftSaveStatus = _WorkDraftSaveStatus.saving;
     });
 
     _tryCompleteEssaySentence(sentence);
+    _scheduleEssayDraftSave();
   }
 
   void _clearEssaySentenceSelections(EssayBuilderSentence sentence) {
@@ -2583,6 +2818,26 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         return;
       }
 
+      if (isTheoryMission) {
+        for (var index = 0; index < _mission.questions.length; index += 1) {
+          final minimumWords = _mission.questions[index].minWordCount > 0
+              ? _mission.questions[index].minWordCount
+              : 12;
+          final answer = _theoryAnswerControllerFor(index).text;
+          if (_countWords(answer) < minimumWords) {
+            setState(() {
+              _isSubmitting = false;
+              // WHY: Draft saves accept incomplete thinking, but the existing
+              // word threshold still applies at the explicit final submission.
+              _errorMessage =
+                  'Theory question ${index + 1} needs at least $minimumWords words before finishing the mission.';
+            });
+            return;
+          }
+          _theorySubmittedAnswers[index] = answer;
+        }
+      }
+
       final completedCount = isEssayBuilder
           ? _essayTotalCount
           : isTheoryMission
@@ -2625,6 +2880,18 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
 
       // WHY: XP and focus are awarded only after the full mission is completed,
       // which keeps progress tied to finished work instead of partial attempts.
+      for (final timer in _theoryDraftSaveTimers.values) {
+        timer.cancel();
+      }
+      _theoryDraftSaveTimers.clear();
+      _essayDraftSaveTimer?.cancel();
+      if (isEssayBuilder) {
+        await _saveEssayDraft();
+      } else if (isTheoryMission) {
+        for (var index = 0; index < _mission.questions.length; index += 1) {
+          await _saveTheoryDraft(index);
+        }
+      }
       debugPrint(
         'Publishing ${isEssayBuilder
             ? 'essay builder'
@@ -2805,10 +3072,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
       'sentenceResponses': sentenceResponses,
       'guidedEssayText': _essayParagraph,
       'submissionEssayText': _essaySubmissionText,
-      'finalEssayText': _essaySubmissionText.isNotEmpty
+      'finalEssayText': _essaySubmissionText.trim().isNotEmpty
           ? _essaySubmissionText
           : _essayParagraph,
-      'finalWordCount': _essaySubmissionText.isNotEmpty
+      'finalWordCount': _essaySubmissionText.trim().isNotEmpty
           ? _essaySubmissionWordCount
           : _essayWordCount,
       'blankCompletedCount': _essayCompletedBlankCount,
@@ -2816,6 +3083,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
     };
   }
 }
+
+enum _WorkDraftSaveStatus { idle, saving, saved, error }
 
 class _AnswerOptionCard extends StatelessWidget {
   const _AnswerOptionCard({
