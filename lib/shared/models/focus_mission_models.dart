@@ -1080,6 +1080,12 @@ class MissionPayload {
     required this.scoreTotal,
     required this.scorePercent,
     required this.latestResultPackageId,
+    this.redoOfMissionId = '',
+    this.redoOfResultPackageId = '',
+    this.evidenceCurrentExcluded = false,
+    this.evidenceMovedFromTaskCode = '',
+    this.evidenceMovedToTaskCode = '',
+    this.evidenceMovedAt,
     required this.questions,
     this.aiModel,
     this.createdAt,
@@ -1112,6 +1118,12 @@ class MissionPayload {
   final int scoreTotal;
   final int scorePercent;
   final String latestResultPackageId;
+  final String redoOfMissionId;
+  final String redoOfResultPackageId;
+  final bool evidenceCurrentExcluded;
+  final String evidenceMovedFromTaskCode;
+  final String evidenceMovedToTaskCode;
+  final String? evidenceMovedAt;
   final String? aiModel;
   final String? createdAt;
   final String? publishedAt;
@@ -1157,6 +1169,12 @@ class MissionPayload {
     int? scoreTotal,
     int? scorePercent,
     String? latestResultPackageId,
+    String? redoOfMissionId,
+    String? redoOfResultPackageId,
+    bool? evidenceCurrentExcluded,
+    String? evidenceMovedFromTaskCode,
+    String? evidenceMovedToTaskCode,
+    String? evidenceMovedAt,
     String? aiModel,
     String? createdAt,
     String? publishedAt,
@@ -1191,6 +1209,16 @@ class MissionPayload {
       scorePercent: scorePercent ?? this.scorePercent,
       latestResultPackageId:
           latestResultPackageId ?? this.latestResultPackageId,
+      redoOfMissionId: redoOfMissionId ?? this.redoOfMissionId,
+      redoOfResultPackageId:
+          redoOfResultPackageId ?? this.redoOfResultPackageId,
+      evidenceCurrentExcluded:
+          evidenceCurrentExcluded ?? this.evidenceCurrentExcluded,
+      evidenceMovedFromTaskCode:
+          evidenceMovedFromTaskCode ?? this.evidenceMovedFromTaskCode,
+      evidenceMovedToTaskCode:
+          evidenceMovedToTaskCode ?? this.evidenceMovedToTaskCode,
+      evidenceMovedAt: evidenceMovedAt ?? this.evidenceMovedAt,
       aiModel: aiModel ?? this.aiModel,
       createdAt: createdAt ?? this.createdAt,
       publishedAt: publishedAt ?? this.publishedAt,
@@ -1230,6 +1258,14 @@ class MissionPayload {
           : _asInt(json['questionCount']),
       scorePercent: _asInt(json['scorePercent']),
       latestResultPackageId: (json['latestResultPackageId'] ?? '').toString(),
+      redoOfMissionId: (json['redoOfMissionId'] ?? '').toString(),
+      redoOfResultPackageId: (json['redoOfResultPackageId'] ?? '').toString(),
+      evidenceCurrentExcluded: json['evidenceCurrentExcluded'] == true,
+      evidenceMovedFromTaskCode: (json['evidenceMovedFromTaskCode'] ?? '')
+          .toString(),
+      evidenceMovedToTaskCode: (json['evidenceMovedToTaskCode'] ?? '')
+          .toString(),
+      evidenceMovedAt: json['evidenceMovedAt']?.toString(),
       aiModel: json['aiModel']?.toString(),
       createdAt: json['createdAt']?.toString(),
       publishedAt: json['publishedAt']?.toString(),
@@ -1553,9 +1589,9 @@ class EssayBuilderPart {
     final options = _asNullableMap(json['options']);
     final normalizedCorrectOption =
         (json['correctOption'] ?? json['correctKey'] ?? 'A')
-        .toString()
-        .trim()
-        .toUpperCase();
+            .toString()
+            .trim()
+            .toUpperCase();
     final correctOption =
         const ['A', 'B', 'C', 'D'].contains(normalizedCorrectOption)
         ? normalizedCorrectOption
@@ -3626,6 +3662,103 @@ class CriterionReportObjectiveEvidence {
   }
 }
 
+class ResultRedoOutcome {
+  const ResultRedoOutcome({
+    required this.missionId,
+    required this.draftId,
+    required this.stage,
+    required this.taskCode,
+  });
+
+  final String missionId;
+  final String draftId;
+  final String stage;
+  final String taskCode;
+
+  factory ResultRedoOutcome.fromJson(Map<String, dynamic> json) {
+    return ResultRedoOutcome(
+      missionId: (json['missionId'] ?? '').toString(),
+      draftId: (json['draftId'] ?? '').toString(),
+      stage: (json['stage'] ?? '').toString(),
+      taskCode: (json['taskCode'] ?? '').toString(),
+    );
+  }
+}
+
+class EvidenceMovePreview {
+  const EvidenceMovePreview({
+    required this.sourceTaskCode,
+    required this.targetTaskCode,
+    required this.stage,
+    required this.sourceLabel,
+    required this.targetLabel,
+    required this.studentAnswerRetained,
+    required this.olderSourceEvidenceAvailable,
+    required this.sourceOutcome,
+    required this.targetOutcome,
+    required this.targetConflict,
+    required this.sourcePrompts,
+    required this.targetPrompts,
+    required this.theoryPromptMismatchWarning,
+  });
+
+  final String sourceTaskCode;
+  final String targetTaskCode;
+  final String stage;
+  final String sourceLabel;
+  final String targetLabel;
+  final bool studentAnswerRetained;
+  final bool olderSourceEvidenceAvailable;
+  final String sourceOutcome;
+  final String targetOutcome;
+  final bool targetConflict;
+  final List<String> sourcePrompts;
+  final List<String> targetPrompts;
+  final bool theoryPromptMismatchWarning;
+
+  factory EvidenceMovePreview.fromJson(Map<String, dynamic> json) {
+    return EvidenceMovePreview(
+      sourceTaskCode: (json['sourceTaskCode'] ?? '').toString(),
+      targetTaskCode: (json['targetTaskCode'] ?? '').toString(),
+      stage: (json['stage'] ?? '').toString(),
+      sourceLabel: (json['sourceLabel'] ?? '').toString(),
+      targetLabel: (json['targetLabel'] ?? '').toString(),
+      studentAnswerRetained: json['studentAnswerRetained'] == true,
+      olderSourceEvidenceAvailable:
+          json['olderSourceEvidenceAvailable'] == true,
+      sourceOutcome: (json['sourceOutcome'] ?? '').toString(),
+      targetOutcome: (json['targetOutcome'] ?? '').toString(),
+      targetConflict: json['targetConflict'] == true,
+      sourcePrompts: _asStringList(json['sourcePrompts']),
+      targetPrompts: _asStringList(json['targetPrompts']),
+      theoryPromptMismatchWarning: json['theoryPromptMismatchWarning'] == true,
+    );
+  }
+}
+
+class CriterionReportHistoryNote {
+  const CriterionReportHistoryNote({
+    required this.kind,
+    required this.title,
+    required this.detail,
+    required this.at,
+  });
+
+  final String kind;
+  final String title;
+  final String detail;
+  final String? at;
+
+  factory CriterionReportHistoryNote.fromJson(Map<String, dynamic> json) {
+    return CriterionReportHistoryNote(
+      kind: (json['kind'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      detail: (json['detail'] ?? '').toString(),
+      at: _asOptionalString(json['at']),
+    );
+  }
+}
+
 class CriterionReportEssayEvidence {
   const CriterionReportEssayEvidence({
     required this.status,
@@ -3637,6 +3770,7 @@ class CriterionReportEssayEvidence {
     required this.percent,
     required this.teacherComment,
     required this.nextTime,
+    this.history,
   });
 
   final String status;
@@ -3648,6 +3782,7 @@ class CriterionReportEssayEvidence {
   final double? percent;
   final String teacherComment;
   final String nextTime;
+  final CriterionReportHistoryNote? history;
 
   factory CriterionReportEssayEvidence.fromJson(Map<String, dynamic> json) {
     return CriterionReportEssayEvidence(
@@ -3660,6 +3795,9 @@ class CriterionReportEssayEvidence {
       percent: json['percent'] == null ? null : _asDouble(json['percent']),
       teacherComment: (json['teacherComment'] ?? '').toString(),
       nextTime: (json['nextTime'] ?? '').toString(),
+      history: _asNullableMap(json['history']) == null
+          ? null
+          : CriterionReportHistoryNote.fromJson(_asMap(json['history'])),
     );
   }
 }
@@ -3699,6 +3837,7 @@ class CriterionReportTheoryEvidence {
     required this.percent,
     required this.passed,
     required this.questions,
+    this.history,
   });
 
   final String status;
@@ -3706,6 +3845,7 @@ class CriterionReportTheoryEvidence {
   final double? percent;
   final bool passed;
   final List<CriterionReportTheoryQuestion> questions;
+  final CriterionReportHistoryNote? history;
 
   factory CriterionReportTheoryEvidence.fromJson(Map<String, dynamic> json) {
     return CriterionReportTheoryEvidence(
@@ -3716,6 +3856,9 @@ class CriterionReportTheoryEvidence {
       questions: (json['questions'] as List<dynamic>? ?? const [])
           .map((item) => CriterionReportTheoryQuestion.fromJson(_asMap(item)))
           .toList(growable: false),
+      history: _asNullableMap(json['history']) == null
+          ? null
+          : CriterionReportHistoryNote.fromJson(_asMap(json['history'])),
     );
   }
 }

@@ -54,12 +54,24 @@ Map<String, dynamic> reportJson({String essayComment = 'Original feedback'}) {
       'percent': 63,
       'teacherComment': essayComment,
       'nextTime': 'Develop the conclusion.',
+      'history': {
+        'kind': 'move',
+        'title': 'Moved from P1 to P2',
+        'detail': 'Moved by Teacher',
+        'at': '2026-09-23T10:00:00.000Z',
+      },
     },
     'theory': {
       'status': 'scored',
       'resultPackageId': 'theory-result',
       'percent': 71,
       'passed': true,
+      'history': {
+        'kind': 'redo',
+        'title': 'Redo attempt',
+        'detail': 'Previous result: 68.8% · Current: Pending',
+        'at': '2026-09-23T10:00:00.000Z',
+      },
       'questions': [
         {
           'questionIndex': 0,
@@ -190,6 +202,8 @@ void main() {
       find.widgetWithText(SelectableText, 'Exact theory answer.'),
       findsOneWidget,
     );
+    expect(find.byKey(const Key('evidence_history_move')), findsOneWidget);
+    expect(find.byKey(const Key('evidence_history_redo')), findsOneWidget);
     final comment = find.byKey(const Key('essay_report_comment'));
     await tester.ensureVisible(comment);
     await tester.enterText(comment, 'Edited comment');

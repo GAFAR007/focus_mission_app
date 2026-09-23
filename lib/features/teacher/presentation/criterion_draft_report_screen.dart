@@ -312,6 +312,8 @@ class _CriterionDraftReportScreenState
                           ? 'Original score: ${report.essay.scoreCorrect}/${report.essay.scoreTotal} — ${_percent(report.essay.percent)}'
                           : 'Original score: Pending',
                     ),
+                    if (report.essay.history != null)
+                      _EvidenceHistoryNote(note: report.essay.history!),
                     if (report.essay.resultPackageId.isNotEmpty)
                       Align(
                         alignment: Alignment.centerLeft,
@@ -350,6 +352,8 @@ class _CriterionDraftReportScreenState
                           ? '${_percent(report.theory.percent)} — ${report.theory.passed ? 'Passed' : 'Not yet passed'}'
                           : 'Pending',
                     ),
+                    if (report.theory.history != null)
+                      _EvidenceHistoryNote(note: report.theory.history!),
                     if (report.theory.resultPackageId.isNotEmpty)
                       TextButton(
                         onPressed: () =>
@@ -617,6 +621,54 @@ class _CopyableEvidence extends StatelessWidget {
             ],
           ),
           SelectableText(text.trim().isEmpty ? 'Pending' : text),
+        ],
+      ),
+    );
+  }
+}
+
+class _EvidenceHistoryNote extends StatelessWidget {
+  const _EvidenceHistoryNote({required this.note});
+
+  final CriterionReportHistoryNote note;
+
+  @override
+  Widget build(BuildContext context) {
+    final parsed = note.at == null
+        ? null
+        : DateTime.tryParse(note.at!)?.toLocal();
+    final timestamp = parsed == null
+        ? ''
+        : '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')} '
+              '${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
+    return Container(
+      key: Key('evidence_history_${note.kind}'),
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8FB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDCE3EC)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            note.title,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          Text(
+            [
+              note.detail,
+              timestamp,
+            ].where((value) => value.isNotEmpty).join(' · '),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
         ],
       ),
     );

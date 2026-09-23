@@ -2374,6 +2374,55 @@ class FocusMissionApi {
     );
   }
 
+  Future<ResultRedoOutcome> createTeacherResultRedo({
+    required String token,
+    required String resultPackageId,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/results/$resultPackageId/redo',
+      token: token,
+    );
+    return ResultRedoOutcome.fromJson(
+      (json['redo'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<EvidenceMovePreview> previewTeacherResultMove({
+    required String token,
+    required String resultPackageId,
+    required String targetTaskCode,
+  }) async {
+    final json = await _requestJson(
+      'POST',
+      '/teacher/results/$resultPackageId/move-preview',
+      token: token,
+      body: {'targetTaskCode': targetTaskCode},
+    );
+    return EvidenceMovePreview.fromJson(
+      (json['preview'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<void> moveTeacherResultEvidence({
+    required String token,
+    required String resultPackageId,
+    required String targetTaskCode,
+    required bool replaceTargetEvidence,
+  }) async {
+    await _requestJson(
+      'POST',
+      '/teacher/results/$resultPackageId/move-task-focus',
+      token: token,
+      body: {
+        'targetTaskCode': targetTaskCode,
+        'replaceTargetEvidence': replaceTargetEvidence,
+      },
+    );
+  }
+
   Future<CriterionDraftReportData> fetchCriterionDraftReport({
     required String token,
     required String studentId,

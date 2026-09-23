@@ -58,6 +58,13 @@ const List<String> _teacherTimetableRoomOptions = <String>[
 const String _noTeacherStudentsMessage =
     'No students are assigned to this teacher yet.';
 
+bool canShowTeacherEvidenceActions(MissionPayload mission) {
+  final format = mission.draftFormat.trim().toUpperCase();
+  return mission.latestResultPackageId.trim().isNotEmpty &&
+      mission.evidenceCurrentExcluded == false &&
+      (format == 'THEORY' || format == 'ESSAY_BUILDER');
+}
+
 String _formatTeacherMissionDate(String? value) {
   if (value == null || value.trim().isEmpty) {
     return 'No date';
@@ -119,6 +126,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   bool _isDeletingDraftMissions = false;
   final Set<String> _selectedDraftMissionIds = <String>{};
   final Set<String> _sendingResultMissionIds = <String>{};
+  final Set<String> _resultEvidenceActionMissionIds = <String>{};
   bool _showCreateStudentPanel = false;
   bool _isCreatingStudent = false;
   bool _isSavingStudentYearGroup = false;
@@ -711,6 +719,12 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       _sendMissionResult(workspace, mission),
                   onViewResult: (mission) =>
                       _openResultReport(workspace, mission),
+                  onRedoResult: (mission) =>
+                      _createMissionRedo(workspace, mission),
+                  onMoveResult: (mission) =>
+                      _moveMissionEvidence(workspace, mission),
+                  resultEvidenceActionMissionIds:
+                      _resultEvidenceActionMissionIds,
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _TeacherStudentResultsPanel(
@@ -2085,6 +2099,248 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _createMissionRedo(
+    TeacherWorkspaceData workspace,
+    MissionPayload mission,
+  ) async {
+    final stageLabel = mission.draftFormat == 'THEORY'
+        ? 'Theory'
+        : 'Essay Builder';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Redo $stageLabel'),
+        content: const Text(
+          "This creates a new editable attempt using the student's previous submitted answer. The current report will show Pending until the redo is submitted and marked.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('confirm_create_redo'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Create Redo'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _resultEvidenceActionMissionIds.add(mission.id));
+    try {
+      await _api.createTeacherResultRedo(
+        token: workspace.session.token,
+        resultPackageId: mission.latestResultPackageId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _reloadTeacherWorkspaceForStudent(_selectedStudentId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$stageLabel redo is ready for the student.')),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _resultEvidenceActionMissionIds.remove(mission.id));
+      }
+    }
+  }
+
+  Future<String?> _chooseMoveTargetTaskCode(MissionPayload mission) async {
+    final sourceTaskCode = mission.taskCodes.length == 1
+        ? mission.taskCodes.first.trim().toUpperCase()
+        : '';
+    if (sourceTaskCode.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Move Evidence needs one Task Focus on the mission.'),
+        ),
+      );
+      return null;
+    }
+    String selectedTaskCode = kTaskFocusCodes.firstWhere(
+      (taskCode) => taskCode != sourceTaskCode,
+    );
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Move Evidence'),
+          content: DropdownButtonFormField<String>(
+            key: const Key('move_evidence_target_selector'),
+            initialValue: selectedTaskCode,
+            decoration: const InputDecoration(labelText: 'Target task code'),
+            items: kTaskFocusCodes
+                .where((taskCode) => taskCode != sourceTaskCode)
+                .map(
+                  (taskCode) => DropdownMenuItem<String>(
+                    value: taskCode,
+                    child: Text(taskCode),
+                  ),
+                )
+                .toList(growable: false),
+            onChanged: (value) {
+              if (value != null) {
+                setDialogState(() => selectedTaskCode = value);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const Key('preview_move_evidence'),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(selectedTaskCode),
+              child: const Text('Preview'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<bool?> _confirmMovePreview(EvidenceMovePreview preview) {
+    final sourceOutcome = preview.olderSourceEvidenceAvailable
+        ? 'Restore older result'
+        : 'Redo required';
+    final targetConflict = preview.targetConflict
+        ? 'Existing evidence found'
+        : 'None';
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Move Evidence'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Source: ${preview.sourceLabel}'),
+              Text('Target: ${preview.targetLabel}'),
+              const SizedBox(height: 10),
+              const Text('Student answer retained: Yes'),
+              Text(
+                'Older ${preview.sourceTaskCode} evidence available: ${preview.olderSourceEvidenceAvailable ? 'Yes' : 'No'}',
+              ),
+              Text('${preview.sourceTaskCode} outcome: $sourceOutcome'),
+              Text(
+                '${preview.targetTaskCode} outcome: Moved evidence becomes current',
+              ),
+              Text('Target conflict: $targetConflict'),
+              if (preview.theoryPromptMismatchWarning) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  'Theory warning: the source and target prompts may differ. The original prompt and answer pairs will be retained.',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                if (preview.sourcePrompts.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Source prompts:\n${preview.sourcePrompts.join('\n')}'),
+                ],
+                if (preview.targetPrompts.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Target prompts:\n${preview.targetPrompts.join('\n')}'),
+                ],
+              ],
+            ],
+          ),
+        ),
+        actions: preview.targetConflict
+            ? [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  key: const Key('keep_existing_target_evidence'),
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Keep existing / do not move'),
+                ),
+                FilledButton(
+                  key: const Key('replace_target_evidence'),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Replace current target evidence'),
+                ),
+              ]
+            : [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  key: const Key('confirm_move_evidence'),
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Move Evidence'),
+                ),
+              ],
+      ),
+    );
+  }
+
+  Future<void> _moveMissionEvidence(
+    TeacherWorkspaceData workspace,
+    MissionPayload mission,
+  ) async {
+    final targetTaskCode = await _chooseMoveTargetTaskCode(mission);
+    if (!mounted || targetTaskCode == null) {
+      return;
+    }
+    setState(() => _resultEvidenceActionMissionIds.add(mission.id));
+    try {
+      final preview = await _api.previewTeacherResultMove(
+        token: workspace.session.token,
+        resultPackageId: mission.latestResultPackageId,
+        targetTaskCode: targetTaskCode,
+      );
+      if (!mounted) {
+        return;
+      }
+      final replaceTargetEvidence = await _confirmMovePreview(preview);
+      if (!mounted || replaceTargetEvidence == null) {
+        return;
+      }
+      if (preview.targetConflict && replaceTargetEvidence != true) {
+        return;
+      }
+      await _api.moveTeacherResultEvidence(
+        token: workspace.session.token,
+        resultPackageId: mission.latestResultPackageId,
+        targetTaskCode: targetTaskCode,
+        replaceTargetEvidence: replaceTargetEvidence,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _reloadTeacherWorkspaceForStudent(_selectedStudentId));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Evidence moved to $targetTaskCode.')),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _resultEvidenceActionMissionIds.remove(mission.id));
+      }
+    }
   }
 
   Future<void> _openUploadResultFromStudentResults(
@@ -5456,6 +5712,9 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
     required this.onMoveBackToDraft,
     required this.onSendResult,
     required this.onViewResult,
+    required this.onRedoResult,
+    required this.onMoveResult,
+    required this.resultEvidenceActionMissionIds,
   });
 
   final List<MissionPayload> missions;
@@ -5466,14 +5725,28 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
   final ValueChanged<MissionPayload> onMoveBackToDraft;
   final ValueChanged<MissionPayload> onSendResult;
   final ValueChanged<MissionPayload> onViewResult;
+  final ValueChanged<MissionPayload> onRedoResult;
+  final ValueChanged<MissionPayload> onMoveResult;
+  final Set<String> resultEvidenceActionMissionIds;
 
   @override
   Widget build(BuildContext context) {
     final totalAssignedXp = missions.fold<int>(
       0,
-      (total, mission) => total + (mission.xpReward < 0 ? 0 : mission.xpReward),
+      (total, mission) =>
+          total +
+          (mission.evidenceMovedFromTaskCode.trim().isNotEmpty
+              ? 0
+              : mission.xpReward < 0
+              ? 0
+              : mission.xpReward),
     );
     final totalEarnedXp = missions.fold<int>(0, (total, mission) {
+      if (mission.evidenceMovedFromTaskCode.trim().isNotEmpty) {
+        // WHY: A derived evidence mission transfers qualification evidence but
+        // never creates a second XP opportunity in dashboard totals.
+        return total;
+      }
       final reward = mission.xpReward < 0 ? 0 : mission.xpReward;
       final earned = mission.xpEarned < 0
           ? 0
@@ -5616,6 +5889,9 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
                 final hasResultPackage = mission.latestResultPackageId
                     .trim()
                     .isNotEmpty;
+                final isMovedEvidence = mission.evidenceMovedFromTaskCode
+                    .trim()
+                    .isNotEmpty;
                 final isTheoryPendingReview =
                     mission.draftFormat == 'THEORY' &&
                     hasResultPackage &&
@@ -5626,7 +5902,9 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
                     : mission.draftFormat == 'THEORY' && hasResultPackage
                     ? (mission.scorePercent.clamp(0, 100) / 100)
                     : scoreRatio;
-                final topProgressLabel = isTheoryPendingReview
+                final topProgressLabel = isMovedEvidence && hasResultPackage
+                    ? '${mission.scorePercent}% scored · moved evidence · no new XP'
+                    : isTheoryPendingReview
                     ? 'Pending review · XP pending'
                     : mission.draftFormat == 'THEORY' && hasResultPackage
                     ? '${mission.scorePercent}% scored · $earnedXp/$rewardXp XP'
@@ -5636,6 +5914,10 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
                 final isSendingResult = sendingResultMissionIds.contains(
                   mission.id,
                 );
+                final canManageSubmittedEvidence =
+                    canShowTeacherEvidenceActions(mission);
+                final isManagingEvidence = resultEvidenceActionMissionIds
+                    .contains(mission.id);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.compact),
                   child: _MissionCard(
@@ -5658,6 +5940,14 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
                     tertiaryActionLabel: 'View result',
                     onTertiaryTap: hasResultPackage
                         ? () => onViewResult(mission)
+                        : null,
+                    redoActionLabel: canManageSubmittedEvidence ? 'Redo' : null,
+                    onRedoTap: canManageSubmittedEvidence && !isManagingEvidence
+                        ? () => onRedoResult(mission)
+                        : null,
+                    moveActionLabel: canManageSubmittedEvidence ? 'Move' : null,
+                    onMoveTap: canManageSubmittedEvidence && !isManagingEvidence
+                        ? () => onMoveResult(mission)
                         : null,
                     quaternaryActionLabel: 'Move back to draft',
                     onQuaternaryTap: () => onMoveBackToDraft(mission),
@@ -7517,6 +7807,10 @@ class _MissionCard extends StatelessWidget {
     this.onSecondaryTap,
     this.tertiaryActionLabel,
     this.onTertiaryTap,
+    this.redoActionLabel,
+    this.onRedoTap,
+    this.moveActionLabel,
+    this.onMoveTap,
     this.quaternaryActionLabel,
     this.onQuaternaryTap,
     this.showSelectionControl = false,
@@ -7536,6 +7830,10 @@ class _MissionCard extends StatelessWidget {
   final VoidCallback? onSecondaryTap;
   final String? tertiaryActionLabel;
   final VoidCallback? onTertiaryTap;
+  final String? redoActionLabel;
+  final VoidCallback? onRedoTap;
+  final String? moveActionLabel;
+  final VoidCallback? onMoveTap;
   final String? quaternaryActionLabel;
   final VoidCallback? onQuaternaryTap;
   final bool showSelectionControl;
@@ -7549,7 +7847,10 @@ class _MissionCard extends StatelessWidget {
     final isCompactCard =
         compactOnNarrow && MediaQuery.sizeOf(context).width < 430;
     final showProminentResultActions =
-        secondaryActionLabel != null || tertiaryActionLabel != null;
+        secondaryActionLabel != null ||
+        tertiaryActionLabel != null ||
+        redoActionLabel != null ||
+        moveActionLabel != null;
     final hasDisabledResultAction =
         (secondaryActionLabel != null && onSecondaryTap == null) ||
         (tertiaryActionLabel != null && onTertiaryTap == null);
@@ -7698,31 +7999,16 @@ class _MissionCard extends StatelessWidget {
                                       ),
                                 ),
                                 const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    if (secondaryActionLabel != null)
-                                      _MissionActionButton(
-                                        label: secondaryActionLabel!,
-                                        icon: Icons.send_rounded,
-                                        onTap: onSecondaryTap,
-                                        colors: const [
-                                          AppPalette.sun,
-                                          AppPalette.orange,
-                                        ],
-                                      ),
-                                    if (tertiaryActionLabel != null)
-                                      _MissionActionButton(
-                                        label: tertiaryActionLabel!,
-                                        icon: Icons.visibility_rounded,
-                                        onTap: onTertiaryTap,
-                                        colors: const [
-                                          AppPalette.primaryBlue,
-                                          AppPalette.aqua,
-                                        ],
-                                      ),
-                                  ],
+                                TeacherMissionResultActions(
+                                  missionId: mission.id,
+                                  sendLabel: secondaryActionLabel,
+                                  onSend: onSecondaryTap,
+                                  viewLabel: tertiaryActionLabel,
+                                  onView: onTertiaryTap,
+                                  redoLabel: redoActionLabel,
+                                  onRedo: onRedoTap,
+                                  moveLabel: moveActionLabel,
+                                  onMove: onMoveTap,
                                 ),
                                 if (hasDisabledResultAction) ...[
                                   const SizedBox(height: 6),
@@ -7853,6 +8139,70 @@ class _MissionMiniPill extends StatelessWidget {
   }
 }
 
+class TeacherMissionResultActions extends StatelessWidget {
+  const TeacherMissionResultActions({
+    super.key,
+    required this.missionId,
+    this.sendLabel,
+    this.onSend,
+    this.viewLabel,
+    this.onView,
+    this.redoLabel,
+    this.onRedo,
+    this.moveLabel,
+    this.onMove,
+  });
+
+  final String missionId;
+  final String? sendLabel;
+  final VoidCallback? onSend;
+  final String? viewLabel;
+  final VoidCallback? onView;
+  final String? redoLabel;
+  final VoidCallback? onRedo;
+  final String? moveLabel;
+  final VoidCallback? onMove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      key: Key('result_actions_$missionId'),
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        if (sendLabel != null)
+          _MissionActionButton(
+            label: sendLabel!,
+            icon: Icons.send_rounded,
+            onTap: onSend,
+            colors: const [AppPalette.sun, AppPalette.orange],
+          ),
+        if (viewLabel != null)
+          _MissionActionButton(
+            label: viewLabel!,
+            icon: Icons.visibility_rounded,
+            onTap: onView,
+            colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+          ),
+        if (redoLabel != null)
+          _MissionSecondaryActionButton(
+            key: Key('result_redo_$missionId'),
+            label: redoLabel!,
+            icon: Icons.replay_rounded,
+            onTap: onRedo,
+          ),
+        if (moveLabel != null)
+          _MissionSecondaryActionButton(
+            key: Key('result_move_$missionId'),
+            label: moveLabel!,
+            icon: Icons.drive_file_move_outline,
+            onTap: onMove,
+          ),
+      ],
+    );
+  }
+}
+
 class _MissionActionButton extends StatelessWidget {
   const _MissionActionButton({
     required this.label,
@@ -7915,6 +8265,41 @@ class _MissionActionButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MissionSecondaryActionButton extends StatelessWidget {
+  const _MissionSecondaryActionButton({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 38),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        foregroundColor: AppPalette.navy,
+        side: BorderSide(color: AppPalette.primaryBlue.withValues(alpha: 0.45)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      icon: Icon(icon, size: 16),
+      label: Text(
+        label,
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
