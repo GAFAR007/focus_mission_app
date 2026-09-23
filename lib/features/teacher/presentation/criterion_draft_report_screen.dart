@@ -1,7 +1,7 @@
 /**
  * WHAT:
  * CriterionDraftReportScreen renders one live student/subject/Task Focus report
- * with copyable evidence, editable teacher wording, compact scoring, and
+ * with an editable learning objective, copyable evidence, compact scoring, and
  * separate Student Copy and Teacher Copy PDF exports.
  * WHY:
  * Teachers need a criterion-specific working report while original submitted
@@ -50,6 +50,8 @@ class CriterionDraftReportScreen extends StatefulWidget {
 
 class _CriterionDraftReportScreenState
     extends State<CriterionDraftReportScreen> {
+  final TextEditingController _criterionWordingController =
+      TextEditingController();
   final TextEditingController _essayCommentController = TextEditingController();
   final TextEditingController _essayNextTimeController =
       TextEditingController();
@@ -67,6 +69,7 @@ class _CriterionDraftReportScreenState
 
   @override
   void dispose() {
+    _criterionWordingController.dispose();
     _essayCommentController.dispose();
     _essayNextTimeController.dispose();
     for (final controller in _theoryCommentControllers.values) {
@@ -86,6 +89,9 @@ class _CriterionDraftReportScreenState
 
   void _seedControllers(CriterionDraftReportData report) {
     if (!_controllersSeeded) {
+      _criterionWordingController.text = report.criterionWordingAvailable
+          ? report.criterionWording
+          : '';
       _essayCommentController.text = report.essay.teacherComment;
       _essayNextTimeController.text = report.essay.nextTime;
       _controllersSeeded = true;
@@ -112,6 +118,7 @@ class _CriterionDraftReportScreenState
         studentId: widget.student.id,
         subjectId: widget.subjectId,
         taskCode: widget.taskCode,
+        criterionWording: _criterionWordingController.text,
         essayTeacherComment: _essayCommentController.text,
         essayNextTime: _essayNextTimeController.text,
         theoryQuestionComments: report.theory.questions
@@ -131,9 +138,11 @@ class _CriterionDraftReportScreenState
       setState(() {
         _future = Future.value(updated);
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Report comments saved.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Learning objective and report comments saved.'),
+        ),
+      );
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -281,8 +290,39 @@ class _CriterionDraftReportScreenState
               ),
               const SizedBox(height: AppSpacing.item),
               _ReportSection(
-                title: 'Criterion wording',
-                child: SelectableText(report.criterionWording),
+                title: 'Learning objective',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      key: const Key('criterion_wording_field'),
+                      controller: _criterionWordingController,
+                      minLines: 3,
+                      maxLines: 8,
+                      maxLength: 5000,
+                      decoration: InputDecoration(
+                        labelText: 'Criterion wording / learning objective',
+                        hintText:
+                            'Add the qualification wording or learning objective.',
+                        helperText:
+                            'This wording appears on both exported report copies.',
+                        alignLabelWithHint: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                    if (!report.criterionWordingAvailable)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'No learning objective is saved yet.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                      ),
+                  ],
+                ),
               ),
               _ReportSection(
                 title: 'Results overview',
@@ -449,7 +489,7 @@ class _CriterionDraftReportScreenState
                 ),
               ),
               GradientButton(
-                label: _saving ? 'Saving comments...' : 'Save comments',
+                label: _saving ? 'Saving report...' : 'Save report updates',
                 colors: AppPalette.teacherGradient,
                 onPressed: _saving ? () {} : () => _saveDraft(report),
               ),

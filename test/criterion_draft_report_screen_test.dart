@@ -1,13 +1,14 @@
 /**
  * WHAT:
- * Tests the teacher report's copyable evidence, editable comment state,
+ * Tests the teacher report's editable learning objective, copyable evidence,
  * separate Student/Teacher exports, compact server-owned calculation rendering,
- * and persisted comment payload.
+ * and persisted report payload.
  * WHY:
  * Pending evidence must never appear as a fake final score, and report wording
  * must remain separate from immutable student evidence.
  * HOW:
- * Render a mocked report response, edit a comment, save it, and inspect the PUT.
+ * Render a mocked report response, edit report wording, save it, and inspect the
+ * PUT without mutating submitted evidence.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -214,6 +215,9 @@ void main() {
     );
     expect(find.byKey(const Key('evidence_history_move')), findsOneWidget);
     expect(find.byKey(const Key('evidence_history_redo')), findsOneWidget);
+    final criterionWording = find.byKey(const Key('criterion_wording_field'));
+    expect(criterionWording, findsOneWidget);
+    await tester.enterText(criterionWording, 'Updated P1 learning objective.');
     final comment = find.byKey(const Key('essay_report_comment'));
     await tester.ensureVisible(comment);
     await tester.enterText(comment, 'Edited comment');
@@ -239,7 +243,7 @@ void main() {
     );
     expect(find.text('P1 Overall Scoring Structure'), findsNothing);
 
-    final saveButton = find.text('Save comments');
+    final saveButton = find.text('Save report updates');
     await tester.scrollUntilVisible(
       saveButton,
       500,
@@ -248,8 +252,11 @@ void main() {
     await tester.tap(saveButton);
     await tester.pumpAndSettle();
 
+    expect(savedBody?['criterionWording'], 'Updated P1 learning objective.');
     expect(savedBody?['essayTeacherComment'], 'Edited comment');
     expect(savedBody?['theoryQuestionComments'], isA<List<dynamic>>());
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
 
     for (final key in const [
       Key('export_student_report_copy'),
@@ -260,6 +267,8 @@ void main() {
         300,
         scrollable: find.byType(Scrollable).first,
       );
+      await tester.ensureVisible(find.byKey(key));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(key));
       await tester.pumpAndSettle();
     }

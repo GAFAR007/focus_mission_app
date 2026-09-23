@@ -2445,6 +2445,7 @@ class FocusMissionApi {
     required String studentId,
     required String subjectId,
     required String taskCode,
+    required String criterionWording,
     required String essayTeacherComment,
     required String essayNextTime,
     required List<Map<String, dynamic>> theoryQuestionComments,
@@ -2454,6 +2455,7 @@ class FocusMissionApi {
       '/teacher/students/$studentId/subjects/$subjectId/task-focus/$taskCode/draft-report',
       token: token,
       body: {
+        'criterionWording': criterionWording,
         'essayTeacherComment': essayTeacherComment,
         'essayNextTime': essayNextTime,
         'theoryQuestionComments': theoryQuestionComments,
