@@ -28,6 +28,7 @@ import '../../../shared/widgets/profile_avatar_button.dart';
 import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../../../shared/widgets/stat_chip.dart';
+import '../../../shared/widgets/student_year_group_filter.dart';
 import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import '../../auth/presentation/role_selection_screen.dart';
@@ -77,6 +78,27 @@ String _teacherSubjectSummaryLabel(TeacherSummary teacher) {
   }..removeWhere((value) => value.isEmpty);
 
   return subjectNames.join(', ');
+}
+
+Future<String?> showManagementStudentPickerSheet({
+  required BuildContext context,
+  required List<StudentSummary> students,
+  required String selectedStudentId,
+}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    useSafeArea: true,
+    constraints: const BoxConstraints(maxWidth: 720),
+    builder: (context) => FractionallySizedBox(
+      heightFactor: 0.9,
+      child: ManagementStudentPickerSheet(
+        students: students,
+        selectedStudentId: selectedStudentId,
+      ),
+    ),
+  );
 }
 
 class ManagementOverviewScreen extends StatefulWidget {
@@ -3128,13 +3150,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   }
 
   Future<void> _openStudentPicker(MentorWorkspaceData workspace) async {
-    final selectedStudentId = await showModalBottomSheet<String>(
+    final selectedStudentId = await showManagementStudentPickerSheet(
       context: context,
-      showDragHandle: true,
-      builder: (context) => _StudentPickerSheet(
-        students: workspace.students,
-        selectedStudentId: workspace.selectedStudent.id,
-      ),
+      students: workspace.students,
+      selectedStudentId: workspace.selectedStudent.id,
     );
 
     if (!mounted ||
@@ -6150,8 +6169,9 @@ class _SelectedStudentCard extends StatelessWidget {
   }
 }
 
-class _StudentPickerSheet extends StatelessWidget {
-  const _StudentPickerSheet({
+class ManagementStudentPickerSheet extends StatefulWidget {
+  const ManagementStudentPickerSheet({
+    super.key,
     required this.students,
     required this.selectedStudentId,
   });
@@ -6160,79 +6180,278 @@ class _StudentPickerSheet extends StatelessWidget {
   final String selectedStudentId;
 
   @override
+  State<ManagementStudentPickerSheet> createState() =>
+      _ManagementStudentPickerSheetState();
+}
+
+class _ManagementStudentPickerSheetState
+    extends State<ManagementStudentPickerSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _selectedYearGroup = kAllStudentYearGroups;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<StudentSummary> get _filteredStudents {
+    final yearFiltered = filterStudentsByYearGroup(
+      widget.students,
+      _selectedYearGroup,
+    );
+    final normalizedQuery = _searchQuery.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) {
+      return yearFiltered;
+    }
+    return yearFiltered
+        .where(
+          (student) =>
+              student.name.trim().toLowerCase().contains(normalizedQuery),
+        )
+        .toList(growable: false);
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.screen,
-          AppSpacing.item,
-          AppSpacing.screen,
-          AppSpacing.section,
-        ),
+    final filteredStudents = _filteredStudents;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardInset),
+      child: SafeArea(
+        top: false,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Choose Student',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.compact),
-            Text(
-              'Select a student to refresh management metrics and alerts.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-            ),
-            const SizedBox(height: AppSpacing.item),
-            ...students.map(
-              (student) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: InkWell(
-                  onTap: () => Navigator.of(context).pop(student.id),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                  child: Ink(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.item,
-                      vertical: AppSpacing.compact,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.78),
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                      border: Border.all(
-                        color: student.id == selectedStudentId
-                            ? AppPalette.primaryBlue
-                            : Colors.white,
-                      ),
-                    ),
-                    child: Row(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screen,
+                0,
+                AppSpacing.compact,
+                AppSpacing.compact,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.person_rounded,
-                          color: AppPalette.textMuted,
+                        Text(
+                          'Choose Student',
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            [
-                              student.name,
-                              '${student.xp} XP',
-                              if (student.yearGroup.trim().isNotEmpty)
-                                student.yearGroup.trim(),
-                            ].join(' · '),
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Search or filter the active roster.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppPalette.textMuted),
                         ),
-                        if (student.id == selectedStudentId)
-                          const Icon(
-                            Icons.check_circle_rounded,
-                            color: AppPalette.primaryBlue,
-                          ),
                       ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close student picker',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.screen,
+              ),
+              child: TextField(
+                key: const Key('management_student_search'),
+                controller: _searchController,
+                textInputAction: TextInputAction.search,
+                onChanged: (value) {
+                  setState(() {
+                    // WHY: Management rosters can grow beyond one screen, so
+                    // filtering must update locally without another API load.
+                    _searchQuery = value;
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search student name',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _searchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          key: const Key('management_student_search_clear'),
+                          tooltip: 'Clear search',
+                          onPressed: _clearSearch,
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.88),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(
+                      color: AppPalette.sky.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(
+                      color: AppPalette.sky.withValues(alpha: 0.7),
                     ),
                   ),
                 ),
               ),
+            ),
+            const SizedBox(height: AppSpacing.compact),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.screen,
+              ),
+              child: StudentYearGroupFilter(
+                selectedYearGroup: _selectedYearGroup,
+                onChanged: (yearGroup) {
+                  setState(() {
+                    // WHY: Year filtering changes only the visible roster and
+                    // never changes the currently selected student by itself.
+                    _selectedYearGroup = yearGroup;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.screen,
+              ),
+              child: Text(
+                '${filteredStudents.length} of ${widget.students.length} students',
+                key: const Key('management_student_result_count'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppPalette.textMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Divider(
+              height: 1,
+              color: AppPalette.textMuted.withValues(alpha: 0.18),
+            ),
+            Expanded(
+              child: filteredStudents.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpacing.screen),
+                        child: Text(
+                          'No students match this filter.',
+                          key: const Key('management_student_empty'),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      key: const Key('management_student_list'),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.screen,
+                        AppSpacing.compact,
+                        AppSpacing.screen,
+                        AppSpacing.section,
+                      ),
+                      itemCount: filteredStudents.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final student = filteredStudents[index];
+                        final isSelected =
+                            student.id == widget.selectedStudentId;
+                        return Material(
+                          key: Key('management_student_row_${student.id}'),
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => Navigator.of(context).pop(student.id),
+                            borderRadius: BorderRadius.circular(16),
+                            child: Ink(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.item,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.78),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? AppPalette.primaryBlue
+                                      : AppPalette.sky.withValues(alpha: 0.42),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.person_rounded,
+                                    color: AppPalette.textMuted,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          student.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyLarge
+                                              ?.copyWith(
+                                                color: AppPalette.navy,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          [
+                                            '${student.xp} XP',
+                                            if (student.yearGroup
+                                                .trim()
+                                                .isNotEmpty)
+                                              student.yearGroup.trim(),
+                                          ].join(' · '),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: AppPalette.textMuted,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (isSelected)
+                                    const Icon(
+                                      Icons.check_circle_rounded,
+                                      color: AppPalette.primaryBlue,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
