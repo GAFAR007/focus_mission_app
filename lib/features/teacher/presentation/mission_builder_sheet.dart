@@ -26,6 +26,7 @@ import '../../../core/utils/youtube_video.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/learning_video_card.dart';
+import '../../../shared/widgets/question_evidence_panel.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'assessment_mode_screen.dart';
 
@@ -1417,15 +1418,24 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             _questionEditors.length,
             (index) => Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.item),
-              child: _draftFormat == 'THEORY'
-                  ? _TheoryQuestionEditorCard(
+              child: Column(
+                children: [
+                  if (_draftFormat == 'THEORY')
+                    _TheoryQuestionEditorCard(
                       index: index,
                       editor: _questionEditors[index],
                       canRemove:
                           _questionEditors.length > _theoryQuestionCountMin,
                       onRemove: () => _removeTheoryQuestion(index),
+                      onStudentUploadChanged: (value) {
+                        setState(
+                          () => _questionEditors[index].allowStudentUpload =
+                              value,
+                        );
+                      },
                     )
-                  : _QuestionEditorCard(
+                  else
+                    _QuestionEditorCard(
                       index: index,
                       editor: _questionEditors[index],
                       allowLearningVideo: !_isAssessmentMode,
@@ -1434,7 +1444,28 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                           () => _questionEditors[index].correctIndex = value,
                         );
                       },
+                      onStudentUploadChanged: (value) {
+                        setState(
+                          () => _questionEditors[index].allowStudentUpload =
+                              value,
+                        );
+                      },
                     ),
+                  if ((_draftMission?.id ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    QuestionEvidencePanel(
+                      api: widget.api,
+                      token: widget.session.token,
+                      missionId: _draftMission!.id,
+                      questionIndex: index,
+                      questionId: _questionEditors[index].id,
+                      asTeacher: true,
+                      allowUpload: true,
+                      title: 'Teacher evidence for question ${index + 1}',
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           if (_draftFormat == 'THEORY') ...[
@@ -3981,6 +4012,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               'explanation': editor.explanationController.text,
               'expectedAnswer': editor.expectedAnswerController.text,
               'minWordCount': editor.minWordCountController.text,
+              'allowStudentUpload': editor.allowStudentUpload,
             },
           )
           .toList(growable: false),
@@ -5082,7 +5114,8 @@ class _UnitPlanDraftCard extends StatelessWidget {
 
 class _EditableQuestionController {
   _EditableQuestionController.emptyTheory()
-    : answerMode = 'short_answer',
+    : id = '',
+      answerMode = 'short_answer',
       _hasOriginalSnapshot = false,
       _originalLearningText = '',
       _originalPrompt = '',
@@ -5101,10 +5134,12 @@ class _EditableQuestionController {
         (_) => TextEditingController(),
         growable: false,
       ),
-      correctIndex = 0;
+      correctIndex = 0,
+      allowStudentUpload = false;
 
   _EditableQuestionController.fromMissionQuestion(MissionQuestion question)
-    : answerMode = question.answerMode.trim().isEmpty
+    : id = question.id,
+      answerMode = question.answerMode.trim().isEmpty
           ? (question.isShortAnswerTheory ? 'short_answer' : 'multiple_choice')
           : question.answerMode.trim(),
       _hasOriginalSnapshot = true,
@@ -5143,8 +5178,10 @@ class _EditableQuestionController {
         ),
         growable: false,
       ),
-      correctIndex = question.correctIndex.clamp(0, 3);
+      correctIndex = question.correctIndex.clamp(0, 3),
+      allowStudentUpload = question.allowStudentUpload;
 
+  final String id;
   final String answerMode;
   final bool _hasOriginalSnapshot;
   final String _originalLearningText;
@@ -5161,6 +5198,7 @@ class _EditableQuestionController {
   final List<TextEditingController> optionControllers;
   String learningVideoPlacement;
   int correctIndex;
+  bool allowStudentUpload;
 
   bool get isTheoryShortAnswer => answerMode == 'short_answer';
   bool get hasLearnFirstChanged =>
@@ -5229,7 +5267,7 @@ class _EditableQuestionController {
   MissionQuestion toMissionQuestion() {
     final minWordCount = int.tryParse(minWordCountController.text.trim()) ?? 0;
     return MissionQuestion(
-      id: '',
+      id: id,
       answerMode: answerMode,
       learningText: learningTextController.text.trim(),
       learningVideoUrl:
@@ -5248,6 +5286,7 @@ class _EditableQuestionController {
       explanation: explanationController.text.trim(),
       expectedAnswer: expectedAnswerController.text.trim(),
       minWordCount: isTheoryShortAnswer ? minWordCount : 0,
+      allowStudentUpload: allowStudentUpload,
     );
   }
 
@@ -5270,12 +5309,14 @@ class _QuestionEditorCard extends StatelessWidget {
     required this.editor,
     required this.allowLearningVideo,
     required this.onCorrectIndexChanged,
+    required this.onStudentUploadChanged,
   });
 
   final int index;
   final _EditableQuestionController editor;
   final bool allowLearningVideo;
   final ValueChanged<int> onCorrectIndexChanged;
+  final ValueChanged<bool> onStudentUploadChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -5447,6 +5488,11 @@ class _QuestionEditorCard extends StatelessWidget {
               hintText: 'Explain why the correct answer is right.',
             ),
           ),
+          const SizedBox(height: AppSpacing.item),
+          _StudentUploadToggle(
+            value: editor.allowStudentUpload,
+            onChanged: onStudentUploadChanged,
+          ),
         ],
       ),
     );
@@ -5459,12 +5505,14 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
     required this.editor,
     required this.canRemove,
     required this.onRemove,
+    required this.onStudentUploadChanged,
   });
 
   final int index;
   final _EditableQuestionController editor;
   final bool canRemove;
   final VoidCallback onRemove;
+  final ValueChanged<bool> onStudentUploadChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -5626,6 +5674,11 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: AppSpacing.item),
+          _StudentUploadToggle(
+            value: editor.allowStudentUpload,
+            onChanged: onStudentUploadChanged,
+          ),
         ],
       ),
     );
@@ -5638,6 +5691,35 @@ String _normalizeDraftReviewValue(String value) {
       .toLowerCase()
       .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ');
+}
+
+class _StudentUploadToggle extends StatelessWidget {
+  const _StudentUploadToggle({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F8FF),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFD6E3F5)),
+      ),
+      child: SwitchListTile.adaptive(
+        key: const ValueKey('allow_student_upload_toggle'),
+        value: value,
+        onChanged: onChanged,
+        title: const Text('Student file upload'),
+        subtitle: const Text(
+          'Allow the student to upload a document as evidence for this question.',
+        ),
+        secondary: const Icon(Icons.attach_file_rounded),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      ),
+    );
+  }
 }
 
 class _EditorSectionLabel extends StatelessWidget {

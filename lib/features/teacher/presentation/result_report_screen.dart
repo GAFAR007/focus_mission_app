@@ -27,6 +27,8 @@ import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/gradient_button.dart';
+import '../../../shared/widgets/question_evidence_panel.dart';
+import '../../../shared/widgets/safe_link_text.dart';
 import '../../../shared/widgets/soft_panel.dart';
 
 int _asIntValue(dynamic value) {
@@ -65,6 +67,21 @@ double _asDoubleValue(dynamic value) {
     return value.toDouble();
   }
   return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+List<QuestionEvidenceFileData> _questionEvidenceFiles(
+  ResultPackageData resultPackage,
+  int questionIndex,
+) {
+  return (resultPackage.evidence['questionEvidenceFiles'] as List<dynamic>? ??
+          const [])
+      .map(
+        (item) => QuestionEvidenceFileData.fromJson(
+          (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+        ),
+      )
+      .where((item) => item.questionIndex == questionIndex)
+      .toList(growable: false);
 }
 
 String _formatOneDecimal(double value) {
@@ -1044,7 +1061,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                       color: const Color(0xFFF8FBFF),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(
+                    child: SafeLinkText(
                       studentAnswer.isEmpty
                           ? 'No written answer recorded.'
                           : studentAnswer,
@@ -1052,6 +1069,17 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                         context,
                       ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
                     ),
+                  ),
+                  const SizedBox(height: 10),
+                  QuestionEvidencePanel(
+                    api: widget.api,
+                    token: widget.session.token,
+                    missionId: resultPackage.missionId,
+                    questionIndex: index,
+                    asTeacher: true,
+                    allowUpload: !widget.readOnly,
+                    title: 'Uploaded evidence',
+                    initialFiles: _questionEvidenceFiles(resultPackage, index),
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -1642,6 +1670,14 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
           final absoluteScreenshotUrl = widget.api.resolveApiUrl(
             effectiveScreenshotUrl,
           );
+          final evidenceQuestionIndexes =
+              (resultPackage.evidence['questionEvidenceFiles']
+                          as List<dynamic>? ??
+                      const [])
+                  .map((item) => _asIntValue((item as Map)['questionIndex']))
+                  .toSet()
+                  .toList()
+                ..sort();
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(AppSpacing.screen),
@@ -1708,6 +1744,48 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                     ],
                   ),
                 ),
+                if (widget.readOnly)
+                  ...evidenceQuestionIndexes.map(
+                    (index) => Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.item),
+                      child: QuestionEvidencePanel(
+                        api: widget.api,
+                        token: widget.session.token,
+                        missionId: resultPackage.missionId,
+                        questionIndex: index,
+                        asTeacher: true,
+                        allowUpload: false,
+                        title: 'Question ${index + 1} uploaded evidence',
+                        initialFiles: _questionEvidenceFiles(
+                          resultPackage,
+                          index,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (!widget.readOnly &&
+                    resultPackage.missionType == 'QUESTIONS')
+                  ...List.generate(
+                    (resultPackage.evidence['questions'] as List<dynamic>? ??
+                            const [])
+                        .length,
+                    (index) => Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.item),
+                      child: QuestionEvidencePanel(
+                        api: widget.api,
+                        token: widget.session.token,
+                        missionId: resultPackage.missionId,
+                        questionIndex: index,
+                        asTeacher: true,
+                        allowUpload: true,
+                        title: 'Question ${index + 1} uploaded evidence',
+                        initialFiles: _questionEvidenceFiles(
+                          resultPackage,
+                          index,
+                        ),
+                      ),
+                    ),
+                  ),
                 if (!widget.readOnly) ...[
                   const SizedBox(height: AppSpacing.item),
                   _buildScreenshotPanel(
@@ -2739,7 +2817,7 @@ class _TheoryEvidence extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(
+                    child: SafeLinkText(
                       studentAnswer.trim().isEmpty
                           ? 'No written answer recorded.'
                           : studentAnswer,
@@ -3378,7 +3456,7 @@ class _TeacherTheoryEvidenceCard extends StatelessWidget {
               color: const Color(0xFFF8FBFF),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Text(
+            child: SafeLinkText(
               ((question['studentAnswer'] ?? '').toString()).trim().isEmpty
                   ? 'No written answer recorded.'
                   : (question['studentAnswer'] ?? '').toString(),
@@ -3775,7 +3853,7 @@ class _EssayEvidence extends StatelessWidget {
         const SizedBox(height: AppSpacing.compact),
         Text('Final Essay', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 4),
-        Text(finalEssayText),
+        SafeLinkText(finalEssayText),
         const SizedBox(height: 8),
         Text(
           'Word count: $finalWordCount · Blanks: $blankCompletionCount/$blankTargetCount',
@@ -3810,7 +3888,10 @@ class _MetaRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Text(value, style: Theme.of(context).textTheme.bodyMedium),
+            child: SafeLinkText(
+              value,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ),
         ],
       ),

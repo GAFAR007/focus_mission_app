@@ -957,6 +957,7 @@ class MissionQuestion {
     required this.explanation,
     required this.expectedAnswer,
     required this.minWordCount,
+    this.allowStudentUpload = false,
   });
 
   final String id;
@@ -970,6 +971,7 @@ class MissionQuestion {
   final String explanation;
   final String expectedAnswer;
   final int minWordCount;
+  final bool allowStudentUpload;
 
   bool get isShortAnswerTheory => answerMode == 'short_answer';
 
@@ -985,6 +987,7 @@ class MissionQuestion {
     String? explanation,
     String? expectedAnswer,
     int? minWordCount,
+    bool? allowStudentUpload,
   }) {
     return MissionQuestion(
       id: id ?? this.id,
@@ -999,6 +1002,7 @@ class MissionQuestion {
       explanation: explanation ?? this.explanation,
       expectedAnswer: expectedAnswer ?? this.expectedAnswer,
       minWordCount: minWordCount ?? this.minWordCount,
+      allowStudentUpload: allowStudentUpload ?? this.allowStudentUpload,
     );
   }
 
@@ -1028,6 +1032,7 @@ class MissionQuestion {
       expectedAnswer: (json['expectedAnswer'] ?? json['explanation'] ?? '')
           .toString(),
       minWordCount: _asInt(json['minWordCount']),
+      allowStudentUpload: json['allowStudentUpload'] == true,
     );
   }
 }
@@ -3589,6 +3594,73 @@ class EssayWorkDraftSelection {
   }
 }
 
+class QuestionEvidenceFileData {
+  const QuestionEvidenceFileData({
+    required this.id,
+    required this.originalFileName,
+    required this.mimeType,
+    required this.detectedType,
+    required this.fileSize,
+    required this.fileHash,
+    required this.parsedType,
+    required this.extractedContent,
+    required this.previewStatus,
+    required this.extractionError,
+    required this.uploadedByRole,
+    required this.uploadedAt,
+    required this.missionId,
+    required this.questionId,
+    required this.questionIndex,
+    required this.resultPackageId,
+    required this.status,
+    required this.isPreviousSubmittedEvidence,
+  });
+
+  final String id;
+  final String originalFileName;
+  final String mimeType;
+  final String detectedType;
+  final int fileSize;
+  final String fileHash;
+  final String parsedType;
+  final Map<String, dynamic> extractedContent;
+  final String previewStatus;
+  final String extractionError;
+  final String uploadedByRole;
+  final String? uploadedAt;
+  final String missionId;
+  final String questionId;
+  final int questionIndex;
+  final String resultPackageId;
+  final String status;
+  final bool isPreviousSubmittedEvidence;
+
+  bool get previewAvailable => previewStatus == 'available';
+
+  factory QuestionEvidenceFileData.fromJson(Map<String, dynamic> json) {
+    return QuestionEvidenceFileData(
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      originalFileName: (json['originalFileName'] ?? '').toString(),
+      mimeType: (json['mimeType'] ?? '').toString(),
+      detectedType: (json['detectedType'] ?? '').toString(),
+      fileSize: _asInt(json['fileSize']),
+      fileHash: (json['fileHash'] ?? '').toString(),
+      parsedType: (json['parsedType'] ?? 'unavailable').toString(),
+      extractedContent: _asMap(json['extractedContent']),
+      previewStatus: (json['previewStatus'] ?? 'unavailable').toString(),
+      extractionError: (json['extractionError'] ?? '').toString(),
+      uploadedByRole: (json['uploadedByRole'] ?? '').toString(),
+      uploadedAt: json['uploadedAt']?.toString(),
+      missionId: (json['missionId'] ?? '').toString(),
+      questionId: (json['questionId'] ?? '').toString(),
+      questionIndex: _asInt(json['questionIndex']),
+      resultPackageId: (json['resultPackageId'] ?? '').toString(),
+      status: (json['status'] ?? 'draft').toString(),
+      isPreviousSubmittedEvidence: json['isPreviousSubmittedEvidence'] == true,
+    );
+  }
+}
+
 class MissionWorkDraftData {
   const MissionWorkDraftData({
     required this.missionId,
@@ -3639,6 +3711,7 @@ class CriterionReportObjectiveEvidence {
     required this.total,
     required this.percent,
     required this.passed,
+    this.questionEvidenceFiles = const [],
   });
 
   final String label;
@@ -3648,6 +3721,7 @@ class CriterionReportObjectiveEvidence {
   final int? total;
   final double? percent;
   final bool passed;
+  final List<QuestionEvidenceFileData> questionEvidenceFiles;
 
   factory CriterionReportObjectiveEvidence.fromJson(Map<String, dynamic> json) {
     return CriterionReportObjectiveEvidence(
@@ -3658,6 +3732,10 @@ class CriterionReportObjectiveEvidence {
       total: _asNullableInt(json['total']),
       percent: json['percent'] == null ? null : _asDouble(json['percent']),
       passed: json['passed'] == true,
+      questionEvidenceFiles:
+          (json['questionEvidenceFiles'] as List<dynamic>? ?? const [])
+              .map((item) => QuestionEvidenceFileData.fromJson(_asMap(item)))
+              .toList(growable: false),
     );
   }
 }
@@ -3809,6 +3887,7 @@ class CriterionReportTheoryQuestion {
     required this.studentAnswer,
     required this.originalTeacherScore,
     required this.teacherComment,
+    this.evidenceFiles = const [],
   });
 
   final int questionIndex;
@@ -3816,6 +3895,7 @@ class CriterionReportTheoryQuestion {
   final String studentAnswer;
   final double? originalTeacherScore;
   final String teacherComment;
+  final List<QuestionEvidenceFileData> evidenceFiles;
 
   factory CriterionReportTheoryQuestion.fromJson(Map<String, dynamic> json) {
     return CriterionReportTheoryQuestion(
@@ -3826,6 +3906,13 @@ class CriterionReportTheoryQuestion {
           ? null
           : _asDouble(json['originalTeacherScore']),
       teacherComment: (json['teacherComment'] ?? '').toString(),
+      evidenceFiles: (json['evidenceFiles'] as List<dynamic>? ?? const [])
+          .map(
+            (item) => QuestionEvidenceFileData.fromJson(
+              (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+            ),
+          )
+          .toList(growable: false),
     );
   }
 }

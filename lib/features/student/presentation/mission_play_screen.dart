@@ -27,6 +27,7 @@ import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/learning_video_card.dart';
+import '../../../shared/widgets/question_evidence_panel.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'celebration_sound_stub.dart'
     if (dart.library.html) 'celebration_sound_web.dart'
@@ -823,6 +824,19 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                         question.prompt,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
+                      if (question.allowStudentUpload) ...[
+                        const SizedBox(height: AppSpacing.item),
+                        QuestionEvidencePanel(
+                          api: _api,
+                          token: widget.session.token,
+                          missionId: _mission.id,
+                          questionIndex: _currentIndex,
+                          questionId: question.id,
+                          asTeacher: false,
+                          allowUpload: !_isSubmitting,
+                          title: 'Upload supporting file',
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.section),
                       ...List.generate(
                         question.options.length,
@@ -1243,6 +1257,19 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                                     ? AppPalette.orange
                                     : AppPalette.textMuted,
                               ),
+                        ),
+                      ],
+                      if (question.allowStudentUpload) ...[
+                        const SizedBox(height: AppSpacing.item),
+                        QuestionEvidencePanel(
+                          api: _api,
+                          token: widget.session.token,
+                          missionId: _mission.id,
+                          questionIndex: _currentIndex,
+                          questionId: question.id,
+                          asTeacher: false,
+                          allowUpload: !_isSubmitting,
+                          title: 'Upload supporting file',
                         ),
                       ],
                       const SizedBox(height: AppSpacing.item),

@@ -3625,7 +3625,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         );
       }
       buffer.writeln(
-        '<p><strong>Student answer:</strong> ${_escapeTeacherResultHtml(studentAnswer.isEmpty ? 'No written answer recorded.' : studentAnswer)}</p>',
+        '<p><strong>Student answer:</strong> ${_teacherResultHtmlWithSafeLinks(studentAnswer.isEmpty ? 'No written answer recorded.' : studentAnswer)}</p>',
       );
       if (teacherScore.isNotEmpty) {
         buffer.writeln(
@@ -3690,7 +3690,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       buffer
         ..writeln('<div class="question-card essay">')
         ..writeln('<h6>Final essay</h6>')
-        ..writeln('<p>${_escapeTeacherResultHtml(finalEssayText)}</p>')
+        ..writeln('<p>${_teacherResultHtmlWithSafeLinks(finalEssayText)}</p>')
         ..writeln('</div>');
     }
     buffer.writeln('</section>');
@@ -3817,6 +3817,40 @@ body { margin: 0; font-family: Arial, sans-serif; background: #eef6ff; color: #1
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#39;');
+  }
+
+  String _teacherResultHtmlWithSafeLinks(String value) {
+    final pattern = RegExp(
+      r'''(?:https?://|www\.)[^\s<>{}\[\]"']+''',
+      caseSensitive: false,
+    );
+    final output = StringBuffer();
+    var cursor = 0;
+    for (final match in pattern.allMatches(value)) {
+      output.write(
+        _escapeTeacherResultHtml(value.substring(cursor, match.start)),
+      );
+      final raw = match.group(0) ?? '';
+      final visible = raw.replaceFirst(RegExp(r'[),.;!?]+$'), '');
+      final trailing = raw.substring(visible.length);
+      final target = visible.toLowerCase().startsWith('www.')
+          ? 'https://$visible'
+          : visible;
+      final uri = Uri.tryParse(target);
+      if (uri != null && const {'http', 'https'}.contains(uri.scheme)) {
+        output
+          ..write('<a href="${_escapeTeacherResultHtml(uri.toString())}" ')
+          ..write('target="_blank" rel="noopener noreferrer">')
+          ..write(_escapeTeacherResultHtml(visible))
+          ..write('</a>')
+          ..write(_escapeTeacherResultHtml(trailing));
+      } else {
+        output.write(_escapeTeacherResultHtml(raw));
+      }
+      cursor = match.end;
+    }
+    output.write(_escapeTeacherResultHtml(value.substring(cursor)));
+    return output.toString();
   }
 
   String _studentResultDateKeyForResult(ResultHistoryItem result) {

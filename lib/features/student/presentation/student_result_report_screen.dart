@@ -18,6 +18,8 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
+import '../../../shared/widgets/question_evidence_panel.dart';
+import '../../../shared/widgets/safe_link_text.dart';
 import '../../../shared/widgets/soft_panel.dart';
 
 int _studentReportAsInt(dynamic value) {
@@ -191,6 +193,22 @@ class _StudentResultReportScreenState extends State<StudentResultReportScreen> {
               ? paperReviewStatus
               : 'submitted';
           final status = _studentResultStatus(reviewStatus);
+          final snapshotEvidenceFiles =
+              (resultPackage.evidence['questionEvidenceFiles']
+                          as List<dynamic>? ??
+                      const [])
+                  .map(
+                    (item) => QuestionEvidenceFileData.fromJson(
+                      (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+                    ),
+                  )
+                  .toList(growable: false);
+          final evidenceQuestionIndexes =
+              snapshotEvidenceFiles
+                  .map((item) => item.questionIndex)
+                  .toSet()
+                  .toList()
+                ..sort();
 
           // WHY: Student result view must stay read-only, so this screen only
           // renders evidence and summary state from the student-owned endpoint.
@@ -252,6 +270,21 @@ class _StudentResultReportScreenState extends State<StudentResultReportScreen> {
                 ],
                 const SizedBox(height: AppSpacing.section),
                 _StudentResultEvidencePanel(resultPackage: resultPackage),
+                for (final questionIndex in evidenceQuestionIndexes) ...[
+                  const SizedBox(height: AppSpacing.item),
+                  QuestionEvidencePanel(
+                    api: _api,
+                    token: widget.session.token,
+                    missionId: resultPackage.missionId,
+                    questionIndex: questionIndex,
+                    asTeacher: false,
+                    allowUpload: false,
+                    title: 'Question ${questionIndex + 1} uploaded evidence',
+                    initialFiles: snapshotEvidenceFiles
+                        .where((item) => item.questionIndex == questionIndex)
+                        .toList(growable: false),
+                  ),
+                ],
               ],
             ),
           );
@@ -733,7 +766,9 @@ class _StudentFillGapEvidenceCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(studentAnswer.isEmpty ? 'No answer recorded.' : studentAnswer),
+          SafeLinkText(
+            studentAnswer.isEmpty ? 'No answer recorded.' : studentAnswer,
+          ),
           const SizedBox(height: 10),
           Text(
             'Expected answer',
@@ -822,7 +857,7 @@ class _StudentTheoryQuestionEvidenceCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
+          SafeLinkText(
             ((question['studentAnswer'] ?? '').toString()).trim().isEmpty
                 ? 'No written answer recorded.'
                 : (question['studentAnswer'] ?? '').toString(),
@@ -1150,7 +1185,7 @@ class _EvidenceLabel extends StatelessWidget {
             color: Colors.white.withValues(alpha: 0.72),
             borderRadius: BorderRadius.circular(18),
           ),
-          child: Text(value.isEmpty ? '-' : value),
+          child: SafeLinkText(value.isEmpty ? '-' : value),
         ),
       ],
     );

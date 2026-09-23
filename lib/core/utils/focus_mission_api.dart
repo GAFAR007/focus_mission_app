@@ -64,6 +64,7 @@ Map<String, dynamic> _missionPayloadToJson(MissionPayload mission) {
     'questions': mission.questions
         .map(
           (question) => <String, dynamic>{
+            'id': question.id,
             'learningText': question.learningText,
             'learningVideoUrl': question.learningVideoUrl,
             'learningVideoPlacement': question.learningVideoPlacement,
@@ -73,6 +74,7 @@ Map<String, dynamic> _missionPayloadToJson(MissionPayload mission) {
             'explanation': question.explanation,
             'expectedAnswer': question.expectedAnswer,
             'minWordCount': question.minWordCount,
+            'allowStudentUpload': question.allowStudentUpload,
           },
         )
         .toList(growable: false),
@@ -1351,6 +1353,97 @@ class FocusMissionApi {
     );
   }
 
+  Future<List<QuestionEvidenceFileData>> fetchQuestionEvidence({
+    required String token,
+    required String missionId,
+    required bool asTeacher,
+  }) async {
+    final prefix = asTeacher ? '/teacher' : '/student';
+    final json = await _requestJson(
+      'GET',
+      '$prefix/missions/$missionId/question-evidence',
+      token: token,
+    );
+    return (json['evidenceFiles'] as List<dynamic>? ?? const [])
+        .map(
+          (item) => QuestionEvidenceFileData.fromJson(
+            (item as Map<dynamic, dynamic>).cast<String, dynamic>(),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<QuestionEvidenceFileData> uploadQuestionEvidence({
+    required String token,
+    required String missionId,
+    required int questionIndex,
+    required List<int> fileBytes,
+    required String fileName,
+    required bool asTeacher,
+  }) async {
+    final prefix = asTeacher ? '/teacher' : '/student';
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse(
+        '${ApiConfig.baseUrl}$prefix/missions/$missionId/questions/$questionIndex/evidence-file',
+      ),
+    );
+    request.headers['Authorization'] = 'Bearer $token';
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'evidenceFile',
+        fileBytes,
+        filename: fileName,
+      ),
+    );
+    // WHY: Use the injected client so authenticated multipart behavior stays
+    // testable and follows the same transport lifecycle as JSON requests.
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode >= 400) {
+      throw FocusMissionApiException(
+        (json['message'] ?? 'Evidence upload failed.').toString(),
+      );
+    }
+    return QuestionEvidenceFileData.fromJson(
+      (json['evidenceFile'] as Map<dynamic, dynamic>? ?? const {})
+          .cast<String, dynamic>(),
+    );
+  }
+
+  Future<void> removeQuestionEvidence({
+    required String token,
+    required String missionId,
+    required int questionIndex,
+    required bool asTeacher,
+  }) async {
+    final prefix = asTeacher ? '/teacher' : '/student';
+    await _requestJson(
+      'DELETE',
+      '$prefix/missions/$missionId/questions/$questionIndex/evidence-file',
+      token: token,
+    );
+  }
+
+  Future<List<int>> downloadQuestionEvidence({
+    required String token,
+    required String evidenceId,
+    required bool asTeacher,
+  }) async {
+    final prefix = asTeacher ? '/teacher' : '/student';
+    final response = await _client.get(
+      Uri.parse(
+        '${ApiConfig.baseUrl}$prefix/question-evidence/$evidenceId/download',
+      ),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode >= 400) {
+      throw FocusMissionApiException('Evidence download failed.');
+    }
+    return response.bodyBytes;
+  }
+
   Future<AppUser?> createSessionLog({
     required String token,
     required String studentId,
@@ -2276,6 +2369,7 @@ class FocusMissionApi {
         'questions': questions
             .map(
               (question) => {
+                'id': question.id,
                 'answerMode': question.answerMode,
                 'prompt': question.prompt,
                 'learningText': question.learningText,
@@ -2286,6 +2380,7 @@ class FocusMissionApi {
                 'explanation': question.explanation,
                 'expectedAnswer': question.expectedAnswer,
                 'minWordCount': question.minWordCount,
+                'allowStudentUpload': question.allowStudentUpload,
               },
             )
             .toList(growable: false),

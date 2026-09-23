@@ -81,6 +81,23 @@ Map<String, dynamic> reportJson({String essayComment = 'Original feedback'}) {
           'studentAnswer': 'Exact theory answer.',
           'originalTeacherScore': 71,
           'teacherComment': 'Clear answer.',
+          'evidenceFiles': [
+            {
+              'id': 'evidence-1',
+              'originalFileName': 'theory-evidence.docx',
+              'detectedType': 'docx',
+              'fileSize': 2048,
+              'parsedType': 'blocks',
+              'previewStatus': 'available',
+              'extractedContent': {
+                'blocks': [
+                  {'type': 'paragraph', 'text': 'Structured draft evidence.'},
+                ],
+              },
+              'questionIndex': 0,
+              'status': 'submitted',
+            },
+          ],
         },
       ],
     },
@@ -213,6 +230,7 @@ void main() {
       find.widgetWithText(SelectableText, 'Exact theory answer.'),
       findsOneWidget,
     );
+    expect(find.text('theory-evidence.docx'), findsOneWidget);
     expect(find.byKey(const Key('evidence_history_move')), findsOneWidget);
     expect(find.byKey(const Key('evidence_history_redo')), findsOneWidget);
     final criterionWording = find.byKey(const Key('criterion_wording_field'));

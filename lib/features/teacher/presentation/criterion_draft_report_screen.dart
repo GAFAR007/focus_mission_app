@@ -13,6 +13,7 @@
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,6 +23,8 @@ import '../../../core/utils/download_binary_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/gradient_button.dart';
+import '../../../shared/widgets/question_evidence_panel.dart';
+import '../../../shared/widgets/safe_link_text.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'result_report_screen.dart';
 
@@ -204,6 +207,26 @@ class _CriterionDraftReportScreenState
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('$label copied.')));
+    }
+  }
+
+  Future<void> _downloadEvidence(QuestionEvidenceFileData file) async {
+    try {
+      final bytes = await widget.api.downloadQuestionEvidence(
+        token: widget.session.token,
+        evidenceId: file.id,
+        asTeacher: true,
+      );
+      await FilePicker.platform.saveFile(
+        dialogTitle: 'Save original evidence',
+        fileName: file.originalFileName,
+        bytes: Uint8List.fromList(bytes),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -428,6 +451,88 @@ class _CriterionDraftReportScreenState
                                   'Theory answer',
                                 ),
                               ),
+                              ...question.evidenceFiles.map(
+                                (file) => Padding(
+                                  padding: const EdgeInsets.only(
+                                    bottom: AppSpacing.item,
+                                  ),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                        color: const Color(0xFFD7E2F0),
+                                      ),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.description_outlined,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  file.originalFileName,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                              IconButton(
+                                                tooltip: 'Download original',
+                                                onPressed: () =>
+                                                    _downloadEvidence(file),
+                                                icon: const Icon(
+                                                  Icons.download_rounded,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          Text(
+                                            '${file.detectedType.toUpperCase()} · ${file.previewAvailable ? 'Preview available' : 'Preview unavailable'}',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall,
+                                          ),
+                                          if (file.previewAvailable)
+                                            ExpansionTile(
+                                              tilePadding: EdgeInsets.zero,
+                                              title: const Text(
+                                                'Open extracted evidence',
+                                              ),
+                                              children: [
+                                                StructuredEvidencePreview(
+                                                  file: file,
+                                                ),
+                                              ],
+                                            )
+                                          else
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 6,
+                                              ),
+                                              child: Text(
+                                                file.extractionError,
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                               Text(
                                 'Original teacher score: ${question.originalTeacherScore == null ? 'Pending' : '${_number(question.originalTeacherScore!)}/100'}',
                               ),
@@ -608,6 +713,12 @@ class _ObjectiveResultRow extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(result),
+          ...evidence.questionEvidenceFiles.map(
+            (file) => Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: StructuredEvidencePreview(file: file),
+            ),
+          ),
         ],
       ),
     );
@@ -629,7 +740,7 @@ class _LabelledSelectableText extends StatelessWidget {
         children: [
           Text(label, style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: 4),
-          SelectableText(text.trim().isEmpty ? 'Pending' : text),
+          SafeLinkText(text.trim().isEmpty ? 'Pending' : text),
         ],
       ),
     );
@@ -669,7 +780,7 @@ class _CopyableEvidence extends StatelessWidget {
               ),
             ],
           ),
-          SelectableText(text.trim().isEmpty ? 'Pending' : text),
+          SafeLinkText(text.trim().isEmpty ? 'Pending' : text),
         ],
       ),
     );

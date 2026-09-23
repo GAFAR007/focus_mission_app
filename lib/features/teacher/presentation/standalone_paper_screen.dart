@@ -22,6 +22,7 @@ import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/gradient_button.dart';
+import '../../../shared/widgets/safe_link_text.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../models/standalone_paper_models.dart';
 
@@ -409,7 +410,9 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
       return null;
     }
 
-    final existingItems = _itemEditors.map((editor) => editor.toItem()).toList();
+    final existingItems = _itemEditors
+        .map((editor) => editor.toItem())
+        .toList();
     final hasMeaningfulExistingItems = _hasMeaningfulDraftItems();
     final mergedItems = hasMeaningfulExistingItems
         ? <StandalonePaperItem>[...existingItems, ...importedItems]
@@ -432,7 +435,8 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
 
     if (!hasMeaningfulExistingItems &&
         (_titleController.text.trim().isEmpty ||
-            _titleController.text.trim() == '${widget.subject.name} $_paperLabel')) {
+            _titleController.text.trim() ==
+                '${widget.subject.name} $_paperLabel')) {
       _titleController.text = importedPaper.title.trim().isEmpty
           ? '${widget.subject.name} $_paperLabel'
           : importedPaper.title;
@@ -459,9 +463,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     }
     _itemEditors
       ..clear()
-      ..addAll(
-        mergedItems.map(_StandalonePaperItemController.fromItem),
-      );
+      ..addAll(mergedItems.map(_StandalonePaperItemController.fromItem));
     _syncTheoryReviewControllers();
 
     _errorMessage = null;
@@ -545,7 +547,12 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
       return current;
     }
 
-    final parts = <String>{...current.split(' | ').map((value) => value.trim()).where((value) => value.isNotEmpty)};
+    final parts = <String>{
+      ...current
+          .split(' | ')
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty),
+    };
     parts.add(next);
     return parts.join(' | ');
   }
@@ -1523,7 +1530,8 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                 isPublishing: _isPublishing,
                 hasSavedDraft: _hasSavedDraft,
                 isPublished: isPublished,
-                onPopulateObjective: () => _pickAndPopulateDraftForKind('OBJECTIVE'),
+                onPopulateObjective: () =>
+                    _pickAndPopulateDraftForKind('OBJECTIVE'),
                 onPopulateTheory: () => _pickAndPopulateDraftForKind('THEORY'),
                 onPopulateEssay: () => _pickAndPopulateDraftForKind('ESSAY'),
                 onSave: _saveDraft,
@@ -2588,7 +2596,7 @@ class _StandaloneSessionPanel extends StatelessWidget {
                           color: const Color(0xFFF8FBFF),
                           borderRadius: BorderRadius.circular(14),
                         ),
-                        child: Text(
+                        child: SafeLinkText(
                           response.textAnswer.trim().isEmpty
                               ? 'No written answer recorded.'
                               : response.textAnswer,

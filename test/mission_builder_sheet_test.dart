@@ -34,6 +34,13 @@ void main() {
     expect(find.text('Review Draft'), findsOneWidget);
     expect(find.text('Draft only'), findsOneWidget);
     expect(find.text('Task Focus: P1'), findsOneWidget);
+    expect(find.text('Student file upload'), findsOneWidget);
+    final uploadToggle = tester.widget<SwitchListTile>(
+      find.byKey(const ValueKey('allow_student_upload_toggle')),
+    );
+    expect(uploadToggle.value, isFalse);
+    expect(find.text('Teacher evidence for question 1'), findsOneWidget);
+    expect(find.text('Upload evidence'), findsOneWidget);
 
     await tester.enterText(find.byType(TextFormField).first, 'Changed title');
     await tester.tap(find.text('Back'));
