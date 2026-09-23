@@ -45,9 +45,19 @@ class StudentDashboardScreen extends StatefulWidget {
   State<StudentDashboardScreen> createState() => _StudentDashboardScreenState();
 }
 
-enum _MissionStartChoice { daily, assessment }
-
 enum _DailyWelcomeAction { helper, missions, close }
+
+enum _StudentMissionType {
+  objective('Objective'),
+  theory('Theory'),
+  essay('Essay'),
+  assessmentA('Assessment A'),
+  assessmentB('Assessment B');
+
+  const _StudentMissionType(this.label);
+
+  final String label;
+}
 
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   final FocusMissionApi _api = FocusMissionApi();
@@ -480,68 +490,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     required String sessionType,
     required String subjectName,
   }) async {
-    final choice = await showDialog<_MissionStartChoice>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Start Mission'),
-          content: const Text(
-            'Choose which mission type you want to start now.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(_MissionStartChoice.assessment),
-              child: const Text('Assessment Mission'),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.of(context).pop(_MissionStartChoice.daily),
-              child: const Text('Daily Mission'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (choice == null || !mounted) {
-      return;
-    }
-
-    if (choice == _MissionStartChoice.assessment) {
-      final mission = await _pickAssessmentMission(
-        studentId: studentId,
-        subjectId: subjectId,
-        sessionType: sessionType,
-      );
-      if (!mounted) {
-        return;
-      }
-      if (mission == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No assessment missions are assigned for this subject yet.',
-            ),
-          ),
-        );
-        return;
-      }
-      await _startDailyMission(
-        studentId: studentId,
-        subjectId: subjectId,
-        sessionType: sessionType,
-        subjectName: subjectName,
-        missionId: mission.id,
-      );
-      return;
-    }
-
-    final dailyMission = await _pickDailyMission(
+    final assignedMissions = await _api.fetchStudentAssignedMissions(
+      token: _session.token,
       studentId: studentId,
       subjectId: subjectId,
       sessionType: sessionType,
@@ -549,12 +499,30 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     if (!mounted) {
       return;
     }
-    if (dailyMission == null) {
+    if (assignedMissions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No daily missions are assigned for this subject yet.'),
+          content: Text('No missions are assigned for this subject yet.'),
         ),
       );
+      return;
+    }
+
+    final mission = await showModalBottomSheet<MissionPayload>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      constraints: const BoxConstraints(maxWidth: 720),
+      builder: (context) {
+        return FractionallySizedBox(
+          heightFactor: 0.9,
+          child: StudentMissionPickerSheet(missions: assignedMissions),
+        );
+      },
+    );
+
+    if (mission == null || !mounted) {
       return;
     }
     await _startDailyMission(
@@ -562,257 +530,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       subjectId: subjectId,
       sessionType: sessionType,
       subjectName: subjectName,
-      missionId: dailyMission.id,
+      missionId: mission.id,
     );
-  }
-
-  Future<MissionPayload?> _pickAssessmentMission({
-    required String studentId,
-    required String subjectId,
-    required String sessionType,
-  }) async {
-    final assignedMissions = await _api.fetchStudentAssignedMissions(
-      token: _session.token,
-      studentId: studentId,
-      subjectId: subjectId,
-      sessionType: sessionType,
-    );
-    final assessmentMissions = assignedMissions
-        .where((mission) => mission.questionCount >= 10)
-        .toList(growable: false);
-
-    if (assessmentMissions.isEmpty) {
-      return null;
-    }
-    if (!mounted) {
-      return null;
-    }
-
-    return showModalBottomSheet<MissionPayload>(
-      context: context,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(AppSpacing.screen),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Choose Assessment Mission',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: AppSpacing.compact),
-              Text(
-                'Select any assigned assessment mission to start now.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-              ),
-              const SizedBox(height: AppSpacing.item),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: assessmentMissions.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: AppSpacing.compact),
-                  itemBuilder: (context, index) {
-                    final mission = assessmentMissions[index];
-                    return SoftPanel(
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(
-                          AppSpacing.radiusLg,
-                        ),
-                        onTap: () => Navigator.of(context).pop(mission),
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.item),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 42,
-                                height: 42,
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: AppPalette.teacherGradient,
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: const Icon(
-                                  Icons.menu_book_rounded,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.item),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      mission.title,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleMedium,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${mission.subject?.name ?? 'Subject'} · ${mission.sessionType}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            color: AppPalette.textMuted,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Icon(Icons.chevron_right_rounded),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<MissionPayload?> _pickDailyMission({
-    required String studentId,
-    required String subjectId,
-    required String sessionType,
-  }) async {
-    final assignedMissions = await _api.fetchStudentAssignedMissions(
-      token: _session.token,
-      studentId: studentId,
-      subjectId: subjectId,
-      sessionType: sessionType,
-    );
-    final dailyMissions = assignedMissions
-        // WHY: Daily launchers must include the newer THEORY and ESSAY mission
-        // formats as well as legacy 5/8-question missions. Restricting this to
-        // 5-8 questions hides valid teacher-assigned daily work like 2-question
-        // theory missions from the student.
-        .where((mission) => !_isAssessmentMission(mission))
-        .toList(growable: false);
-
-    if (dailyMissions.isEmpty) {
-      return null;
-    }
-    if (!mounted) {
-      return null;
-    }
-
-    return showModalBottomSheet<MissionPayload>(
-      context: context,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(AppSpacing.screen),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Choose Daily Mission',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: AppSpacing.compact),
-              Text(
-                'Select any assigned daily mission for this lesson.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-              ),
-              const SizedBox(height: AppSpacing.item),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: dailyMissions.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: AppSpacing.compact),
-                  itemBuilder: (context, index) {
-                    final mission = dailyMissions[index];
-                    return SoftPanel(
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(
-                          AppSpacing.radiusLg,
-                        ),
-                        onTap: () => Navigator.of(context).pop(mission),
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppSpacing.item),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 42,
-                                height: 42,
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: AppPalette.studentGradient,
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: const Icon(
-                                  Icons.bolt_rounded,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.item),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      mission.title,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleMedium,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${mission.subject?.name ?? 'Subject'} · ${_dailyMissionLabel(mission)} · ${mission.sessionType}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            color: AppPalette.textMuted,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Icon(Icons.chevron_right_rounded),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  bool _isAssessmentMission(MissionPayload mission) {
-    return mission.questionCount >= 10;
-  }
-
-  String _dailyMissionLabel(MissionPayload mission) {
-    switch (mission.draftFormat.trim().toUpperCase()) {
-      case 'THEORY':
-        return '${mission.questionCount} theory ${mission.questionCount == 1 ? 'question' : 'questions'}';
-      case 'ESSAY_BUILDER':
-        return 'essay builder';
-      default:
-        return '${mission.questionCount} questions';
-    }
   }
 
   Future<void> _startDailyMission({
@@ -1679,6 +1398,420 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     }
     return trimmed.split(RegExp(r'\s+')).first;
   }
+}
+
+/**
+ * WHAT:
+ * StudentMissionPickerSheet presents assigned missions as a compact, filtered
+ * list grouped by the learner's task focus and mission format.
+ * WHY:
+ * Students need to distinguish P/M/D task focuses and Objective, Theory,
+ * Essay, and Assessment work without scanning large repetitive cards.
+ * HOW:
+ * Derive only the filters present in the supplied missions, keep those controls
+ * above a separately scrolling list, and return the selected mission.
+ */
+class StudentMissionPickerSheet extends StatefulWidget {
+  const StudentMissionPickerSheet({super.key, required this.missions});
+
+  final List<MissionPayload> missions;
+
+  @override
+  State<StudentMissionPickerSheet> createState() =>
+      _StudentMissionPickerSheetState();
+}
+
+class _StudentMissionPickerSheetState extends State<StudentMissionPickerSheet> {
+  String? _taskCode;
+  _StudentMissionType? _missionType;
+
+  List<String> get _taskCodes {
+    final codes = widget.missions
+        .expand((mission) => mission.taskCodes)
+        .map((code) => code.trim().toUpperCase())
+        .where((code) => code.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    codes.sort(_compareTaskCodes);
+    return codes;
+  }
+
+  List<_StudentMissionType> get _missionTypes {
+    final presentTypes = widget.missions.map(_studentMissionType).toSet();
+    return _StudentMissionType.values
+        .where(presentTypes.contains)
+        .toList(growable: false);
+  }
+
+  List<MissionPayload> get _visibleMissions {
+    final missions = widget.missions
+        .where((mission) {
+          final normalizedCodes = mission.taskCodes
+              .map((code) => code.trim().toUpperCase())
+              .toSet();
+          final matchesTask =
+              _taskCode == null || normalizedCodes.contains(_taskCode);
+          final matchesType =
+              _missionType == null ||
+              _studentMissionType(mission) == _missionType;
+          return matchesTask && matchesType;
+        })
+        .toList(growable: false);
+
+    // WHY: A stable task-focus order makes P1, P2, P3, M1, and D1 work easy
+    // to scan even before the learner applies a filter.
+    missions.sort((left, right) {
+      final taskComparison = _compareTaskCodes(
+        _primaryTaskCode(left),
+        _primaryTaskCode(right),
+      );
+      if (taskComparison != 0) {
+        return taskComparison;
+      }
+      final typeComparison = _studentMissionType(
+        left,
+      ).index.compareTo(_studentMissionType(right).index);
+      if (typeComparison != 0) {
+        return typeComparison;
+      }
+      return left.title.toLowerCase().compareTo(right.title.toLowerCase());
+    });
+    return missions;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final taskCodes = _taskCodes;
+    final missionTypes = _missionTypes;
+    final visibleMissions = _visibleMissions;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screen,
+        0,
+        AppSpacing.screen,
+        AppSpacing.compact,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Choose Mission',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Filter by task focus or mission type.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Close mission chooser',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          if (taskCodes.isNotEmpty) ...[
+            _MissionFilterLabel(label: 'Task focus'),
+            const SizedBox(height: 6),
+            Wrap(
+              key: const Key('student-mission-task-filters'),
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _MissionFilterChip(
+                  label: 'All',
+                  selected: _taskCode == null,
+                  onSelected: () => setState(() => _taskCode = null),
+                ),
+                ...taskCodes.map(
+                  (code) => _MissionFilterChip(
+                    label: code,
+                    selected: _taskCode == code,
+                    onSelected: () => setState(() => _taskCode = code),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.compact),
+          ],
+          _MissionFilterLabel(label: 'Mission type'),
+          const SizedBox(height: 6),
+          Wrap(
+            key: const Key('student-mission-type-filters'),
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _MissionFilterChip(
+                label: 'All',
+                selected: _missionType == null,
+                onSelected: () => setState(() => _missionType = null),
+              ),
+              ...missionTypes.map(
+                (type) => _MissionFilterChip(
+                  label: type.label,
+                  selected: _missionType == type,
+                  onSelected: () => setState(() => _missionType = type),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.compact),
+          Text(
+            '${visibleMissions.length} ${visibleMissions.length == 1 ? 'mission' : 'missions'}',
+            key: const Key('student-mission-result-count'),
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: visibleMissions.isEmpty
+                ? Center(
+                    child: Text(
+                      'No missions match both filters.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    key: const Key('student-mission-list'),
+                    padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+                    itemCount: visibleMissions.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final mission = visibleMissions[index];
+                      return _SlimMissionRow(
+                        key: ValueKey('student-mission-${mission.id}'),
+                        mission: mission,
+                        onTap: () => Navigator.of(context).pop(mission),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MissionFilterLabel extends StatelessWidget {
+  const _MissionFilterLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(
+        context,
+      ).textTheme.labelLarge?.copyWith(color: AppPalette.navy),
+    );
+  }
+}
+
+class _MissionFilterChip extends StatelessWidget {
+  const _MissionFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
+      onSelected: (_) => onSelected(),
+    );
+  }
+}
+
+class _SlimMissionRow extends StatelessWidget {
+  const _SlimMissionRow({
+    super.key,
+    required this.mission,
+    required this.onTap,
+  });
+
+  final MissionPayload mission;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final type = _studentMissionType(mission);
+    final taskLabel = mission.taskCodes
+        .map((code) => code.trim().toUpperCase())
+        .where((code) => code.isNotEmpty)
+        .join(' + ');
+    final accent = _studentMissionAccent(type);
+
+    return Material(
+      color: Colors.white.withValues(alpha: 0.88),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        side: BorderSide(color: accent.withValues(alpha: 0.28)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(_studentMissionIcon(type), color: accent, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      mission.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AppPalette.navy,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${taskLabel.isEmpty ? 'No task focus' : taskLabel} · ${type.label} · ${mission.subject?.name ?? 'Subject'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppPalette.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+_StudentMissionType _studentMissionType(MissionPayload mission) {
+  final format = mission.draftFormat.trim().toUpperCase();
+  if (format == 'THEORY') {
+    return _StudentMissionType.theory;
+  }
+  if (format == 'ESSAY_BUILDER') {
+    return _StudentMissionType.essay;
+  }
+
+  final sequences = mission.assessmentSequenceByTaskCode.values
+      .map((value) => value.trim().toUpperCase())
+      .where((value) => value == 'A' || value == 'B')
+      .toSet();
+  if (sequences.contains('B') && !sequences.contains('A')) {
+    return _StudentMissionType.assessmentB;
+  }
+  if (sequences.contains('A') || mission.questionCount >= 10) {
+    // WHY: Explicit A/B data remains authoritative, while legacy ten-question
+    // missions keep their established Assessment A meaning.
+    return _StudentMissionType.assessmentA;
+  }
+  return _StudentMissionType.objective;
+}
+
+String _primaryTaskCode(MissionPayload mission) {
+  final codes = mission.taskCodes
+      .map((code) => code.trim().toUpperCase())
+      .where((code) => code.isNotEmpty)
+      .toList(growable: false);
+  if (codes.isEmpty) {
+    return '';
+  }
+  codes.sort(_compareTaskCodes);
+  return codes.first;
+}
+
+int _compareTaskCodes(String left, String right) {
+  final leftParts = _taskCodeParts(left);
+  final rightParts = _taskCodeParts(right);
+  final prefixComparison = leftParts.$1.compareTo(rightParts.$1);
+  if (prefixComparison != 0) {
+    return prefixComparison;
+  }
+  final numberComparison = leftParts.$2.compareTo(rightParts.$2);
+  if (numberComparison != 0) {
+    return numberComparison;
+  }
+  return left.compareTo(right);
+}
+
+(int, int) _taskCodeParts(String code) {
+  final normalized = code.trim().toUpperCase();
+  final match = RegExp(r'^([PMD])(\d+)$').firstMatch(normalized);
+  if (match == null) {
+    return (3, 999);
+  }
+  final prefixOrder = switch (match.group(1)) {
+    'P' => 0,
+    'M' => 1,
+    'D' => 2,
+    _ => 3,
+  };
+  return (prefixOrder, int.tryParse(match.group(2) ?? '') ?? 999);
+}
+
+IconData _studentMissionIcon(_StudentMissionType type) {
+  return switch (type) {
+    _StudentMissionType.objective => Icons.bolt_rounded,
+    _StudentMissionType.theory => Icons.lightbulb_rounded,
+    _StudentMissionType.essay => Icons.edit_note_rounded,
+    _StudentMissionType.assessmentA ||
+    _StudentMissionType.assessmentB => Icons.fact_check_rounded,
+  };
+}
+
+Color _studentMissionAccent(_StudentMissionType type) {
+  return switch (type) {
+    _StudentMissionType.objective => const Color(0xFF4AB8A8),
+    _StudentMissionType.theory => const Color(0xFF6586D9),
+    _StudentMissionType.essay => const Color(0xFFB678D3),
+    _StudentMissionType.assessmentA ||
+    _StudentMissionType.assessmentB => const Color(0xFFE19445),
+  };
 }
 
 class _StudentScreenData {
