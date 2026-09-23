@@ -697,7 +697,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.item),
-                _LatestAssignedMissionsPanel(
+                TeacherAssignedMissionsPanel(
                   missions: recentMissions,
                   sendingResultMissionIds: _sendingResultMissionIds,
                   isExpanded: _isAssignedMissionsExpanded,
@@ -5702,8 +5702,70 @@ class _StandalonePapersPanel extends StatelessWidget {
   }
 }
 
-class _LatestAssignedMissionsPanel extends StatelessWidget {
-  const _LatestAssignedMissionsPanel({
+enum _AssignedMissionFilter {
+  all('All'),
+  objective('Objective'),
+  theory('Theory'),
+  essay('Essay'),
+  assessmentA('Assessment A'),
+  assessmentB('Assessment B');
+
+  const _AssignedMissionFilter(this.label);
+
+  final String label;
+}
+
+_AssignedMissionFilter _assignedMissionFilterFor(MissionPayload mission) {
+  final format = mission.draftFormat.trim().toUpperCase();
+  if (format == 'THEORY') {
+    return _AssignedMissionFilter.theory;
+  }
+  if (format == 'ESSAY_BUILDER') {
+    return _AssignedMissionFilter.essay;
+  }
+
+  final assessmentSequences = mission.assessmentSequenceByTaskCode.values
+      .map((value) => value.trim().toUpperCase())
+      .where((value) => value == 'A' || value == 'B')
+      .toSet();
+  if (assessmentSequences.contains('B') && !assessmentSequences.contains('A')) {
+    return _AssignedMissionFilter.assessmentB;
+  }
+  if (assessmentSequences.contains('A') || mission.questionCount == 10) {
+    // WHY: Current assessment missions persist A/B explicitly. A legacy
+    // unsequenced 10-question mission is still shown with the required first
+    // assessment instead of being mixed into day-to-day Objective work.
+    return _AssignedMissionFilter.assessmentA;
+  }
+  return _AssignedMissionFilter.objective;
+}
+
+String _assignedMissionTaskGroup(MissionPayload mission) {
+  final taskCodes = mission.taskCodes
+      .map((code) => code.trim().toUpperCase())
+      .where((code) => code.isNotEmpty)
+      .toSet()
+      .toList(growable: false);
+  if (taskCodes.isEmpty) {
+    return 'No task focus';
+  }
+  if (taskCodes.length == 1) {
+    return taskCodes.single;
+  }
+  return taskCodes.join(' + ');
+}
+
+int _assignedMissionTaskGroupOrder(String label) {
+  final match = RegExp(r'^P(\d+)$').firstMatch(label);
+  if (match != null) {
+    return int.tryParse(match.group(1) ?? '') ?? 999;
+  }
+  return 1000;
+}
+
+class TeacherAssignedMissionsPanel extends StatefulWidget {
+  const TeacherAssignedMissionsPanel({
+    super.key,
     required this.missions,
     required this.sendingResultMissionIds,
     required this.isExpanded,
@@ -5730,7 +5792,28 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
   final Set<String> resultEvidenceActionMissionIds;
 
   @override
+  State<TeacherAssignedMissionsPanel> createState() =>
+      _TeacherAssignedMissionsPanelState();
+}
+
+class _TeacherAssignedMissionsPanelState
+    extends State<TeacherAssignedMissionsPanel> {
+  _AssignedMissionFilter _selectedFilter = _AssignedMissionFilter.all;
+
+  @override
   Widget build(BuildContext context) {
+    final missions = widget.missions;
+    final sendingResultMissionIds = widget.sendingResultMissionIds;
+    final resultEvidenceActionMissionIds =
+        widget.resultEvidenceActionMissionIds;
+    final isExpanded = widget.isExpanded;
+    final onToggleExpanded = widget.onToggleExpanded;
+    final onEdit = widget.onEdit;
+    final onMoveBackToDraft = widget.onMoveBackToDraft;
+    final onSendResult = widget.onSendResult;
+    final onViewResult = widget.onViewResult;
+    final onRedoResult = widget.onRedoResult;
+    final onMoveResult = widget.onMoveResult;
     final totalAssignedXp = missions.fold<int>(
       0,
       (total, mission) =>
@@ -5762,6 +5845,43 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
           ? 'No assigned XP yet'
           : '$totalEarnedXp/$totalAssignedXp XP',
     ];
+    final availableFilters = <_AssignedMissionFilter>[
+      _AssignedMissionFilter.all,
+      _AssignedMissionFilter.objective,
+      _AssignedMissionFilter.theory,
+      _AssignedMissionFilter.essay,
+      _AssignedMissionFilter.assessmentA,
+      if (missions.any(
+        (mission) =>
+            _assignedMissionFilterFor(mission) ==
+            _AssignedMissionFilter.assessmentB,
+      ))
+        _AssignedMissionFilter.assessmentB,
+    ];
+    final selectedFilter = availableFilters.contains(_selectedFilter)
+        ? _selectedFilter
+        : _AssignedMissionFilter.all;
+    final filteredMissions = missions
+        .where(
+          (mission) =>
+              selectedFilter == _AssignedMissionFilter.all ||
+              _assignedMissionFilterFor(mission) == selectedFilter,
+        )
+        .toList(growable: false);
+    final groupedMissions = <String, List<MissionPayload>>{};
+    for (final mission in filteredMissions) {
+      final group = _assignedMissionTaskGroup(mission);
+      groupedMissions.putIfAbsent(group, () => <MissionPayload>[]).add(mission);
+    }
+    final orderedGroups = groupedMissions.entries.toList(growable: false)
+      ..sort((left, right) {
+        final orderComparison = _assignedMissionTaskGroupOrder(
+          left.key,
+        ).compareTo(_assignedMissionTaskGroupOrder(right.key));
+        return orderComparison == 0
+            ? left.key.compareTo(right.key)
+            : orderComparison;
+      });
 
     return SoftPanel(
       colors: const [Color(0xFFFFFCF6), Color(0xFFFFF0D8)],
@@ -5792,206 +5912,489 @@ class _LatestAssignedMissionsPanel extends StatelessWidget {
           ),
           if (isExpanded) ...[
             const SizedBox(height: AppSpacing.compact),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.item),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.76),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Assigned mission XP progress',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$totalEarnedXp / $totalAssignedXp XP filled',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppPalette.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        return Stack(
-                          children: [
-                            Container(
-                              height: 12,
-                              width: double.infinity,
-                              color: Colors.white.withValues(alpha: 0.78),
-                            ),
-                            Container(
-                              height: 12,
-                              width:
-                                  constraints.maxWidth * assignedProgressRatio,
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: AppPalette.progressGradient,
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    totalAssignedXp == 0
-                        ? 'No assigned mission XP yet.'
-                        : 'Total assigned mission XP: $totalAssignedXp',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppPalette.textMuted,
-                    ),
-                  ),
-                ],
-              ),
+            _AssignedMissionProgressSummary(
+              earnedXp: totalEarnedXp,
+              totalXp: totalAssignedXp,
+              progressRatio: assignedProgressRatio,
             ),
-            const SizedBox(height: AppSpacing.item),
+            const SizedBox(height: AppSpacing.compact),
+            _AssignedMissionFilterBar(
+              filters: availableFilters,
+              selectedFilter: selectedFilter,
+              missions: missions,
+              onSelected: (filter) {
+                setState(() {
+                  // WHY: Filtering changes only the teacher's view. Mission
+                  // order, evidence, scoring, and progression remain untouched.
+                  _selectedFilter = filter;
+                });
+              },
+            ),
+            const SizedBox(height: AppSpacing.compact),
             if (missions.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(AppSpacing.item),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.76),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                ),
+              Text(
+                'No assigned missions yet. Generate one from the panel above.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              )
+            else if (filteredMissions.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.item),
                 child: Text(
-                  'No assigned AI missions yet. Generate one from the panel above.',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  'No ${selectedFilter.label} missions assigned.',
+                  key: const Key('assigned_missions_empty_filter'),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
                 ),
               )
             else
-              ...missions.asMap().entries.map((entry) {
-                final mission = entry.value;
-                final scoreTotal = mission.scoreTotal > 0
-                    ? mission.scoreTotal
-                    : mission.questionCount;
-                final scoreCorrect = mission.scoreCorrect < 0
-                    ? 0
-                    : (mission.scoreCorrect > scoreTotal
-                          ? scoreTotal
-                          : mission.scoreCorrect);
-                final scoreRatio = scoreTotal <= 0
-                    ? 0.0
-                    : scoreCorrect / scoreTotal;
-                final rewardXp = mission.xpReward < 0 ? 0 : mission.xpReward;
-                final earnedXp = mission.xpEarned < 0
-                    ? 0
-                    : (mission.xpEarned > rewardXp
-                          ? rewardXp
-                          : mission.xpEarned);
-                final hasResultPackage = mission.latestResultPackageId
-                    .trim()
-                    .isNotEmpty;
-                final isMovedEvidence = mission.evidenceMovedFromTaskCode
-                    .trim()
-                    .isNotEmpty;
-                final isTheoryPendingReview =
-                    mission.draftFormat == 'THEORY' &&
-                    hasResultPackage &&
-                    earnedXp == 0 &&
-                    mission.scoreTotal <= 0;
-                final topProgressRatio = isTheoryPendingReview
-                    ? 0.0
-                    : mission.draftFormat == 'THEORY' && hasResultPackage
-                    ? (mission.scorePercent.clamp(0, 100) / 100)
-                    : scoreRatio;
-                final topProgressLabel = isMovedEvidence && hasResultPackage
-                    ? '${mission.scorePercent}% scored · moved evidence · no new XP'
-                    : isTheoryPendingReview
-                    ? 'Pending review · XP pending'
-                    : mission.draftFormat == 'THEORY' && hasResultPackage
-                    ? '${mission.scorePercent}% scored · $earnedXp/$rewardXp XP'
-                    : mission.draftFormat == 'THEORY'
-                    ? 'Awaiting submission · $earnedXp/$rewardXp XP'
-                    : '$scoreCorrect/$scoreTotal score · $earnedXp/$rewardXp XP';
-                final isSendingResult = sendingResultMissionIds.contains(
-                  mission.id,
-                );
-                final canManageSubmittedEvidence =
-                    canShowTeacherEvidenceActions(mission);
-                final isManagingEvidence = resultEvidenceActionMissionIds
-                    .contains(mission.id);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.compact),
-                  child: _MissionCard(
-                    mission: mission,
-                    badgeLabel: mission.source == 'groq' ? 'Groq' : 'Bank',
-                    dateLabel: _formatMissionDate(
-                      mission.availableOnDate ??
-                          mission.publishedAt ??
-                          mission.createdAt,
-                    ),
-                    actionLabel: 'Edit mission',
-                    topProgressRatio: topProgressRatio,
-                    topProgressLabel: topProgressLabel,
-                    secondaryActionLabel: isSendingResult
-                        ? 'Sending result...'
-                        : 'Send result',
-                    onSecondaryTap: hasResultPackage && !isSendingResult
-                        ? () => onSendResult(mission)
-                        : null,
-                    tertiaryActionLabel: 'View result',
-                    onTertiaryTap: hasResultPackage
-                        ? () => onViewResult(mission)
-                        : null,
-                    redoActionLabel: canManageSubmittedEvidence ? 'Redo' : null,
-                    onRedoTap: canManageSubmittedEvidence && !isManagingEvidence
-                        ? () => onRedoResult(mission)
-                        : null,
-                    moveActionLabel: canManageSubmittedEvidence ? 'Move' : null,
-                    onMoveTap: canManageSubmittedEvidence && !isManagingEvidence
-                        ? () => onMoveResult(mission)
-                        : null,
-                    quaternaryActionLabel: 'Move back to draft',
-                    onQuaternaryTap: () => onMoveBackToDraft(mission),
-                    onTap: () => onEdit(mission),
-                  ),
-                );
-              }),
+              ...orderedGroups.map(
+                (group) => _AssignedMissionTaskSection(
+                  key: Key('assigned_group_${group.key}'),
+                  taskFocus: group.key,
+                  missions: group.value,
+                  sendingResultMissionIds: sendingResultMissionIds,
+                  resultEvidenceActionMissionIds:
+                      resultEvidenceActionMissionIds,
+                  onEdit: onEdit,
+                  onMoveBackToDraft: onMoveBackToDraft,
+                  onSendResult: onSendResult,
+                  onViewResult: onViewResult,
+                  onRedoResult: onRedoResult,
+                  onMoveResult: onMoveResult,
+                ),
+              ),
           ],
         ],
       ),
     );
   }
+}
 
-  String _formatMissionDate(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Just now';
-    }
+class _AssignedMissionProgressSummary extends StatelessWidget {
+  const _AssignedMissionProgressSummary({
+    required this.earnedXp,
+    required this.totalXp,
+    required this.progressRatio,
+  });
 
-    final parsed = DateTime.tryParse(value)?.toLocal();
+  final int earnedXp;
+  final int totalXp;
+  final double progressRatio;
 
-    if (parsed == null) {
-      return 'Just now';
-    }
-
-    return '${_month(parsed.month)} ${parsed.day}';
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'XP progress',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppPalette.navy,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                totalXp == 0 ? 'No XP assigned' : '$earnedXp / $totalXp XP',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppPalette.textMuted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 7,
+              value: progressRatio.clamp(0.0, 1.0).toDouble(),
+              backgroundColor: Colors.white.withValues(alpha: 0.82),
+              valueColor: const AlwaysStoppedAnimation<Color>(AppPalette.aqua),
+            ),
+          ),
+        ],
+      ),
+    );
   }
+}
 
-  String _month(int month) {
-    const labels = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
+class _AssignedMissionFilterBar extends StatelessWidget {
+  const _AssignedMissionFilterBar({
+    required this.filters,
+    required this.selectedFilter,
+    required this.missions,
+    required this.onSelected,
+  });
 
-    return labels[month - 1];
+  final List<_AssignedMissionFilter> filters;
+  final _AssignedMissionFilter selectedFilter;
+  final List<MissionPayload> missions;
+  final ValueChanged<_AssignedMissionFilter> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: filters
+          .map((filter) {
+            final count = filter == _AssignedMissionFilter.all
+                ? missions.length
+                : missions
+                      .where(
+                        (mission) =>
+                            _assignedMissionFilterFor(mission) == filter,
+                      )
+                      .length;
+            return ChoiceChip(
+              key: Key('assigned_filter_${filter.name}'),
+              label: Text('${filter.label} $count'),
+              selected: selectedFilter == filter,
+              onSelected: (_) => onSelected(filter),
+              showCheckmark: false,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+              side: BorderSide(
+                color: selectedFilter == filter
+                    ? AppPalette.primaryBlue
+                    : AppPalette.textMuted.withValues(alpha: 0.28),
+              ),
+              selectedColor: AppPalette.primaryBlue.withValues(alpha: 0.14),
+              backgroundColor: Colors.white.withValues(alpha: 0.72),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: selectedFilter == filter
+                    ? AppPalette.primaryBlue
+                    : AppPalette.navy,
+                fontWeight: FontWeight.w700,
+              ),
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+}
+
+class _AssignedMissionTaskSection extends StatelessWidget {
+  const _AssignedMissionTaskSection({
+    super.key,
+    required this.taskFocus,
+    required this.missions,
+    required this.sendingResultMissionIds,
+    required this.resultEvidenceActionMissionIds,
+    required this.onEdit,
+    required this.onMoveBackToDraft,
+    required this.onSendResult,
+    required this.onViewResult,
+    required this.onRedoResult,
+    required this.onMoveResult,
+  });
+
+  final String taskFocus;
+  final List<MissionPayload> missions;
+  final Set<String> sendingResultMissionIds;
+  final Set<String> resultEvidenceActionMissionIds;
+  final ValueChanged<MissionPayload> onEdit;
+  final ValueChanged<MissionPayload> onMoveBackToDraft;
+  final ValueChanged<MissionPayload> onSendResult;
+  final ValueChanged<MissionPayload> onViewResult;
+  final ValueChanged<MissionPayload> onRedoResult;
+  final ValueChanged<MissionPayload> onMoveResult;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.compact),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 4,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: AppPalette.primaryBlue,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                taskFocus,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: AppPalette.navy,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${missions.length} mission${missions.length == 1 ? '' : 's'}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ...missions.asMap().entries.map((entry) {
+            final mission = entry.value;
+            return Column(
+              children: [
+                if (entry.key > 0)
+                  Divider(
+                    height: 1,
+                    color: AppPalette.textMuted.withValues(alpha: 0.18),
+                  ),
+                _AssignedMissionListItem(
+                  key: Key('assigned_mission_${mission.id}'),
+                  mission: mission,
+                  isSendingResult: sendingResultMissionIds.contains(mission.id),
+                  isManagingEvidence: resultEvidenceActionMissionIds.contains(
+                    mission.id,
+                  ),
+                  onEdit: () => onEdit(mission),
+                  onMoveBackToDraft: () => onMoveBackToDraft(mission),
+                  onSendResult: () => onSendResult(mission),
+                  onViewResult: () => onViewResult(mission),
+                  onRedoResult: () => onRedoResult(mission),
+                  onMoveResult: () => onMoveResult(mission),
+                ),
+              ],
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssignedMissionListItem extends StatelessWidget {
+  const _AssignedMissionListItem({
+    super.key,
+    required this.mission,
+    required this.isSendingResult,
+    required this.isManagingEvidence,
+    required this.onEdit,
+    required this.onMoveBackToDraft,
+    required this.onSendResult,
+    required this.onViewResult,
+    required this.onRedoResult,
+    required this.onMoveResult,
+  });
+
+  final MissionPayload mission;
+  final bool isSendingResult;
+  final bool isManagingEvidence;
+  final VoidCallback onEdit;
+  final VoidCallback onMoveBackToDraft;
+  final VoidCallback onSendResult;
+  final VoidCallback onViewResult;
+  final VoidCallback onRedoResult;
+  final VoidCallback onMoveResult;
+
+  @override
+  Widget build(BuildContext context) {
+    final scoreTotal = mission.scoreTotal > 0
+        ? mission.scoreTotal
+        : mission.questionCount;
+    final scoreCorrect = mission.scoreCorrect.clamp(0, scoreTotal);
+    final scoreRatio = scoreTotal <= 0 ? 0.0 : scoreCorrect / scoreTotal;
+    final rewardXp = mission.xpReward < 0 ? 0 : mission.xpReward;
+    final earnedXp = mission.xpEarned.clamp(0, rewardXp);
+    final hasResultPackage = mission.latestResultPackageId.trim().isNotEmpty;
+    final isMovedEvidence = mission.evidenceMovedFromTaskCode.trim().isNotEmpty;
+    final isTheory = mission.draftFormat.trim().toUpperCase() == 'THEORY';
+    final isTheoryPendingReview =
+        isTheory &&
+        hasResultPackage &&
+        earnedXp == 0 &&
+        mission.scoreTotal <= 0;
+    final progressRatio = isTheoryPendingReview
+        ? 0.0
+        : isTheory && hasResultPackage
+        ? mission.scorePercent.clamp(0, 100) / 100
+        : scoreRatio;
+    final progressLabel = isMovedEvidence && hasResultPackage
+        ? '${mission.scorePercent}% · moved evidence · no new XP'
+        : isTheoryPendingReview
+        ? 'Pending review · XP pending'
+        : isTheory && hasResultPackage
+        ? '${mission.scorePercent}% · $earnedXp/$rewardXp XP'
+        : isTheory
+        ? 'Awaiting submission · $earnedXp/$rewardXp XP'
+        : '$scoreCorrect/$scoreTotal score · $earnedXp/$rewardXp XP';
+    final canManageSubmittedEvidence = canShowTeacherEvidenceActions(mission);
+    final missionType = _assignedMissionFilterFor(mission).label;
+    final missionUnit = mission.draftFormat == 'ESSAY_BUILDER'
+        ? '${mission.questionCount} sentences'
+        : '${mission.questionCount} questions';
+    final missionDate = _formatTeacherMissionDate(
+      mission.availableOnDate ?? mission.publishedAt ?? mission.createdAt,
+    );
+
+    // WHY: Assigned missions are presented as compact list rows rather than
+    // separate oversized cards so teachers can scan P1 and P2 quickly.
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      mission.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AppPalette.navy,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${mission.subject?.name ?? 'Mission'} · $missionUnit · $missionDate',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppPalette.sky.withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  missionType,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppPalette.navy,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (mission.teacherNote.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              mission.teacherNote.trim(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final progressBar = ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  minHeight: 6,
+                  value: progressRatio.clamp(0.0, 1.0).toDouble(),
+                  backgroundColor: Colors.white.withValues(alpha: 0.88),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    AppPalette.aqua,
+                  ),
+                ),
+              );
+              final progressText = Text(
+                progressLabel,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppPalette.textMuted,
+                  fontWeight: FontWeight.w600,
+                ),
+              );
+
+              if (constraints.maxWidth < 460) {
+                // WHY: Long pending-review labels need their own line on
+                // phones so the progress bar never collapses or overflows.
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    progressText,
+                    const SizedBox(height: 6),
+                    progressBar,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: progressBar),
+                  const SizedBox(width: 10),
+                  progressText,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              TextButton.icon(
+                onPressed: onEdit,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Edit'),
+              ),
+              TextButton(
+                onPressed: onMoveBackToDraft,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: AppPalette.navy,
+                ),
+                child: const Text('Move to draft'),
+              ),
+              if (hasResultPackage)
+                TeacherMissionResultActions(
+                  missionId: mission.id,
+                  compact: true,
+                  sendLabel: isSendingResult
+                      ? 'Sending result...'
+                      : 'Send result',
+                  onSend: isSendingResult ? null : onSendResult,
+                  viewLabel: 'View result',
+                  onView: onViewResult,
+                  redoLabel: canManageSubmittedEvidence ? 'Redo' : null,
+                  onRedo: canManageSubmittedEvidence && !isManagingEvidence
+                      ? onRedoResult
+                      : null,
+                  moveLabel: canManageSubmittedEvidence ? 'Move' : null,
+                  onMove: canManageSubmittedEvidence && !isManagingEvidence
+                      ? onMoveResult
+                      : null,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -7803,14 +8206,6 @@ class _MissionCard extends StatelessWidget {
     required this.onTap,
     this.topProgressRatio,
     this.topProgressLabel,
-    this.secondaryActionLabel,
-    this.onSecondaryTap,
-    this.tertiaryActionLabel,
-    this.onTertiaryTap,
-    this.redoActionLabel,
-    this.onRedoTap,
-    this.moveActionLabel,
-    this.onMoveTap,
     this.quaternaryActionLabel,
     this.onQuaternaryTap,
     this.showSelectionControl = false,
@@ -7826,14 +8221,6 @@ class _MissionCard extends StatelessWidget {
   final VoidCallback onTap;
   final double? topProgressRatio;
   final String? topProgressLabel;
-  final String? secondaryActionLabel;
-  final VoidCallback? onSecondaryTap;
-  final String? tertiaryActionLabel;
-  final VoidCallback? onTertiaryTap;
-  final String? redoActionLabel;
-  final VoidCallback? onRedoTap;
-  final String? moveActionLabel;
-  final VoidCallback? onMoveTap;
   final String? quaternaryActionLabel;
   final VoidCallback? onQuaternaryTap;
   final bool showSelectionControl;
@@ -7846,14 +8233,6 @@ class _MissionCard extends StatelessWidget {
     final handleSelectionTap = onSelectionTap ?? onTap;
     final isCompactCard =
         compactOnNarrow && MediaQuery.sizeOf(context).width < 430;
-    final showProminentResultActions =
-        secondaryActionLabel != null ||
-        tertiaryActionLabel != null ||
-        redoActionLabel != null ||
-        moveActionLabel != null;
-    final hasDisabledResultAction =
-        (secondaryActionLabel != null && onSecondaryTap == null) ||
-        (tertiaryActionLabel != null && onTertiaryTap == null);
 
     return Material(
       color: Colors.transparent,
@@ -7978,50 +8357,6 @@ class _MissionCard extends StatelessWidget {
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
-                        if (showProminentResultActions) ...[
-                          const SizedBox(height: 12),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AppPalette.sky.withValues(alpha: 0.22),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Result actions',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: AppPalette.navy,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
-                                const SizedBox(height: 8),
-                                TeacherMissionResultActions(
-                                  missionId: mission.id,
-                                  sendLabel: secondaryActionLabel,
-                                  onSend: onSecondaryTap,
-                                  viewLabel: tertiaryActionLabel,
-                                  onView: onTertiaryTap,
-                                  redoLabel: redoActionLabel,
-                                  onRedo: onRedoTap,
-                                  moveLabel: moveActionLabel,
-                                  onMove: onMoveTap,
-                                ),
-                                if (hasDisabledResultAction) ...[
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Buttons unlock after this mission has a saved result package.',
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(color: AppPalette.textMuted),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
                         const SizedBox(height: 10),
                         Text(
                           actionLabel,
@@ -8143,6 +8478,7 @@ class TeacherMissionResultActions extends StatelessWidget {
   const TeacherMissionResultActions({
     super.key,
     required this.missionId,
+    this.compact = false,
     this.sendLabel,
     this.onSend,
     this.viewLabel,
@@ -8154,6 +8490,7 @@ class TeacherMissionResultActions extends StatelessWidget {
   });
 
   final String missionId;
+  final bool compact;
   final String? sendLabel;
   final VoidCallback? onSend;
   final String? viewLabel;
@@ -8176,6 +8513,7 @@ class TeacherMissionResultActions extends StatelessWidget {
             icon: Icons.send_rounded,
             onTap: onSend,
             colors: const [AppPalette.sun, AppPalette.orange],
+            compact: compact,
           ),
         if (viewLabel != null)
           _MissionActionButton(
@@ -8183,6 +8521,7 @@ class TeacherMissionResultActions extends StatelessWidget {
             icon: Icons.visibility_rounded,
             onTap: onView,
             colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+            compact: compact,
           ),
         if (redoLabel != null)
           _MissionSecondaryActionButton(
@@ -8190,6 +8529,7 @@ class TeacherMissionResultActions extends StatelessWidget {
             label: redoLabel!,
             icon: Icons.replay_rounded,
             onTap: onRedo,
+            compact: compact,
           ),
         if (moveLabel != null)
           _MissionSecondaryActionButton(
@@ -8197,6 +8537,7 @@ class TeacherMissionResultActions extends StatelessWidget {
             label: moveLabel!,
             icon: Icons.drive_file_move_outline,
             onTap: onMove,
+            compact: compact,
           ),
       ],
     );
@@ -8209,12 +8550,14 @@ class _MissionActionButton extends StatelessWidget {
     required this.icon,
     required this.onTap,
     required this.colors,
+    this.compact = false,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback? onTap;
   final List<Color> colors;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -8236,11 +8579,11 @@ class _MissionActionButton extends StatelessWidget {
             onTap: onTap,
             borderRadius: BorderRadius.circular(14),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 140),
+              constraints: BoxConstraints(minWidth: compact ? 0 : 140),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 10 : 12,
+                  vertical: compact ? 8 : 10,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -8276,19 +8619,24 @@ class _MissionSecondaryActionButton extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onTap,
+    this.compact = false,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback? onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
       onPressed: onTap,
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size(0, 38),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        minimumSize: Size(0, compact ? 34 : 38),
+        padding: EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: compact ? 6 : 8,
+        ),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         foregroundColor: AppPalette.navy,
         side: BorderSide(color: AppPalette.primaryBlue.withValues(alpha: 0.45)),

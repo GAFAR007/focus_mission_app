@@ -24,19 +24,27 @@ void main() {
   MissionPayload mission({
     required String format,
     required int questionCount,
+    String? id,
+    String title = 'Mission',
+    List<String> taskCodes = const ['P1'],
+    Map<String, String> assessmentSequenceByTaskCode = const {},
     String resultPackageId = 'result-1',
     bool evidenceCurrentExcluded = false,
   }) {
     return MissionPayload.fromJson({
-      'id': '$format-$questionCount',
-      'title': 'Mission',
+      'id': id ?? '$format-$questionCount',
+      'title': title,
       'draftFormat': format,
       'questionCount': questionCount,
-      'taskCodes': ['P1'],
+      'taskCodes': taskCodes,
+      'assessmentSequenceByTaskCode': assessmentSequenceByTaskCode,
       'status': 'published',
       'latestResultPackageId': resultPackageId,
       'evidenceCurrentExcluded': evidenceCurrentExcluded,
       'scoreTotal': questionCount,
+      'xpReward': 30,
+      'subject': {'id': 'business', 'name': 'Business'},
+      'availableOnDate': '2026-09-23',
     });
   }
 
@@ -141,6 +149,144 @@ void main() {
       tester.getTopLeft(find.text('Move')).dy,
       greaterThan(tester.getTopLeft(find.text('Send result')).dy),
     );
+  });
+
+  Widget assignedMissionsHarness({
+    required double width,
+    required List<MissionPayload> missions,
+  }) {
+    return MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: width,
+              child: TeacherAssignedMissionsPanel(
+                missions: missions,
+                sendingResultMissionIds: const {},
+                isExpanded: true,
+                onToggleExpanded: () {},
+                onEdit: (_) {},
+                onMoveBackToDraft: (_) {},
+                onSendResult: (_) {},
+                onViewResult: (_) {},
+                onRedoResult: (_) {},
+                onMoveResult: (_) {},
+                resultEvidenceActionMissionIds: const {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<MissionPayload> assignedMissions() {
+    return [
+      mission(
+        id: 'objective-p1',
+        title: 'P1 Objective',
+        format: 'QUESTIONS',
+        questionCount: 5,
+        resultPackageId: '',
+      ),
+      mission(
+        id: 'theory-p1',
+        title: 'P1 Theory',
+        format: 'THEORY',
+        questionCount: 3,
+      ),
+      mission(
+        id: 'essay-p2',
+        title: 'P2 Essay',
+        format: 'ESSAY_BUILDER',
+        questionCount: 10,
+        taskCodes: const ['P2'],
+        resultPackageId: '',
+      ),
+      mission(
+        id: 'assessment-a-p2',
+        title: 'P2 Assessment A',
+        format: 'QUESTIONS',
+        questionCount: 10,
+        taskCodes: const ['P2'],
+        assessmentSequenceByTaskCode: const {'P2': 'A'},
+        resultPackageId: '',
+      ),
+      mission(
+        id: 'assessment-b-p2',
+        title: 'P2 Assessment B',
+        format: 'QUESTIONS',
+        questionCount: 10,
+        taskCodes: const ['P2'],
+        assessmentSequenceByTaskCode: const {'P2': 'B'},
+        resultPackageId: '',
+      ),
+    ];
+  }
+
+  testWidgets('Assigned Missions filters types and separates P1 from P2', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      assignedMissionsHarness(width: 760, missions: assignedMissions()),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('assigned_filter_all')), findsOneWidget);
+    expect(find.text('All 5'), findsOneWidget);
+    expect(find.text('Objective 1'), findsOneWidget);
+    expect(find.text('Theory 1'), findsOneWidget);
+    expect(find.text('Essay 1'), findsOneWidget);
+    expect(find.text('Assessment A 1'), findsOneWidget);
+    expect(find.text('Assessment B 1'), findsOneWidget);
+    expect(find.byKey(const Key('assigned_group_P1')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_group_P2')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('assigned_filter_theory')));
+    await tester.pump();
+
+    expect(find.text('P1 Theory'), findsOneWidget);
+    expect(find.text('P1 Objective'), findsNothing);
+    expect(find.text('P2 Essay'), findsNothing);
+    expect(find.byKey(const Key('assigned_group_P1')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_group_P2')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('assigned_filter_assessmentA')));
+    await tester.pump();
+
+    expect(find.text('P2 Assessment A'), findsOneWidget);
+    expect(find.text('P2 Assessment B'), findsNothing);
+    expect(find.byKey(const Key('assigned_group_P1')), findsNothing);
+    expect(find.byKey(const Key('assigned_group_P2')), findsOneWidget);
+  });
+
+  testWidgets('Assigned Missions stays compact on a narrow screen', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      assignedMissionsHarness(width: 390, missions: assignedMissions()),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Result actions'), findsNothing);
+    expect(
+      find.text(
+        'Buttons unlock after this mission has a saved result package.',
+      ),
+      findsNothing,
+    );
+    expect(find.text('P1 Objective'), findsOneWidget);
+    expect(find.text('P2 Assessment A'), findsOneWidget);
+    expect(find.text('Send result'), findsOneWidget);
+    expect(find.text('View result'), findsOneWidget);
+    expect(find.byKey(const Key('result_redo_theory-p1')), findsOneWidget);
+    expect(find.byKey(const Key('result_move_theory-p1')), findsOneWidget);
   });
 
   test('Move preview and confirmation use separate API requests', () async {
