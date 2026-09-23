@@ -2470,16 +2470,18 @@ class FocusMissionApi {
     required String studentId,
     required String subjectId,
     required String taskCode,
+    required String copy,
   }) async {
-    final uri = Uri.parse(
+    final baseUri = Uri.parse(
       '${ApiConfig.baseUrl}/teacher/students/$studentId/subjects/$subjectId/task-focus/$taskCode/draft-report.pdf',
     );
+    final uri = baseUri.replace(queryParameters: {'copy': copy});
     final response = await _client.get(
       uri,
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode >= 400) {
-      String message = 'Draft Report PDF export failed.';
+      String message = 'Report PDF export failed.';
       try {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
         message = (decoded['message'] ?? message).toString();

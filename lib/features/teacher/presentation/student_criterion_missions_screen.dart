@@ -734,7 +734,7 @@ class _CriterionPathwayPanel extends StatelessWidget {
               key: Key('view_draft_report_${group.taskCode}'),
               onPressed: onOpenDraftReport,
               icon: const Icon(Icons.description_outlined),
-              label: const Text('View Draft Report'),
+              label: const Text('View Report'),
             ),
           ),
         ],

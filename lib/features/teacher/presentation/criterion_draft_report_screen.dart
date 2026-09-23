@@ -1,13 +1,15 @@
 /**
  * WHAT:
  * CriterionDraftReportScreen renders one live student/subject/Task Focus report
- * with copyable evidence, editable teacher wording, scoring, and PDF export.
+ * with copyable evidence, editable teacher wording, compact scoring, and
+ * separate Student Copy and Teacher Copy PDF exports.
  * WHY:
  * Teachers need a criterion-specific working report while original submitted
  * ResultPackage evidence remains unchanged and incomplete evidence stays clear.
  * HOW:
  * Load the backend-composed report, bind only comment overrides to controllers,
- * render student evidence as selectable text, and refresh after marking work.
+ * render student evidence as selectable text, request explicit PDF copy types,
+ * and refresh after marking work.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -55,7 +57,7 @@ class _CriterionDraftReportScreenState
   late Future<CriterionDraftReportData> _future;
   bool _controllersSeeded = false;
   bool _saving = false;
-  bool _exporting = false;
+  final Set<String> _exportingCopies = <String>{};
 
   @override
   void initState() {
@@ -131,7 +133,7 @@ class _CriterionDraftReportScreenState
       });
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Draft Report saved.')));
+      ).showSnackBar(const SnackBar(content: Text('Report comments saved.')));
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -145,17 +147,19 @@ class _CriterionDraftReportScreenState
     }
   }
 
-  Future<void> _exportPdf() async {
-    setState(() => _exporting = true);
+  Future<void> _exportPdf(String copy) async {
+    final copyLabel = copy == 'student' ? 'Student Copy' : 'Teacher Copy';
+    setState(() => _exportingCopies.add(copy));
     try {
       final bytes = await widget.api.exportCriterionDraftReportPdf(
         token: widget.session.token,
         studentId: widget.student.id,
         subjectId: widget.subjectId,
         taskCode: widget.taskCode,
+        copy: copy,
       );
       final downloaded = await downloadBinaryFile(
-        fileName: '${widget.student.name}-${widget.taskCode}-draft-report.pdf'
+        fileName: '${widget.student.name}-${widget.taskCode}-$copy-copy.pdf'
             .replaceAll(RegExp(r'[^A-Za-z0-9.-]+'), '-'),
         bytes: bytes,
         mimeType: 'application/pdf',
@@ -167,8 +171,8 @@ class _CriterionDraftReportScreenState
         SnackBar(
           content: Text(
             downloaded
-                ? 'Draft Report PDF downloaded.'
-                : 'PDF download is available in the web app.',
+                ? '$copyLabel PDF downloaded.'
+                : '$copyLabel download is available in the web app.',
           ),
         ),
       );
@@ -180,7 +184,7 @@ class _CriterionDraftReportScreenState
       }
     } finally {
       if (mounted) {
-        setState(() => _exporting = false);
+        setState(() => _exportingCopies.remove(copy));
       }
     }
   }
@@ -231,7 +235,7 @@ class _CriterionDraftReportScreenState
     return Scaffold(
       backgroundColor: AppPalette.backgroundTop,
       appBar: AppBar(
-        title: Text('${widget.taskCode} Draft Report'),
+        title: Text('${widget.taskCode} Report'),
         actions: [
           IconButton(
             tooltip: 'Refresh report',
@@ -272,7 +276,7 @@ class _CriterionDraftReportScreenState
             padding: const EdgeInsets.all(AppSpacing.screen),
             children: [
               Text(
-                report.title,
+                report.title.replaceAll(' Draft Report', ' Report'),
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: AppSpacing.item),
@@ -329,7 +333,7 @@ class _CriterionDraftReportScreenState
                       minLines: 3,
                       maxLines: 6,
                       decoration: const InputDecoration(
-                        labelText: 'Teacher Draft Comment',
+                        labelText: 'Teacher Comment',
                       ),
                     ),
                     const SizedBox(height: AppSpacing.item),
@@ -398,7 +402,7 @@ class _CriterionDraftReportScreenState
                                 minLines: 2,
                                 maxLines: 5,
                                 decoration: const InputDecoration(
-                                  labelText: 'Teacher Draft Comment',
+                                  labelText: 'Teacher Comment',
                                 ),
                               ),
                             ],
@@ -423,41 +427,8 @@ class _CriterionDraftReportScreenState
                 ),
               ),
               _ReportSection(
-                title: '${report.taskCode} Overall Scoring Structure',
-                child: _ScoringTable(report: report),
-              ),
-              _ReportSection(
-                title:
-                    '${widget.student.name} — ${report.taskCode} Calculation',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ...report.calculationRows.map(
-                      (row) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Text(
-                          '${row.label}: ${_percent(row.percent)} × ${_number(row.weightPercent)}% = ${row.contribution == null ? 'Pending' : row.contribution!.toStringAsFixed(2)}',
-                        ),
-                      ),
-                    ),
-                    const Divider(),
-                    Text(
-                      'Overall ${report.taskCode} Score',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      report.calculationStatus == 'pending'
-                          ? 'Pending'
-                          : _percent(report.overallPercent),
-                      key: const Key('criterion_report_overall_score'),
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    if (report.calculationStatus == 'pending')
-                      Text(
-                        'Current secured contribution: ${report.securedContribution.toStringAsFixed(2)} / 100',
-                      ),
-                  ],
-                ),
+                title: '${report.taskCode} Score calculation',
+                child: CriterionReportCalculationPanel(report: report),
               ),
               _ReportSection(
                 title: 'Final ${report.taskCode} Status',
@@ -478,15 +449,53 @@ class _CriterionDraftReportScreenState
                 ),
               ),
               GradientButton(
-                label: _saving ? 'Saving Draft...' : 'Save Draft',
+                label: _saving ? 'Saving comments...' : 'Save comments',
                 colors: AppPalette.teacherGradient,
                 onPressed: _saving ? () {} : () => _saveDraft(report),
               ),
               const SizedBox(height: AppSpacing.compact),
-              OutlinedButton.icon(
-                onPressed: _exporting ? null : _exportPdf,
-                icon: const Icon(Icons.picture_as_pdf_rounded),
-                label: Text(_exporting ? 'Preparing PDF...' : 'Export PDF'),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final buttonWidth = constraints.maxWidth < 620
+                      ? constraints.maxWidth
+                      : (constraints.maxWidth - AppSpacing.compact) / 2;
+                  return Wrap(
+                    spacing: AppSpacing.compact,
+                    runSpacing: AppSpacing.compact,
+                    children: [
+                      SizedBox(
+                        width: buttonWidth,
+                        child: OutlinedButton.icon(
+                          key: const Key('export_student_report_copy'),
+                          onPressed: _exportingCopies.contains('student')
+                              ? null
+                              : () => _exportPdf('student'),
+                          icon: const Icon(Icons.school_rounded),
+                          label: Text(
+                            _exportingCopies.contains('student')
+                                ? 'Preparing Student Copy...'
+                                : 'Export Student Copy',
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: buttonWidth,
+                        child: OutlinedButton.icon(
+                          key: const Key('export_teacher_report_copy'),
+                          onPressed: _exportingCopies.contains('teacher')
+                              ? null
+                              : () => _exportPdf('teacher'),
+                          icon: const Icon(Icons.picture_as_pdf_rounded),
+                          label: Text(
+                            _exportingCopies.contains('teacher')
+                                ? 'Preparing Teacher Copy...'
+                                : 'Export Teacher Copy',
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: AppSpacing.section),
             ],
@@ -675,34 +684,263 @@ class _EvidenceHistoryNote extends StatelessWidget {
   }
 }
 
-class _ScoringTable extends StatelessWidget {
-  const _ScoringTable({required this.report});
+class CriterionReportCalculationPanel extends StatelessWidget {
+  const CriterionReportCalculationPanel({super.key, required this.report});
 
   final CriterionDraftReportData report;
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: const [
-          DataColumn(label: Text('Evidence')),
-          DataColumn(label: Text('Weight')),
-        ],
-        rows: [
-          ...report.calculationRows.map(
-            (row) => DataRow(
-              cells: [
-                DataCell(Text(row.label)),
-                DataCell(Text('${_number(row.weightPercent)}%')),
-              ],
+    final secured = report.securedContribution.clamp(0, 100).toDouble();
+    final isPending = report.calculationStatus == 'pending';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: AppSpacing.compact,
+          runSpacing: AppSpacing.compact,
+          children: [
+            _CalculationMetric(
+              label: 'Current secured',
+              value: '${secured.toStringAsFixed(2)} / 100',
+              color: AppPalette.primaryBlue,
+            ),
+            _CalculationMetric(
+              label: 'Overall ${report.taskCode} score',
+              value: isPending ? 'Pending' : _percent(report.overallPercent),
+              color: isPending ? AppPalette.sun : AppPalette.mint,
+              valueKey: const Key('criterion_report_overall_score'),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.compact),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            key: const Key('criterion_report_secured_progress'),
+            minHeight: 8,
+            value: secured / 100,
+            backgroundColor: const Color(0xFFE8EDF6),
+            valueColor: const AlwaysStoppedAnimation<Color>(
+              AppPalette.primaryBlue,
             ),
           ),
-          const DataRow(
-            cells: [DataCell(Text('Total')), DataCell(Text('100%'))],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          isPending
+              ? 'The overall score will appear when every required result is available.'
+              : 'All required results are included in the overall score.',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+        ),
+        const SizedBox(height: AppSpacing.item),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final useTable = constraints.maxWidth >= 680;
+            return Column(
+              children: [
+                if (useTable) const _CalculationHeader(),
+                ...report.calculationRows.map(
+                  (row) => _CalculationRow(row: row, useTable: useTable),
+                ),
+                _CalculationTotalRow(useTable: useTable),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _CalculationMetric extends StatelessWidget {
+  const _CalculationMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+    this.valueKey,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+  final Key? valueKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 190),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            key: valueKey,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: AppPalette.navy,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CalculationHeader extends StatelessWidget {
+  const _CalculationHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelMedium?.copyWith(
+      color: AppPalette.textMuted,
+      fontWeight: FontWeight.w700,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 7),
+      child: Row(
+        children: [
+          Expanded(flex: 4, child: Text('Evidence', style: style)),
+          Expanded(flex: 2, child: Text('Result', style: style)),
+          Expanded(flex: 2, child: Text('Weight', style: style)),
+          Expanded(flex: 2, child: Text('Contribution', style: style)),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalculationRow extends StatelessWidget {
+  const _CalculationRow({required this.row, required this.useTable});
+
+  final CriterionReportCalculationRow row;
+  final bool useTable;
+
+  @override
+  Widget build(BuildContext context) {
+    final result = _percent(row.percent);
+    final weight = '${_number(row.weightPercent)}%';
+    final contribution = row.contribution == null
+        ? 'Pending'
+        : row.contribution!.toStringAsFixed(2);
+    final resultStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: row.contribution == null ? AppPalette.textMuted : AppPalette.navy,
+      fontWeight: FontWeight.w700,
+    );
+
+    return Container(
+      key: Key('criterion_calculation_${row.key}'),
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FAFF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E9F4)),
+      ),
+      child: useTable
+          ? Row(
+              children: [
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    row.label,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Expanded(flex: 2, child: Text(result, style: resultStyle)),
+                Expanded(flex: 2, child: Text(weight)),
+                Expanded(
+                  flex: 2,
+                  child: Text(contribution, style: resultStyle),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  row.label,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text('$result × $weight = $contribution', style: resultStyle),
+              ],
+            ),
+    );
+  }
+}
+
+class _CalculationTotalRow extends StatelessWidget {
+  const _CalculationTotalRow({required this.useTable});
+
+  final bool useTable;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      child: useTable
+          ? Row(
+              children: [
+                Expanded(
+                  flex: 6,
+                  child: Text(
+                    'Total weight',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 4,
+                  child: Text(
+                    '100%',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total weight',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  '100%',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
     );
   }
 }

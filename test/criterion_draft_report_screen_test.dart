@@ -1,7 +1,8 @@
 /**
  * WHAT:
- * Tests the teacher Draft Report's copyable evidence, editable comment state,
- * server-owned calculation rendering, and persisted comment payload.
+ * Tests the teacher report's copyable evidence, editable comment state,
+ * separate Student/Teacher exports, compact server-owned calculation rendering,
+ * and persisted comment payload.
  * WHY:
  * Pending evidence must never appear as a fake final score, and report wording
  * must remain separate from immutable student evidence.
@@ -22,7 +23,7 @@ import 'package:http/testing.dart';
 
 Map<String, dynamic> reportJson({String essayComment = 'Original feedback'}) {
   return {
-    'title': 'Sudais Dahir — P1 Business Online Draft Report',
+    'title': 'Sudais Dahir - P1 Business Online Report',
     'taskCode': 'P1',
     'criterionWording': 'Explain how a business operates online.',
     'criterionWordingAvailable': true,
@@ -152,8 +153,17 @@ void main() {
     tester,
   ) async {
     Map<String, dynamic>? savedBody;
+    final requestedCopies = <String>[];
     final api = FocusMissionApi(
       client: MockClient((request) async {
+        if (request.url.path.endsWith('/draft-report.pdf')) {
+          requestedCopies.add(request.url.queryParameters['copy'] ?? '');
+          return http.Response.bytes(
+            const [37, 80, 68, 70],
+            200,
+            headers: const {'content-type': 'application/pdf'},
+          );
+        }
         if (request.method == 'PUT') {
           savedBody = jsonDecode(request.body) as Map<String, dynamic>;
           return http.Response(
@@ -218,12 +228,18 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Pending'), findsWidgets);
+    expect(find.text('47.45 / 100'), findsOneWidget);
     expect(
-      find.text('Current secured contribution: 47.45 / 100'),
+      find.byKey(const Key('criterion_report_secured_progress')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const Key('criterion_calculation_theory')),
+      findsOneWidget,
+    );
+    expect(find.text('P1 Overall Scoring Structure'), findsNothing);
 
-    final saveButton = find.text('Save Draft');
+    final saveButton = find.text('Save comments');
     await tester.scrollUntilVisible(
       saveButton,
       500,
@@ -234,6 +250,21 @@ void main() {
 
     expect(savedBody?['essayTeacherComment'], 'Edited comment');
     expect(savedBody?['theoryQuestionComments'], isA<List<dynamic>>());
+
+    for (final key in const [
+      Key('export_student_report_copy'),
+      Key('export_teacher_report_copy'),
+    ]) {
+      await tester.scrollUntilVisible(
+        find.byKey(key),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byKey(key));
+      await tester.pumpAndSettle();
+    }
+    expect(requestedCopies, ['student', 'teacher']);
+    expect(find.text('Draft Report PDF downloaded.'), findsNothing);
   });
 
   testWidgets('refresh rebuilds the live total after marking changes', (
@@ -349,6 +380,10 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('82.45%'), findsOneWidget);
+    expect(
+      find.byKey(const Key('criterion_calculation_assessmentA')),
+      findsOneWidget,
+    );
     expect(reportReads, 2);
     expect(tester.takeException(), isNull);
   });

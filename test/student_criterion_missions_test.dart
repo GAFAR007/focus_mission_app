@@ -270,8 +270,7 @@ void main() {
           return http.Response(
             jsonEncode({
               'report': {
-                'title':
-                    'Ahmed Stockwin — $taskCode Business Online Draft Report',
+                'title': 'Ahmed Stockwin - $taskCode Business Online Report',
                 'taskCode': taskCode,
                 'criterionWording': '$taskCode wording',
                 'criterionWordingAvailable': true,
@@ -396,11 +395,12 @@ void main() {
     await tester.ensureVisible(optionalB);
     expect(optionalB, findsOneWidget);
     expect(find.byKey(const Key('view_draft_report_P1')), findsOneWidget);
+    expect(find.text('View Report'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('view_draft_report_P1')));
     await tester.pumpAndSettle();
     expect(
-      find.text('Ahmed Stockwin — P1 Business Online Draft Report'),
+      find.text('Ahmed Stockwin - P1 Business Online Report'),
       findsOneWidget,
     );
     expect(
@@ -419,7 +419,7 @@ void main() {
     await tester.tap(find.byKey(const Key('view_draft_report_P2')));
     await tester.pumpAndSettle();
     expect(
-      find.text('Ahmed Stockwin — P2 Business Online Draft Report'),
+      find.text('Ahmed Stockwin - P2 Business Online Report'),
       findsOneWidget,
     );
     expect(
