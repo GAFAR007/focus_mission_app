@@ -1628,9 +1628,17 @@ class FocusMissionApi {
     required AuthSession session,
     String? selectedStudentId,
     String dateKey = '',
+    bool includeSupplementalData = true,
   }) async {
-    final students = await fetchStudents(token: session.token);
-    final teacherSubjects = await fetchTeacherSubjects(token: session.token);
+    // WHY: The teacher roster and subject list are independent reference
+    // reads. Starting them together removes an unnecessary startup waterfall
+    // without changing either endpoint or its authorization boundary.
+    final referenceData = await Future.wait<Object>([
+      fetchStudents(token: session.token),
+      fetchTeacherSubjects(token: session.token),
+    ]);
+    final students = referenceData[0] as List<StudentSummary>;
+    final teacherSubjects = referenceData[1] as List<SubjectSummary>;
 
     if (students.isEmpty) {
       throw const FocusMissionApiException(
@@ -1643,61 +1651,46 @@ class FocusMissionApi {
       (student) => student.id == resolvedStudentId,
       orElse: () => students.first,
     );
-    final selectedDashboard = await fetchStudentDashboard(
-      token: session.token,
-      studentId: selectedStudent.id,
-    );
-    final timetable = await fetchStudentTimetable(
-      token: session.token,
-      studentId: selectedStudent.id,
-    );
-    final criteria = await fetchStudentCriteria(
-      token: session.token,
-      studentId: selectedStudent.id,
-    );
-    final notificationInbox = await fetchNotificationInbox(
-      token: session.token,
-    );
-    final draftMissions = await fetchTeacherDraftMissions(
-      token: session.token,
-      studentId: selectedStudent.id,
-    );
-    final recentMissions = await fetchTeacherRecentMissions(
-      token: session.token,
-      studentId: selectedStudent.id,
-    );
-    late final List<ResultHistoryItem> studentResults;
-    try {
-      studentResults = await fetchTeacherStudentResults(
-        token: session.token,
-        studentId: selectedStudent.id,
-      );
-    } on FocusMissionApiException catch (error) {
-      if (!_isMissingTeacherStudentResultsRoute(error)) {
-        rethrow;
-      }
 
-      // WHY: Production may briefly run a newer frontend against an older
-      // backend during deploy rollout. Falling back here keeps teacher login
-      // working until the dedicated result-history endpoint is live.
-      studentResults = recentMissions
-          .where((mission) => mission.latestResultPackageId.trim().isNotEmpty)
-          .map(
-            (mission) => ResultHistoryItem.fromJson({
-              ..._missionPayloadToJson(mission),
-              'resultPackageId': mission.latestResultPackageId,
-              'resultKind': 'mission',
-              'missionId': mission.id,
-              'hasTeacherCopy': true,
-            }),
-          )
-          .toList(growable: false);
-    }
-    final mentorOverview = await fetchMentorOverview(
+    final dashboardFuture = fetchStudentDashboard(
       token: session.token,
       studentId: selectedStudent.id,
-      dateKey: dateKey,
     );
+    final timetableFuture = fetchStudentTimetable(
+      token: session.token,
+      studentId: selectedStudent.id,
+    );
+    final supplementalFuture = includeSupplementalData
+        ? loadTeacherWorkspaceSupplemental(
+            session: session,
+            studentId: selectedStudent.id,
+            dateKey: dateKey,
+          )
+        : null;
+
+    // WHY: Dashboard and timetable are the only selected-student reads needed
+    // for the first useful workspace. Supplemental panels may join this batch
+    // for legacy callers, while the teacher screen can intentionally defer them.
+    final selectedData = await Future.wait<Object>([
+      dashboardFuture,
+      timetableFuture,
+      ?supplementalFuture,
+    ]);
+    final selectedDashboard = selectedData[0] as StudentDashboardData;
+    final timetable = selectedData[1] as List<TodaySchedule>;
+    final supplemental = supplementalFuture == null
+        ? const TeacherWorkspaceSupplementalData(
+            criteria: [],
+            draftMissions: [],
+            recentMissions: [],
+            studentResults: [],
+            notificationInbox: NotificationInboxData(
+              unreadCount: 0,
+              notifications: [],
+            ),
+            targets: [],
+          )
+        : selectedData[2] as TeacherWorkspaceSupplementalData;
 
     return TeacherWorkspaceData(
       session: session,
@@ -1706,6 +1699,89 @@ class FocusMissionApi {
       selectedStudent: selectedStudent,
       selectedDashboard: selectedDashboard,
       timetable: timetable,
+      criteria: supplemental.criteria,
+      draftMissions: supplemental.draftMissions,
+      recentMissions: supplemental.recentMissions,
+      studentResults: supplemental.studentResults,
+      notificationInbox: supplemental.notificationInbox,
+      targets: supplemental.targets,
+    );
+  }
+
+  Future<TeacherWorkspaceSupplementalData> loadTeacherWorkspaceSupplemental({
+    required AuthSession session,
+    required String studentId,
+    String dateKey = '',
+  }) async {
+    final criteriaFuture = fetchStudentCriteria(
+      token: session.token,
+      studentId: studentId,
+    );
+    final notificationInboxFuture = fetchNotificationInbox(
+      token: session.token,
+    );
+    final draftMissionsFuture = fetchTeacherDraftMissions(
+      token: session.token,
+      studentId: studentId,
+    );
+    final recentMissionsFuture = fetchTeacherRecentMissions(
+      token: session.token,
+      studentId: studentId,
+    );
+    final studentResultsFuture = () async {
+      try {
+        return await fetchTeacherStudentResults(
+          token: session.token,
+          studentId: studentId,
+        );
+      } on FocusMissionApiException catch (error) {
+        if (!_isMissingTeacherStudentResultsRoute(error)) {
+          rethrow;
+        }
+
+        // WHY: Production may briefly run a newer frontend against an older
+        // backend during deploy rollout. Falling back here keeps secondary
+        // result history available without delaying the core workspace.
+        final recentMissions = await recentMissionsFuture;
+        return recentMissions
+            .where((mission) => mission.latestResultPackageId.trim().isNotEmpty)
+            .map(
+              (mission) => ResultHistoryItem.fromJson({
+                ..._missionPayloadToJson(mission),
+                'resultPackageId': mission.latestResultPackageId,
+                'resultKind': 'mission',
+                'missionId': mission.id,
+                'hasTeacherCopy': true,
+              }),
+            )
+            .toList(growable: false);
+      }
+    }();
+    final mentorOverviewFuture = fetchMentorOverview(
+      token: session.token,
+      studentId: studentId,
+      dateKey: dateKey,
+    );
+
+    // WHY: These reads feed separate secondary panels and share no ordering
+    // dependency. They start together, while the result-history fallback still
+    // reuses the same recent-missions Future if an older backend is encountered.
+    final supplementalData = await Future.wait<Object>([
+      criteriaFuture,
+      notificationInboxFuture,
+      draftMissionsFuture,
+      recentMissionsFuture,
+      studentResultsFuture,
+      mentorOverviewFuture,
+    ]);
+    final criteria = supplementalData[0] as StudentCriteriaData;
+    final notificationInbox = supplementalData[1] as NotificationInboxData;
+    final draftMissions = supplementalData[2] as List<MissionPayload>;
+    final recentMissions = supplementalData[3] as List<MissionPayload>;
+    final studentResults = supplementalData[4] as List<ResultHistoryItem>;
+    final mentorOverview = supplementalData[5] as MentorOverviewData;
+
+    return TeacherWorkspaceSupplementalData(
       criteria: criteria.criteria,
       draftMissions: draftMissions,
       recentMissions: recentMissions,

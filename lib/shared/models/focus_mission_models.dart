@@ -3032,6 +3032,24 @@ class TeacherWorkspaceData {
   final List<TargetSummary> targets;
 }
 
+class TeacherWorkspaceSupplementalData {
+  const TeacherWorkspaceSupplementalData({
+    required this.criteria,
+    required this.draftMissions,
+    required this.recentMissions,
+    required this.studentResults,
+    required this.notificationInbox,
+    required this.targets,
+  });
+
+  final List<CriterionOverview> criteria;
+  final List<MissionPayload> draftMissions;
+  final List<MissionPayload> recentMissions;
+  final List<ResultHistoryItem> studentResults;
+  final NotificationInboxData notificationInbox;
+  final List<TargetSummary> targets;
+}
+
 class MentorWorkspaceData {
   const MentorWorkspaceData({
     required this.session,

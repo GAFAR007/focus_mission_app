@@ -13,6 +13,8 @@
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_palette.dart';
@@ -79,16 +81,17 @@ String _formatTeacherMissionDate(String? value) {
 }
 
 class TeacherSessionScreen extends StatefulWidget {
-  const TeacherSessionScreen({super.key, required this.session});
+  const TeacherSessionScreen({super.key, required this.session, this.api});
 
   final AuthSession session;
+  final FocusMissionApi? api;
 
   @override
   State<TeacherSessionScreen> createState() => _TeacherSessionScreenState();
 }
 
 class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
-  final FocusMissionApi _api = FocusMissionApi();
+  late final FocusMissionApi _api;
   final AuthSessionStore _sessionStore = AuthSessionStore();
   final GlobalKey<FormState> _createStudentFormKey = GlobalKey<FormState>();
   final TextEditingController _notesController = TextEditingController();
@@ -141,15 +144,23 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   String _selectedTeacherTimetableSubjectId = '';
   String _selectedTeacherTimetableRoom = _teacherTimetableRoomOptions.first;
   AppUser? _lastCreatedStudent;
+  int _workspaceLoadGeneration = 0;
+  bool _isLoadingSupplementalWorkspace = false;
+  Object? _supplementalWorkspaceError;
 
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? FocusMissionApi();
     _session = widget.session;
     _persistSessionSnapshot();
     final now = DateTime.now();
     _selectedLessonDate = DateTime(now.year, now.month, now.day);
-    _future = _loadWorkspace();
+    final generation = ++_workspaceLoadGeneration;
+    _future = _loadWorkspace(
+      generation: generation,
+      requestedStudentId: _selectedStudentId,
+    );
   }
 
   Future<void> _persistSessionSnapshot() async {
@@ -158,31 +169,111 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     } catch (_) {}
   }
 
-  Future<TeacherWorkspaceData> _loadWorkspace() async {
+  Future<TeacherWorkspaceData> _loadWorkspace({
+    required int generation,
+    required String requestedStudentId,
+  }) async {
+    final requestedDateKey = _dateKey(_selectedLessonDate);
     final workspace = await _api.loadTeacherWorkspace(
       session: _session,
-      selectedStudentId: _selectedStudentId,
-      dateKey: _dateKey(_selectedLessonDate),
+      selectedStudentId: requestedStudentId,
+      dateKey: requestedDateKey,
+      includeSupplementalData: false,
     );
+
+    if (generation != _workspaceLoadGeneration) {
+      // WHY: A slower response from a previous student selection must never
+      // mutate the currently selected learner's visible workspace state.
+      return workspace;
+    }
+
     _selectedStudentId = workspace.selectedStudent.id;
     _selectedStudentYearGroup = workspace.selectedStudent.yearGroup.trim();
-    final resultSubjectFilters = _buildStudentResultSubjectFilters(
-      workspace.studentResults,
-    );
-    if (!resultSubjectFilters.contains(_selectedResultSubject)) {
-      _selectedResultSubject = _allTeacherResultSubjectsFilterLabel;
-    }
-    final resultDateFilters = _buildStudentResultDateFilters(
-      workspace.studentResults,
-    );
-    if (!resultDateFilters.contains(_selectedResultDate)) {
-      _selectedResultDate = _allTeacherResultDatesFilterLabel;
-    }
-    _notificationInbox ??= workspace.notificationInbox;
     _recentSessions ??= workspace.selectedDashboard.recentSessions;
-    _targets = _sortTargets(workspace.targets);
     _syncTeacherTimetableEditor(workspace, _selectedLessonDate);
+    _isLoadingSupplementalWorkspace = true;
+    _supplementalWorkspaceError = null;
+    unawaited(
+      _loadSupplementalWorkspace(workspace, generation, requestedDateKey),
+    );
     return workspace;
+  }
+
+  Future<void> _loadSupplementalWorkspace(
+    TeacherWorkspaceData workspace,
+    int generation,
+    String requestedDateKey,
+  ) async {
+    try {
+      final supplemental = await _api.loadTeacherWorkspaceSupplemental(
+        session: workspace.session,
+        studentId: workspace.selectedStudent.id,
+        dateKey: requestedDateKey,
+      );
+      if (!mounted ||
+          generation != _workspaceLoadGeneration ||
+          workspace.selectedStudent.id != _selectedStudentId) {
+        // WHY: Student switching can finish before an earlier background batch;
+        // discarding that batch prevents cross-student data from flashing.
+        return;
+      }
+
+      setState(() {
+        _criteria = supplemental.criteria;
+        _draftMissions = supplemental.draftMissions;
+        _recentMissions = supplemental.recentMissions;
+        _studentResults = supplemental.studentResults;
+        _notificationInbox = supplemental.notificationInbox;
+        if (_dateKey(_selectedLessonDate) == requestedDateKey) {
+          // WHY: A teacher may change lesson date while secondary data loads;
+          // only the batch for the still-selected date may replace its targets.
+          _targets = _sortTargets(supplemental.targets);
+        }
+        final resultSubjectFilters = _buildStudentResultSubjectFilters(
+          supplemental.studentResults,
+        );
+        if (!resultSubjectFilters.contains(_selectedResultSubject)) {
+          _selectedResultSubject = _allTeacherResultSubjectsFilterLabel;
+        }
+        final resultDateFilters = _buildStudentResultDateFilters(
+          supplemental.studentResults,
+        );
+        if (!resultDateFilters.contains(_selectedResultDate)) {
+          _selectedResultDate = _allTeacherResultDatesFilterLabel;
+        }
+        _isLoadingSupplementalWorkspace = false;
+        _supplementalWorkspaceError = null;
+      });
+    } catch (error) {
+      if (!mounted ||
+          generation != _workspaceLoadGeneration ||
+          workspace.selectedStudent.id != _selectedStudentId) {
+        return;
+      }
+      setState(() {
+        // WHY: Secondary panel failures stay recoverable and must not replace
+        // the already usable timetable and student controls with a full loader.
+        _isLoadingSupplementalWorkspace = false;
+        _supplementalWorkspaceError = error;
+      });
+    }
+  }
+
+  void _retrySupplementalWorkspace(TeacherWorkspaceData workspace) {
+    if (_isLoadingSupplementalWorkspace) {
+      return;
+    }
+    setState(() {
+      _isLoadingSupplementalWorkspace = true;
+      _supplementalWorkspaceError = null;
+    });
+    unawaited(
+      _loadSupplementalWorkspace(
+        workspace,
+        _workspaceLoadGeneration,
+        _dateKey(_selectedLessonDate),
+      ),
+    );
   }
 
   Future<void> _refreshTargetsForSelectedLessonDate(
@@ -193,14 +284,22 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       return;
     }
 
+    final generation = _workspaceLoadGeneration;
+    final studentId = workspace.selectedStudent.id;
+    final requestedDateKey = _dateKey(date);
     setState(() => _isRefreshingTargets = true);
     try {
       final overview = await _api.fetchMentorOverview(
         token: workspace.session.token,
-        studentId: workspace.selectedStudent.id,
-        dateKey: _dateKey(date),
+        studentId: studentId,
+        dateKey: requestedDateKey,
       );
-      if (!mounted) {
+      if (!mounted ||
+          generation != _workspaceLoadGeneration ||
+          studentId != _selectedStudentId ||
+          requestedDateKey != _dateKey(_selectedLessonDate)) {
+        // WHY: Date and student changes invalidate target responses from the
+        // previous selection, even when that older request finishes later.
         return;
       }
       setState(() => _targets = _sortTargets(overview.targets));
@@ -252,6 +351,57 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     });
   }
 
+  Widget _buildSupplementalWorkspaceStatus(TeacherWorkspaceData workspace) {
+    final failed = _supplementalWorkspaceError != null;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: failed
+            ? AppPalette.orange.withValues(alpha: 0.1)
+            : AppPalette.primaryBlue.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(
+          color: failed
+              ? AppPalette.orange.withValues(alpha: 0.28)
+              : AppPalette.primaryBlue.withValues(alpha: 0.16),
+        ),
+      ),
+      child: Row(
+        children: [
+          if (_isLoadingSupplementalWorkspace)
+            const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            const Icon(
+              Icons.info_outline_rounded,
+              size: 20,
+              color: AppPalette.orange,
+            ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              failed
+                  ? 'The core workspace is ready. Some supporting panels could not load.'
+                  : 'Workspace ready. Loading reviews and history in the background...',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppPalette.navy,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (failed)
+            TextButton(
+              onPressed: () => _retrySupplementalWorkspace(workspace),
+              child: const Text('Retry'),
+            ),
+        ],
+      ),
+    );
+  }
+
   void _reloadTeacherWorkspaceForStudent(String studentId) {
     // WHY: Student selection drives every teacher-owned section on this screen,
     // so switching or creating a student must clear learner-specific caches
@@ -273,7 +423,13 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     _isAssignedMissionsExpanded = false;
     _isStudentResultsExpanded = false;
     _isLessonPanelExpanded = false;
-    _future = _loadWorkspace();
+    _isLoadingSupplementalWorkspace = false;
+    _supplementalWorkspaceError = null;
+    final generation = ++_workspaceLoadGeneration;
+    _future = _loadWorkspace(
+      generation: generation,
+      requestedStudentId: studentId,
+    );
   }
 
   @override
@@ -451,6 +607,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 ),
                 const SizedBox(height: AppSpacing.item),
                 _StudentPickerCard(student: workspace.selectedStudent),
+                if (_isLoadingSupplementalWorkspace ||
+                    _supplementalWorkspaceError != null) ...[
+                  const SizedBox(height: AppSpacing.compact),
+                  _buildSupplementalWorkspaceStatus(workspace),
+                ],
                 const SizedBox(height: AppSpacing.compact),
                 Align(
                   alignment: Alignment.centerRight,
@@ -535,24 +696,27 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   studentName: workspace.selectedStudent.name,
                   onEditPlan: _openCertificationPlanEditor,
                 ),
-                const SizedBox(height: AppSpacing.item),
-                _TeacherCriterionPanel(
-                  criteria: teacherCriteria,
-                  onTap: (criterion) =>
-                      _openCriterionReview(workspace, criterion),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                NotificationPanel(
-                  title: 'Teacher Inbox',
-                  subtitle:
-                      'Review submission alerts and locked learning checks without leaving this screen.',
-                  notifications: notificationInbox.notifications,
-                  unreadCount: notificationInbox.unreadCount,
-                  emptyMessage:
-                      'No review alerts right now. New criterion submissions and lock reviews will appear here.',
-                  onTapNotification: (notification) =>
-                      _openNotification(workspace, notification),
-                ),
+                if (!_isLoadingSupplementalWorkspace &&
+                    _supplementalWorkspaceError == null) ...[
+                  const SizedBox(height: AppSpacing.item),
+                  _TeacherCriterionPanel(
+                    criteria: teacherCriteria,
+                    onTap: (criterion) =>
+                        _openCriterionReview(workspace, criterion),
+                  ),
+                  const SizedBox(height: AppSpacing.item),
+                  NotificationPanel(
+                    title: 'Teacher Inbox',
+                    subtitle:
+                        'Review submission alerts and locked learning checks without leaving this screen.',
+                    notifications: notificationInbox.notifications,
+                    unreadCount: notificationInbox.unreadCount,
+                    emptyMessage:
+                        'No review alerts right now. New criterion submissions and lock reviews will appear here.',
+                    onTapNotification: (notification) =>
+                        _openNotification(workspace, notification),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.item),
                 WeeklyTimetableCalendar(
                   title: 'Teacher Timetable',
@@ -637,52 +801,58 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                     _refreshTargetsForSelectedLessonDate(workspace, date);
                   },
                 ),
-                const SizedBox(height: AppSpacing.item),
-                _DraftMissionsPanel(
-                  missions: dailyDraftMissions.take(5).toList(growable: false),
-                  dailyDraftCount: dailyDraftMissions.length,
-                  assessmentDraftCount: assessmentDraftMissions.length,
-                  isSelectingDrafts: _isSelectingDraftMissions,
-                  isArchivingDrafts: _isArchivingDraftMissions,
-                  isDeletingDrafts: _isDeletingDraftMissions,
-                  selectedDraftMissionIds: _selectedDraftMissionIds,
-                  onOpenDailyDrafts: () => _openDailyDraftsList(
-                    workspace,
-                    dailyDraftMissions,
-                    selectedSubject: selectedSubject,
-                    lessonLabel: activeLesson,
-                  ),
-                  onOpenAssessmentDrafts: () => _openAssessmentDraftsList(
-                    workspace,
-                    assessmentDraftMissions,
-                    selectedSubject: selectedSubject,
-                    lessonLabel: activeLesson,
-                  ),
-                  onToggleDraftSelectionMode: () => _toggleDraftSelectionMode(
-                    dailyDraftMissions.take(5).toList(growable: false),
-                  ),
-                  onCancelDraftSelection: _clearDraftSelection,
-                  onToggleDraftSelection: _toggleDraftSelection,
-                  onArchiveSelectedDrafts: () =>
-                      _archiveSelectedDraftMissions(workspace),
-                  onDeleteSelectedDrafts: () =>
-                      _deleteSelectedDraftMissions(workspace),
-                  onEdit: (mission) => _openMissionBuilder(
-                    workspace: workspace,
-                    subject: SubjectSummary(
-                      id: mission.subject?.id ?? selectedSubject?.id ?? '',
-                      name:
-                          mission.subject?.name ??
-                          selectedSubject?.name ??
-                          'Mission',
+                if (!_isLoadingSupplementalWorkspace &&
+                    _supplementalWorkspaceError == null) ...[
+                  const SizedBox(height: AppSpacing.item),
+                  _DraftMissionsPanel(
+                    missions: dailyDraftMissions
+                        .take(5)
+                        .toList(growable: false),
+                    dailyDraftCount: dailyDraftMissions.length,
+                    assessmentDraftCount: assessmentDraftMissions.length,
+                    isSelectingDrafts: _isSelectingDraftMissions,
+                    isArchivingDrafts: _isArchivingDraftMissions,
+                    isDeletingDrafts: _isDeletingDraftMissions,
+                    selectedDraftMissionIds: _selectedDraftMissionIds,
+                    onOpenDailyDrafts: () => _openDailyDraftsList(
+                      workspace,
+                      dailyDraftMissions,
+                      selectedSubject: selectedSubject,
+                      lessonLabel: activeLesson,
                     ),
-                    lessonLabel: mission.sessionType == 'afternoon'
-                        ? 'Afternoon'
-                        : 'Morning',
-                    initialDraft: mission,
+                    onOpenAssessmentDrafts: () => _openAssessmentDraftsList(
+                      workspace,
+                      assessmentDraftMissions,
+                      selectedSubject: selectedSubject,
+                      lessonLabel: activeLesson,
+                    ),
+                    onToggleDraftSelectionMode: () => _toggleDraftSelectionMode(
+                      dailyDraftMissions.take(5).toList(growable: false),
+                    ),
+                    onCancelDraftSelection: _clearDraftSelection,
+                    onToggleDraftSelection: _toggleDraftSelection,
+                    onArchiveSelectedDrafts: () =>
+                        _archiveSelectedDraftMissions(workspace),
+                    onDeleteSelectedDrafts: () =>
+                        _deleteSelectedDraftMissions(workspace),
+                    onEdit: (mission) => _openMissionBuilder(
+                      workspace: workspace,
+                      subject: SubjectSummary(
+                        id: mission.subject?.id ?? selectedSubject?.id ?? '',
+                        name:
+                            mission.subject?.name ??
+                            selectedSubject?.name ??
+                            'Mission',
+                      ),
+                      lessonLabel: mission.sessionType == 'afternoon'
+                          ? 'Afternoon'
+                          : 'Morning',
+                      initialDraft: mission,
+                    ),
+                    onReuse: (mission) =>
+                        _reuseMissionDraft(workspace, mission),
                   ),
-                  onReuse: (mission) => _reuseMissionDraft(workspace, mission),
-                ),
+                ],
                 const SizedBox(height: AppSpacing.item),
                 _StandalonePapersPanel(
                   onOpenTest: () => _openStandalonePaperScreen(
@@ -696,77 +866,80 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                     paperKind: 'EXAM',
                   ),
                 ),
-                const SizedBox(height: AppSpacing.item),
-                TeacherAssignedMissionsPanel(
-                  missions: recentMissions,
-                  sendingResultMissionIds: _sendingResultMissionIds,
-                  isExpanded: _isAssignedMissionsExpanded,
-                  onToggleExpanded: _toggleAssignedMissionsExpanded,
-                  onEdit: (mission) => _openMissionBuilder(
-                    workspace: workspace,
-                    subject: SubjectSummary(
-                      id: mission.subject?.id ?? '',
-                      name: mission.subject?.name ?? 'Mission',
+                if (!_isLoadingSupplementalWorkspace &&
+                    _supplementalWorkspaceError == null) ...[
+                  const SizedBox(height: AppSpacing.item),
+                  TeacherAssignedMissionsPanel(
+                    missions: recentMissions,
+                    sendingResultMissionIds: _sendingResultMissionIds,
+                    isExpanded: _isAssignedMissionsExpanded,
+                    onToggleExpanded: _toggleAssignedMissionsExpanded,
+                    onEdit: (mission) => _openMissionBuilder(
+                      workspace: workspace,
+                      subject: SubjectSummary(
+                        id: mission.subject?.id ?? '',
+                        name: mission.subject?.name ?? 'Mission',
+                      ),
+                      lessonLabel: mission.sessionType == 'afternoon'
+                          ? 'Afternoon'
+                          : 'Morning',
+                      initialDraft: mission,
                     ),
-                    lessonLabel: mission.sessionType == 'afternoon'
-                        ? 'Afternoon'
-                        : 'Morning',
-                    initialDraft: mission,
+                    onMoveBackToDraft: (mission) =>
+                        _moveMissionBackToDraft(workspace, mission),
+                    onSendResult: (mission) =>
+                        _sendMissionResult(workspace, mission),
+                    onViewResult: (mission) =>
+                        _openResultReport(workspace, mission),
+                    onRedoResult: (mission) =>
+                        _createMissionRedo(workspace, mission),
+                    onMoveResult: (mission) =>
+                        _moveMissionEvidence(workspace, mission),
+                    resultEvidenceActionMissionIds:
+                        _resultEvidenceActionMissionIds,
                   ),
-                  onMoveBackToDraft: (mission) =>
-                      _moveMissionBackToDraft(workspace, mission),
-                  onSendResult: (mission) =>
-                      _sendMissionResult(workspace, mission),
-                  onViewResult: (mission) =>
-                      _openResultReport(workspace, mission),
-                  onRedoResult: (mission) =>
-                      _createMissionRedo(workspace, mission),
-                  onMoveResult: (mission) =>
-                      _moveMissionEvidence(workspace, mission),
-                  resultEvidenceActionMissionIds:
-                      _resultEvidenceActionMissionIds,
-                ),
-                const SizedBox(height: AppSpacing.item),
-                _TeacherStudentResultsPanel(
-                  studentName: workspace.selectedStudent.name,
-                  subjectFilters: resultSubjectFilters,
-                  selectedSubject: _selectedResultSubject,
-                  dateFilters: resultDateFilters,
-                  selectedDate: _selectedResultDate,
-                  filteredResults: filteredStudentResults,
-                  allResults: studentResults,
-                  isExpanded: _isStudentResultsExpanded,
-                  onToggleExpanded: _toggleStudentResultsExpanded,
-                  onSelectSubject: (value) =>
-                      setState(() => _selectedResultSubject = value),
-                  onSelectDate: (value) =>
-                      setState(() => _selectedResultDate = value),
-                  onOpenResult: (mission) =>
-                      _openStudentResultHistory(workspace, mission),
-                  onDownloadResult: (result) => _downloadStudentResult(
-                    workspace: workspace,
-                    result: result,
+                  const SizedBox(height: AppSpacing.item),
+                  _TeacherStudentResultsPanel(
+                    studentName: workspace.selectedStudent.name,
+                    subjectFilters: resultSubjectFilters,
+                    selectedSubject: _selectedResultSubject,
+                    dateFilters: resultDateFilters,
+                    selectedDate: _selectedResultDate,
+                    filteredResults: filteredStudentResults,
+                    allResults: studentResults,
+                    isExpanded: _isStudentResultsExpanded,
+                    onToggleExpanded: _toggleStudentResultsExpanded,
+                    onSelectSubject: (value) =>
+                        setState(() => _selectedResultSubject = value),
+                    onSelectDate: (value) =>
+                        setState(() => _selectedResultDate = value),
+                    onOpenResult: (mission) =>
+                        _openStudentResultHistory(workspace, mission),
+                    onDownloadResult: (result) => _downloadStudentResult(
+                      workspace: workspace,
+                      result: result,
+                    ),
+                    onUploadResult: () => _openUploadResultFromStudentResults(
+                      workspace,
+                      lessonLabel: activeLesson,
+                      selectedSubject: selectedSubject,
+                    ),
+                    onDownloadDayResults: () => _downloadSelectedDayResults(
+                      workspace: workspace,
+                      results: downloadDayResults,
+                    ),
+                    canUploadResult:
+                        canCreateFallbackResultUpload && !selectedDateIsFuture,
+                    canDownloadDayResults:
+                        _selectedResultDate !=
+                            _allTeacherResultDatesFilterLabel &&
+                        downloadDayResults.isNotEmpty,
+                    isDownloadingDayResults: _isDownloadingDayResults,
+                    downloadsLocked: _teacherResultDownloadsLocked,
+                    downloadingResultPackageId: _downloadingResultPackageId,
+                    uploadResultHelperText: uploadResultHelperText,
                   ),
-                  onUploadResult: () => _openUploadResultFromStudentResults(
-                    workspace,
-                    lessonLabel: activeLesson,
-                    selectedSubject: selectedSubject,
-                  ),
-                  onDownloadDayResults: () => _downloadSelectedDayResults(
-                    workspace: workspace,
-                    results: downloadDayResults,
-                  ),
-                  canUploadResult:
-                      canCreateFallbackResultUpload && !selectedDateIsFuture,
-                  canDownloadDayResults:
-                      _selectedResultDate !=
-                          _allTeacherResultDatesFilterLabel &&
-                      downloadDayResults.isNotEmpty,
-                  isDownloadingDayResults: _isDownloadingDayResults,
-                  downloadsLocked: _teacherResultDownloadsLocked,
-                  downloadingResultPackageId: _downloadingResultPackageId,
-                  uploadResultHelperText: uploadResultHelperText,
-                ),
+                ],
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
                   child: Column(
@@ -4274,7 +4447,7 @@ body { margin: 0; font-family: Arial, sans-serif; background: #eef6ff; color: #1
         _selectedLesson = _selectedTeacherTimetableSessionType == 'afternoon'
             ? 'Afternoon'
             : 'Morning';
-        _future = _loadWorkspace();
+        _reloadTeacherWorkspaceForStudent(_selectedStudentId);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4587,7 +4760,9 @@ body { margin: 0; font-family: Arial, sans-serif; background: #eef6ff; color: #1
                               return;
                             }
                             setState(() {
-                              _future = _loadWorkspace();
+                              _reloadTeacherWorkspaceForStudent(
+                                _selectedStudentId,
+                              );
                             });
                             if (context.mounted) {
                               Navigator.of(dialogContext).pop(true);
