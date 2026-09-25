@@ -30,6 +30,7 @@ import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/question_evidence_panel.dart';
 import '../../../shared/widgets/safe_link_text.dart';
 import '../../../shared/widgets/soft_panel.dart';
+import '../models/result_report_presentation.dart';
 
 int _asIntValue(dynamic value) {
   if (value is int) {
@@ -88,68 +89,6 @@ String _formatOneDecimal(double value) {
   final normalized = value % 1 == 0
       ? value.toInt().toString()
       : value.toStringAsFixed(1);
-  return normalized;
-}
-
-Map<String, String> _extractQuestionOptions(Map<String, dynamic> question) {
-  final normalized = <String, String>{'A': '', 'B': '', 'C': '', 'D': ''};
-  final rawOptions = question['options'];
-  if (rawOptions is Map<dynamic, dynamic>) {
-    for (final letter in normalized.keys) {
-      normalized[letter] = (rawOptions[letter] ?? '').toString().trim();
-    }
-  } else if (rawOptions is List<dynamic>) {
-    for (var index = 0; index < rawOptions.length && index < 4; index += 1) {
-      final letter = String.fromCharCode(65 + index);
-      normalized[letter] = (rawOptions[index] ?? '').toString().trim();
-    }
-  }
-
-  final selectedLetter = (question['selectedOptionLetter'] ?? '')
-      .toString()
-      .trim()
-      .toUpperCase();
-  final selectedAnswer = (question['selectedAnswer'] ?? '').toString().trim();
-  final correctLetter = (question['correctOptionLetter'] ?? '')
-      .toString()
-      .trim()
-      .toUpperCase();
-  final correctAnswer = (question['correctAnswer'] ?? '').toString().trim();
-  final remainingOptions =
-      (question['remainingOptions'] as List<dynamic>? ?? const [])
-          .map((item) => item.toString().trim())
-          .where((item) => item.isNotEmpty)
-          .toList(growable: false);
-
-  if (normalized.values.where((value) => value.isNotEmpty).length >= 4) {
-    return normalized;
-  }
-
-  // WHY: Older evidence snapshots did not persist full option maps. This fallback
-  // reconstructs A/B/C/D from selected/correct/remaining fields for readability.
-  if (selectedLetter.isNotEmpty && normalized.containsKey(selectedLetter)) {
-    normalized[selectedLetter] = normalized[selectedLetter]!.isNotEmpty
-        ? normalized[selectedLetter]!
-        : selectedAnswer;
-  }
-  if (correctLetter.isNotEmpty && normalized.containsKey(correctLetter)) {
-    normalized[correctLetter] = normalized[correctLetter]!.isNotEmpty
-        ? normalized[correctLetter]!
-        : correctAnswer;
-  }
-
-  var nextRemainingIndex = 0;
-  for (final letter in ['A', 'B', 'C', 'D']) {
-    if (normalized[letter]!.isNotEmpty) {
-      continue;
-    }
-    if (nextRemainingIndex >= remainingOptions.length) {
-      break;
-    }
-    normalized[letter] = remainingOptions[nextRemainingIndex];
-    nextRemainingIndex += 1;
-  }
-
   return normalized;
 }
 
@@ -1047,7 +986,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                   ],
                   const SizedBox(height: 10),
                   Text(
-                    'Student answer',
+                    resultStudentAnswerHeading(resultPackage.meta.studentName),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppPalette.textMuted,
                       fontWeight: FontWeight.w700,
@@ -2317,7 +2256,10 @@ class _MetaPanel extends StatelessWidget {
             label: 'Submitted',
             value: _formatReportDateTime(meta.submitTime),
           ),
-          _MetaRow(label: 'Duration', value: '${meta.durationSeconds}s'),
+          _MetaRow(
+            label: 'Duration',
+            value: formatResultDuration(meta.durationSeconds),
+          ),
         ],
       ),
     );
@@ -2546,11 +2488,18 @@ class _EvidencePanel extends StatelessWidget {
             _EssayEvidence(
               evidence: evidence,
               missionDraftJson: missionDraftJson,
+              studentName: resultPackage.meta.studentName,
             )
           else if (format == 'THEORY')
-            _TheoryEvidence(evidence: evidence)
+            _TheoryEvidence(
+              evidence: evidence,
+              studentName: resultPackage.meta.studentName,
+            )
           else
-            _QuestionEvidence(evidence: evidence),
+            _QuestionEvidence(
+              evidence: evidence,
+              studentName: resultPackage.meta.studentName,
+            ),
         ],
       ),
     );
@@ -2558,9 +2507,10 @@ class _EvidencePanel extends StatelessWidget {
 }
 
 class _TheoryEvidence extends StatelessWidget {
-  const _TheoryEvidence({required this.evidence});
+  const _TheoryEvidence({required this.evidence, required this.studentName});
 
   final Map<String, dynamic> evidence;
+  final String studentName;
 
   @override
   Widget build(BuildContext context) {
@@ -2803,7 +2753,7 @@ class _TheoryEvidence extends StatelessWidget {
                   ],
                   const SizedBox(height: 10),
                   Text(
-                    'Student answer',
+                    resultStudentAnswerHeading(studentName),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppPalette.textMuted,
                       fontWeight: FontWeight.w700,
@@ -2862,9 +2812,10 @@ class _TheoryEvidence extends StatelessWidget {
 }
 
 class _QuestionEvidence extends StatelessWidget {
-  const _QuestionEvidence({required this.evidence});
+  const _QuestionEvidence({required this.evidence, required this.studentName});
 
   final Map<String, dynamic> evidence;
+  final String studentName;
 
   @override
   Widget build(BuildContext context) {
@@ -3018,6 +2969,7 @@ class _QuestionEvidence extends StatelessWidget {
               child: _TeacherFillGapEvidenceCard(
                 itemNumber: index + 1,
                 question: question,
+                studentName: studentName,
               ),
             );
           }
@@ -3027,51 +2979,21 @@ class _QuestionEvidence extends StatelessWidget {
               child: _TeacherTheoryEvidenceCard(
                 itemNumber: index + 1,
                 question: question,
+                studentName: studentName,
               ),
             );
           }
-          final correctness =
-              !isManualTeacherResult && question['correctness'] == true;
-          final selectedOptionLetter = (question['selectedOptionLetter'] ?? '')
-              .toString()
-              .trim()
-              .toUpperCase();
-          final selectedAnswer = (question['selectedAnswer'] ?? '')
-              .toString()
-              .trim();
-          final correctOptionLetter = (question['correctOptionLetter'] ?? '')
-              .toString()
-              .trim()
-              .toUpperCase();
-          final correctAnswer = (question['correctAnswer'] ?? '')
-              .toString()
-              .trim();
-          final optionMap = _extractQuestionOptions(question);
-          final hasStoredMaxPoints = _asIntValue(question['maxPoints']) > 0;
-          final maxPoints = hasStoredMaxPoints
-              ? _asIntValue(question['maxPoints'])
-              : 1;
-          final pointsEarned = hasStoredMaxPoints
-              ? _asIntValue(question['pointsEarned'])
-              : (correctness ? 1 : 0);
-          final legacySelectionUnavailable =
-              question['legacySelectionUnavailable'] == true;
+          final presentation = ResultObjectiveQuestionPresentation.fromEvidence(
+            question,
+            studentName: studentName,
+          );
 
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.compact),
             child: _TeacherObjectiveEvidenceCard(
               itemNumber: index + 1,
               isManualTeacherResult: isManualTeacherResult,
-              correctness: correctness,
-              pointsEarned: pointsEarned,
-              maxPoints: maxPoints,
-              question: question,
-              optionMap: optionMap,
-              selectedOptionLetter: selectedOptionLetter,
-              selectedAnswer: selectedAnswer,
-              correctOptionLetter: correctOptionLetter,
-              correctAnswer: correctAnswer,
-              legacySelectionUnavailable: legacySelectionUnavailable,
+              presentation: presentation,
             ),
           );
         }),
@@ -3084,33 +3006,18 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
   const _TeacherObjectiveEvidenceCard({
     required this.itemNumber,
     required this.isManualTeacherResult,
-    required this.correctness,
-    required this.pointsEarned,
-    required this.maxPoints,
-    required this.question,
-    required this.optionMap,
-    required this.selectedOptionLetter,
-    required this.selectedAnswer,
-    required this.correctOptionLetter,
-    required this.correctAnswer,
-    required this.legacySelectionUnavailable,
+    required this.presentation,
   });
 
   final int itemNumber;
   final bool isManualTeacherResult;
-  final bool correctness;
-  final int pointsEarned;
-  final int maxPoints;
-  final Map<String, dynamic> question;
-  final Map<String, String> optionMap;
-  final String selectedOptionLetter;
-  final String selectedAnswer;
-  final String correctOptionLetter;
-  final String correctAnswer;
-  final bool legacySelectionUnavailable;
+  final ResultObjectiveQuestionPresentation presentation;
 
   @override
   Widget build(BuildContext context) {
+    final correctness = presentation.correctness;
+    final pointsEarned = presentation.pointsEarned;
+    final maxPoints = presentation.maxPoints;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.item),
@@ -3172,7 +3079,7 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            (question['questionText'] ?? '').toString(),
+            presentation.questionText,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: AppPalette.navy,
               fontWeight: FontWeight.w700,
@@ -3180,22 +3087,24 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           ...['A', 'B', 'C', 'D'].map((letter) {
-            final optionText = (optionMap[letter] ?? '').trim();
-            final isCorrectOption = letter == correctOptionLetter;
-            final isSelectedOption = letter == selectedOptionLetter;
-            final isSelectedWrong = isSelectedOption && !isCorrectOption;
-            Color tileColor = Colors.white;
-            Color borderColor = AppPalette.sky.withValues(alpha: 0.5);
-            if (isCorrectOption) {
-              tileColor = const Color(0xFFEAF9EE);
-              borderColor = AppPalette.mint.withValues(alpha: 0.85);
-            } else if (isSelectedWrong) {
-              tileColor = const Color(0xFFFFF0E3);
-              borderColor = AppPalette.orange.withValues(alpha: 0.8);
-            } else if (isSelectedOption) {
-              tileColor = const Color(0xFFEAF2FF);
-              borderColor = AppPalette.primaryBlue.withValues(alpha: 0.6);
-            }
+            final optionText = (presentation.options[letter] ?? '').trim();
+            final optionState = presentation.stateFor(letter);
+            final isCorrectOption =
+                optionState == ResultOptionVisualState.correct ||
+                optionState == ResultOptionVisualState.studentCorrect;
+            final isSelectedWrong =
+                optionState == ResultOptionVisualState.studentIncorrect;
+            final tileColor = isCorrectOption
+                ? ResultReportVisualTokens.successSurface
+                : isSelectedWrong
+                ? ResultReportVisualTokens.warningSurface
+                : Colors.white;
+            final borderColor = isCorrectOption
+                ? ResultReportVisualTokens.successBorder
+                : isSelectedWrong
+                ? ResultReportVisualTokens.warningBorder
+                : ResultReportVisualTokens.neutralBorder;
+            final optionTag = presentation.optionTag(letter);
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 6),
@@ -3228,47 +3137,39 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
                         ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
                       ),
                     ),
-                    if (isCorrectOption)
-                      Icon(
-                        Icons.check_circle_rounded,
-                        size: 16,
-                        color: AppPalette.mint.withValues(alpha: 0.95),
-                      )
-                    else if (isSelectedWrong)
-                      Icon(
-                        Icons.radio_button_checked_rounded,
-                        size: 16,
-                        color: AppPalette.orange,
-                      )
-                    else if (isSelectedOption)
-                      Icon(
-                        Icons.radio_button_checked_rounded,
-                        size: 16,
-                        color: AppPalette.primaryBlue,
+                    if (optionTag.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          optionTag,
+                          textAlign: TextAlign.end,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: isSelectedWrong
+                                    ? ResultReportVisualTokens.warning
+                                    : ResultReportVisualTokens.success,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
                       ),
+                    ],
                   ],
                 ),
               ),
             );
           }),
-          const SizedBox(height: 4),
-          Text(
-            'Correct: ${correctOptionLetter.isNotEmpty ? '$correctOptionLetter) ' : ''}$correctAnswer',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppPalette.mint.withValues(alpha: 0.95),
-              fontWeight: FontWeight.w700,
+          if (!presentation.hasMeaningfulOptions) ...[
+            const SizedBox(height: 8),
+            _ResultAnswerComparison(
+              studentName: presentation.studentName,
+              studentAnswer: presentation.selectedAnswerValue,
+              correctAnswer: presentation.correctAnswerValue,
+              isCorrect: presentation.correctness,
             ),
-          ),
-          Text(
-            'Selected: ${selectedOptionLetter.isNotEmpty ? '$selectedOptionLetter) ' : ''}${selectedAnswer.isNotEmpty ? selectedAnswer : 'No selection recorded'}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppPalette.navy,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          if (legacySelectionUnavailable &&
-              selectedOptionLetter.isEmpty &&
-              selectedAnswer.isEmpty) ...[
+          ],
+          if (presentation.legacySelectionUnavailable &&
+              presentation.selectedLetter.isEmpty &&
+              presentation.selectedAnswer.isEmpty) ...[
             const SizedBox(height: 4),
             Text(
               'Original selected option was not saved in this older record.',
@@ -3283,14 +3184,128 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
   }
 }
 
+class _ResultAnswerComparison extends StatelessWidget {
+  const _ResultAnswerComparison({
+    required this.studentName,
+    required this.studentAnswer,
+    required this.correctAnswer,
+    required this.isCorrect,
+  });
+
+  final String studentName;
+  final String studentAnswer;
+  final String correctAnswer;
+  final bool isCorrect;
+
+  @override
+  Widget build(BuildContext context) {
+    final studentAnswerCard = _ResultAnswerBox(
+      label:
+          '${resultStudentAnswerHeading(studentName)}${isCorrect ? ' · CORRECT' : ''}',
+      value: studentAnswer,
+      foregroundColor: isCorrect
+          ? ResultReportVisualTokens.success
+          : ResultReportVisualTokens.warning,
+      backgroundColor: isCorrect
+          ? ResultReportVisualTokens.successSurface
+          : ResultReportVisualTokens.warningSurface,
+      borderColor: isCorrect
+          ? ResultReportVisualTokens.successBorder
+          : ResultReportVisualTokens.warningBorder,
+    );
+    if (isCorrect) {
+      return studentAnswerCard;
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final correctAnswerCard = _ResultAnswerBox(
+          label: 'CORRECT ANSWER',
+          value: correctAnswer,
+          foregroundColor: ResultReportVisualTokens.success,
+          backgroundColor: ResultReportVisualTokens.successSurface,
+          borderColor: ResultReportVisualTokens.successBorder,
+        );
+        if (constraints.maxWidth < 560) {
+          return Column(
+            children: [
+              studentAnswerCard,
+              const SizedBox(height: 8),
+              correctAnswerCard,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: studentAnswerCard),
+            const SizedBox(width: 8),
+            Expanded(child: correctAnswerCard),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ResultAnswerBox extends StatelessWidget {
+  const _ResultAnswerBox({
+    required this.label,
+    required this.value,
+    required this.foregroundColor,
+    required this.backgroundColor,
+    required this.borderColor,
+  });
+
+  final String label;
+  final String value;
+  final Color foregroundColor;
+  final Color backgroundColor;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: foregroundColor,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.45,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TeacherFillGapEvidenceCard extends StatelessWidget {
   const _TeacherFillGapEvidenceCard({
     required this.itemNumber,
     required this.question,
+    required this.studentName,
   });
 
   final int itemNumber;
   final Map<String, dynamic> question;
+  final String studentName;
 
   @override
   Widget build(BuildContext context) {
@@ -3300,6 +3315,8 @@ class _TeacherFillGapEvidenceCard extends StatelessWidget {
             .map((item) => item.toString())
             .where((item) => item.trim().isNotEmpty)
             .toList(growable: false);
+    final studentAnswer = (question['studentAnswer'] ?? '').toString().trim();
+    final expectedAnswer = (question['expectedAnswer'] ?? '').toString().trim();
 
     return Container(
       width: double.infinity,
@@ -3350,12 +3367,13 @@ class _TeacherFillGapEvidenceCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            'Student answer: ${((question['studentAnswer'] ?? '').toString()).trim().isEmpty ? 'No answer recorded' : (question['studentAnswer'] ?? '').toString()}',
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Expected answer: ${((question['expectedAnswer'] ?? '').toString()).trim().isEmpty ? '-' : (question['expectedAnswer'] ?? '').toString()}',
+          _ResultAnswerComparison(
+            studentName: studentName,
+            studentAnswer: studentAnswer.isEmpty
+                ? 'No answer recorded'
+                : studentAnswer,
+            correctAnswer: expectedAnswer.isEmpty ? '-' : expectedAnswer,
+            isCorrect: isCorrect,
           ),
           if (acceptedAnswers.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -3371,10 +3389,12 @@ class _TeacherTheoryEvidenceCard extends StatelessWidget {
   const _TeacherTheoryEvidenceCard({
     required this.itemNumber,
     required this.question,
+    required this.studentName,
   });
 
   final int itemNumber;
   final Map<String, dynamic> question;
+  final String studentName;
 
   @override
   Widget build(BuildContext context) {
@@ -3442,7 +3462,7 @@ class _TeacherTheoryEvidenceCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Student answer',
+            resultStudentAnswerHeading(studentName),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: AppPalette.textMuted,
               fontWeight: FontWeight.w700,
@@ -3491,10 +3511,12 @@ class _EssayEvidence extends StatelessWidget {
   const _EssayEvidence({
     required this.evidence,
     required this.missionDraftJson,
+    required this.studentName,
   });
 
   final Map<String, dynamic> evidence;
   final Map<String, dynamic>? missionDraftJson;
+  final String studentName;
 
   @override
   Widget build(BuildContext context) {
@@ -3740,28 +3762,38 @@ class _EssayEvidence extends StatelessWidget {
                               final optionText = (optionMap[letter] ?? '')
                                   .trim();
                               final isCorrect = letter == correctLetter;
-                              final isSelected = letter == selectedLetter;
-                              final isSelectedWrong = isSelected && !isCorrect;
+                              final isStudentAnswer = letter == selectedLetter;
+                              final isStudentCorrect =
+                                  isStudentAnswer && isCorrect;
+                              final isStudentWrong =
+                                  isStudentAnswer && !isCorrect;
+                              final optionTag = isStudentCorrect
+                                  ? resultCompactAnswerLabel(
+                                      studentName,
+                                      isCorrect: true,
+                                    )
+                                  : isStudentWrong
+                                  ? resultCompactAnswerLabel(
+                                      studentName,
+                                      isCorrect: false,
+                                    )
+                                  : isCorrect
+                                  ? 'Correct answer'
+                                  : '';
 
                               Color tileColor = Colors.white;
-                              Color borderColor = AppPalette.sky.withValues(
-                                alpha: 0.5,
-                              );
+                              Color borderColor =
+                                  ResultReportVisualTokens.neutralBorder;
                               if (isCorrect) {
-                                tileColor = const Color(0xFFEAF9EE);
-                                borderColor = AppPalette.mint.withValues(
-                                  alpha: 0.85,
-                                );
-                              } else if (isSelectedWrong) {
-                                tileColor = const Color(0xFFFFF0E3);
-                                borderColor = AppPalette.orange.withValues(
-                                  alpha: 0.8,
-                                );
-                              } else if (isSelected) {
-                                tileColor = const Color(0xFFEAF2FF);
-                                borderColor = AppPalette.primaryBlue.withValues(
-                                  alpha: 0.6,
-                                );
+                                tileColor =
+                                    ResultReportVisualTokens.successSurface;
+                                borderColor =
+                                    ResultReportVisualTokens.successBorder;
+                              } else if (isStudentWrong) {
+                                tileColor =
+                                    ResultReportVisualTokens.warningSurface;
+                                borderColor =
+                                    ResultReportVisualTokens.warningBorder;
                               }
 
                               return Padding(
@@ -3800,30 +3832,48 @@ class _EssayEvidence extends StatelessWidget {
                                               ),
                                         ),
                                       ),
+                                      if (optionTag.isNotEmpty) ...[
+                                        const SizedBox(width: 8),
+                                        Flexible(
+                                          child: Text(
+                                            optionTag,
+                                            textAlign: TextAlign.end,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelSmall
+                                                ?.copyWith(
+                                                  color: isStudentWrong
+                                                      ? ResultReportVisualTokens
+                                                            .warning
+                                                      : ResultReportVisualTokens
+                                                            .success,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),
                               );
                             }),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Correct: ${correctLetter.isNotEmpty ? '$correctLetter) ' : ''}$correctText',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: AppPalette.mint.withValues(
-                                      alpha: 0.95,
-                                    ),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                            Text(
-                              'Selected: ${selectedLetter.isNotEmpty ? '$selectedLetter) ' : ''}${selectedText.isNotEmpty ? selectedText : 'No selection recorded'}',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: AppPalette.navy,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
+                            if (!optionMap.values.any(
+                              (value) => value.trim().isNotEmpty,
+                            )) ...[
+                              const SizedBox(height: 4),
+                              _ResultAnswerComparison(
+                                studentName: studentName,
+                                studentAnswer:
+                                    '${selectedLetter.isNotEmpty ? '$selectedLetter) ' : ''}${selectedText.isNotEmpty ? selectedText : 'No answer recorded'}',
+                                correctAnswer:
+                                    '${correctLetter.isNotEmpty ? '$correctLetter) ' : ''}${correctText.isNotEmpty ? correctText : 'No correct answer recorded'}',
+                                isCorrect:
+                                    (selectedLetter.isNotEmpty &&
+                                        selectedLetter == correctLetter) ||
+                                    (selectedText.isNotEmpty &&
+                                        selectedText == correctText),
+                              ),
+                            ],
                           ],
                         ),
                       );
@@ -3853,7 +3903,13 @@ class _EssayEvidence extends StatelessWidget {
         const SizedBox(height: AppSpacing.compact),
         Text('Final Essay', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 4),
-        SafeLinkText(finalEssayText),
+        _ResultAnswerBox(
+          label: resultStudentAnswerHeading(studentName),
+          value: finalEssayText.isEmpty ? 'No essay recorded' : finalEssayText,
+          foregroundColor: ResultReportVisualTokens.accent,
+          backgroundColor: ResultReportVisualTokens.neutralSurface,
+          borderColor: ResultReportVisualTokens.neutralBorder,
+        ),
         const SizedBox(height: 8),
         Text(
           'Word count: $finalWordCount · Blanks: $blankCompletionCount/$blankTargetCount',

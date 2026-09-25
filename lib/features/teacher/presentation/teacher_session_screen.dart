@@ -36,6 +36,7 @@ import '../../../shared/widgets/student_year_group_filter.dart';
 import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
 import '../../auth/presentation/role_selection_screen.dart';
+import '../models/result_report_presentation.dart';
 import 'assessment_mode_screen.dart';
 import 'criterion_review_sheet.dart';
 import 'mission_builder_sheet.dart';
@@ -3384,9 +3385,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           studentName: workspace.selectedStudent.name,
           dateLabel: _selectedResultDate,
         ),
-        content: _buildTeacherResultsHtml(
+        content: const TeacherResultReportHtmlBuilder().build(
           studentName: workspace.selectedStudent.name,
-          rows: exportRows,
+          entries: exportRows,
           summaryLabel: _selectedResultDate,
         ),
         mimeType: 'text/html;charset=utf-8',
@@ -3436,9 +3437,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           studentName: workspace.selectedStudent.name,
           result: result,
         ),
-        content: _buildTeacherResultsHtml(
+        content: const TeacherResultReportHtmlBuilder().build(
           studentName: workspace.selectedStudent.name,
-          rows: [exportRow],
+          entries: [exportRow],
           summaryLabel: _studentResultDateKeyForResult(result),
         ),
         mimeType: 'text/html;charset=utf-8',
@@ -3474,7 +3475,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     }
   }
 
-  Future<_TeacherResultExportRow> _loadTeacherResultExportRow(
+  Future<TeacherResultReportEntry> _loadTeacherResultExportRow(
     ResultHistoryItem result,
   ) async {
     final resultPackageId = result.latestResultPackageId.trim();
@@ -3488,7 +3489,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       token: _session.token,
       resultPackageId: resultPackageId,
     );
-    return _TeacherResultExportRow(
+    return TeacherResultReportEntry(
       result: result,
       resultPackage: resultPackage,
     );
@@ -3523,507 +3524,6 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         .replaceAll(RegExp(r'-+'), '-')
         .replaceAll(RegExp(r'^-|-$'), '');
     return sanitized.isEmpty ? 'result' : sanitized;
-  }
-
-  String _buildTeacherResultsHtml({
-    required String studentName,
-    required List<_TeacherResultExportRow> rows,
-    required String summaryLabel,
-  }) {
-    final sortedRows = [...rows]
-      ..sort((left, right) {
-        final dateCompare = _teacherResultDateForExport(
-          right,
-        ).compareTo(_teacherResultDateForExport(left));
-        if (dateCompare != 0) {
-          return dateCompare;
-        }
-        final subjectCompare = _teacherSubjectNameForExport(
-          left,
-        ).compareTo(_teacherSubjectNameForExport(right));
-        if (subjectCompare != 0) {
-          return subjectCompare;
-        }
-        return left.resultPackage.meta.missionTitle.compareTo(
-          right.resultPackage.meta.missionTitle,
-        );
-      });
-
-    final groupedRows = <String, Map<String, List<_TeacherResultExportRow>>>{};
-    for (final row in sortedRows) {
-      final dateKey = _teacherResultDateForExport(row);
-      final subjectKey = _teacherSubjectNameForExport(row);
-      groupedRows.putIfAbsent(
-        dateKey,
-        () => <String, List<_TeacherResultExportRow>>{},
-      );
-      groupedRows[dateKey]!.putIfAbsent(
-        subjectKey,
-        () => <_TeacherResultExportRow>[],
-      );
-      groupedRows[dateKey]![subjectKey]!.add(row);
-    }
-
-    final heroTitle = rows.length == 1
-        ? '${rows.first.resultPackage.meta.missionTitle} Result Download'
-        : '$studentName Result Download';
-    final heroSummary = rows.length == 1
-        ? rows.first.result.isPaperAssessment
-              ? 'Saved paper assessment evidence exported from the teacher workspace.'
-              : 'Saved mission result evidence exported from the teacher workspace.'
-        : 'Saved result packages grouped by day and subject from the teacher workspace.';
-
-    final buffer = StringBuffer()
-      ..writeln('<!DOCTYPE html>')
-      ..writeln('<html lang="en">')
-      ..writeln('<head>')
-      ..writeln('<meta charset="utf-8" />')
-      ..writeln(
-        '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-      )
-      ..writeln(
-        '<title>${_escapeTeacherResultHtml('$studentName · Result Download')}</title>',
-      )
-      ..writeln('<style>${_buildTeacherResultsStyles()}</style>')
-      ..writeln('</head>')
-      ..writeln('<body>')
-      ..writeln('<main class="page">')
-      ..writeln('<section class="hero">')
-      ..writeln('<span class="copy-chip">Teacher Download</span>')
-      ..writeln('<h1>${_escapeTeacherResultHtml(heroTitle)}</h1>')
-      ..writeln(
-        '<p class="hero-summary">${_escapeTeacherResultHtml(heroSummary)}</p>',
-      )
-      ..writeln('<div class="meta-grid">')
-      ..writeln(_buildTeacherMetaCardHtml(label: 'Student', value: studentName))
-      ..writeln(_buildTeacherMetaCardHtml(label: 'Filter', value: summaryLabel))
-      ..writeln(
-        _buildTeacherMetaCardHtml(
-          label: 'Result packages',
-          value: '${rows.length}',
-        ),
-      )
-      ..writeln(
-        _buildTeacherMetaCardHtml(
-          label: 'Generated',
-          value: DateTime.now().toLocal().toIso8601String(),
-        ),
-      )
-      ..writeln('</div>')
-      ..writeln('</section>');
-
-    for (final dateEntry in groupedRows.entries) {
-      buffer
-        ..writeln('<section class="date-group">')
-        ..writeln('<h2>${_escapeTeacherResultHtml(dateEntry.key)}</h2>');
-      for (final subjectEntry in dateEntry.value.entries) {
-        buffer
-          ..writeln('<section class="subject-group">')
-          ..writeln('<h3>${_escapeTeacherResultHtml(subjectEntry.key)}</h3>');
-        for (final row in subjectEntry.value) {
-          buffer.writeln(_buildTeacherResultCardHtml(row));
-        }
-        buffer.writeln('</section>');
-      }
-      buffer.writeln('</section>');
-    }
-
-    buffer
-      ..writeln('</main>')
-      ..writeln('</body>')
-      ..writeln('</html>');
-    return buffer.toString();
-  }
-
-  String _buildTeacherResultCardHtml(_TeacherResultExportRow row) {
-    final result = row.result;
-    final resultPackage = row.resultPackage;
-    final meta = resultPackage.meta;
-    final taskCodes = meta.taskCodes.isEmpty
-        ? 'None'
-        : meta.taskCodes.join(', ');
-    final scoreLabel = meta.scoreTotal > 0
-        ? '${meta.scoreCorrect}/${meta.scoreTotal} (${meta.scorePercent}%)'
-        : meta.scorePercent > 0
-        ? '${meta.scorePercent}%'
-        : 'Pending review';
-
-    final buffer = StringBuffer()
-      ..writeln('<article class="result-card">')
-      ..writeln('<div class="result-header">')
-      ..writeln('<div>')
-      ..writeln('<h4>${_escapeTeacherResultHtml(meta.missionTitle)}</h4>')
-      ..writeln(
-        '<p class="result-subtitle">${_escapeTeacherResultHtml(_teacherResultFormatLabel(result))} · ${_escapeTeacherResultHtml(result.sessionType.toUpperCase())}</p>',
-      )
-      ..writeln('</div>')
-      ..writeln(
-        '<span class="result-pill">${_escapeTeacherResultHtml(scoreLabel)} · ${meta.xpAwarded}/${result.xpReward} XP</span>',
-      )
-      ..writeln('</div>')
-      ..writeln('<div class="meta-grid compact">')
-      ..writeln(
-        _buildTeacherMetaCardHtml(
-          label: 'Assigned date',
-          value: meta.assignedDate.isEmpty
-              ? _studentResultDateKeyForResult(result)
-              : meta.assignedDate,
-        ),
-      )
-      ..writeln(
-        _buildTeacherMetaCardHtml(
-          label: 'Submitted',
-          value: _formatTeacherMissionDate(meta.submitTime),
-        ),
-      )
-      ..writeln(
-        _buildTeacherMetaCardHtml(
-          label: 'Duration',
-          value: '${meta.durationSeconds}s',
-        ),
-      )
-      ..writeln(
-        _buildTeacherMetaCardHtml(label: 'Task focus', value: taskCodes),
-      )
-      ..writeln('</div>')
-      ..writeln(_buildTeacherEvidenceHtml(row))
-      ..writeln('</article>');
-
-    return buffer.toString();
-  }
-
-  String _buildTeacherEvidenceHtml(_TeacherResultExportRow row) {
-    final evidence = row.resultPackage.evidence;
-    final format = (evidence['format'] ?? row.result.draftFormat).toString();
-    if (format == 'THEORY') {
-      return _buildTeacherTheoryEvidenceHtml(row.resultPackage);
-    }
-    if (format == 'ESSAY_BUILDER') {
-      return _buildTeacherEssayEvidenceHtml(row.resultPackage);
-    }
-    if (row.result.isPaperAssessment &&
-        (evidence['questions'] as List<dynamic>? ?? const []).isEmpty) {
-      return '<section class="evidence-block"><h5>Paper assessment evidence</h5><p class="empty-copy">This paper assessment was uploaded and reviewed in the teacher workspace. Open the in-app result report to view the attached file and scoring details.</p></section>';
-    }
-    return _buildTeacherQuestionEvidenceHtml(row.resultPackage);
-  }
-
-  String _buildTeacherQuestionEvidenceHtml(ResultPackageData resultPackage) {
-    final questions =
-        resultPackage.evidence['questions'] as List<dynamic>? ?? const [];
-    if (questions.isEmpty) {
-      return '<p class="empty-copy">No question evidence saved.</p>';
-    }
-
-    final buffer = StringBuffer()
-      ..writeln('<section class="evidence-block"><h5>Question evidence</h5>');
-    for (final entry in questions.asMap().entries) {
-      final question = (entry.value as Map<dynamic, dynamic>)
-          .cast<String, dynamic>();
-      final correct = question['correctness'] == true;
-      final prompt = (question['questionText'] ?? '').toString();
-      final selectedLetter = (question['selectedOptionLetter'] ?? '')
-          .toString()
-          .trim();
-      final selectedAnswer = (question['selectedAnswer'] ?? '')
-          .toString()
-          .trim();
-      final correctLetter = (question['correctOptionLetter'] ?? '')
-          .toString()
-          .trim();
-      final correctAnswer = (question['correctAnswer'] ?? '').toString().trim();
-      final options =
-          (question['options'] as Map<dynamic, dynamic>? ?? const {})
-              .cast<dynamic, dynamic>();
-      buffer
-        ..writeln(
-          '<div class="question-card ${correct ? 'success' : 'support'}">',
-        )
-        ..writeln('<h6>Question ${entry.key + 1}</h6>')
-        ..writeln('<p>${_escapeTeacherResultHtml(prompt)}</p>')
-        ..writeln(
-          _buildTeacherQuestionOptionsHtml(
-            options: options,
-            selectedLetter: selectedLetter,
-            correctLetter: correctLetter,
-          ),
-        )
-        ..writeln(
-          '<p><strong>Selected:</strong> ${_escapeTeacherResultHtml('${selectedLetter.isEmpty ? '' : '$selectedLetter) '}${selectedAnswer.isEmpty ? 'No selection recorded' : selectedAnswer}')}</p>',
-        )
-        ..writeln(
-          '<p><strong>Correct:</strong> ${_escapeTeacherResultHtml('${correctLetter.isEmpty ? '' : '$correctLetter) '}$correctAnswer')}</p>',
-        )
-        ..writeln('</div>');
-    }
-    buffer.writeln('</section>');
-    return buffer.toString();
-  }
-
-  String _buildTeacherTheoryEvidenceHtml(ResultPackageData resultPackage) {
-    final questions =
-        resultPackage.evidence['questions'] as List<dynamic>? ?? const [];
-    if (questions.isEmpty) {
-      return '<p class="empty-copy">No theory evidence saved.</p>';
-    }
-
-    final buffer = StringBuffer()
-      ..writeln('<section class="evidence-block"><h5>Theory evidence</h5>');
-    for (final entry in questions.asMap().entries) {
-      final question = (entry.value as Map<dynamic, dynamic>)
-          .cast<String, dynamic>();
-      final learnFirst = (question['learnFirst'] ?? '').toString().trim();
-      final expectedAnswer = (question['expectedAnswer'] ?? '')
-          .toString()
-          .trim();
-      final studentAnswer = (question['studentAnswer'] ?? '').toString().trim();
-      final teacherFeedback = (question['teacherFeedback'] ?? '')
-          .toString()
-          .trim();
-      final teacherScore = question['teacherScorePercent']?.toString() ?? '';
-      buffer
-        ..writeln('<div class="question-card theory">')
-        ..writeln('<h6>Theory ${entry.key + 1}</h6>')
-        ..writeln(
-          '<p>${_escapeTeacherResultHtml((question['questionText'] ?? '').toString())}</p>',
-        );
-      if (learnFirst.isNotEmpty) {
-        buffer.writeln(
-          '<p><strong>Learn First:</strong> ${_escapeTeacherResultHtml(learnFirst)}</p>',
-        );
-      }
-      if (expectedAnswer.isNotEmpty) {
-        buffer.writeln(
-          '<p><strong>Expected answer:</strong> ${_escapeTeacherResultHtml(expectedAnswer)}</p>',
-        );
-      }
-      buffer.writeln(
-        '<p><strong>Student answer:</strong> ${_teacherResultHtmlWithSafeLinks(studentAnswer.isEmpty ? 'No written answer recorded.' : studentAnswer)}</p>',
-      );
-      if (teacherScore.isNotEmpty) {
-        buffer.writeln(
-          '<p><strong>Teacher score:</strong> ${_escapeTeacherResultHtml('$teacherScore/100')}</p>',
-        );
-      }
-      if (teacherFeedback.isNotEmpty) {
-        buffer.writeln(
-          '<p><strong>Teacher feedback:</strong> ${_escapeTeacherResultHtml(teacherFeedback)}</p>',
-        );
-      }
-      buffer.writeln('</div>');
-    }
-    buffer.writeln('</section>');
-    return buffer.toString();
-  }
-
-  String _buildTeacherEssayEvidenceHtml(ResultPackageData resultPackage) {
-    final perSentence =
-        resultPackage.evidence['perSentence'] as List<dynamic>? ?? const [];
-    final finalEssayText = (resultPackage.evidence['finalEssayText'] ?? '')
-        .toString()
-        .trim();
-    final buffer = StringBuffer()
-      ..writeln('<section class="evidence-block"><h5>Essay evidence</h5>');
-    for (final entry in perSentence.asMap().entries) {
-      final sentence = (entry.value as Map<dynamic, dynamic>)
-          .cast<String, dynamic>();
-      final role = (sentence['role'] ?? 'detail').toString();
-      final bullets =
-          sentence['learnFirstBullets'] as List<dynamic>? ?? const [];
-      final blankSelections =
-          sentence['blankSelections'] as List<dynamic>? ?? const [];
-      buffer
-        ..writeln('<div class="question-card essay">')
-        ..writeln(
-          '<h6>Sentence ${entry.key + 1} · ${_escapeTeacherResultHtml(role)}</h6>',
-        );
-      if (bullets.isNotEmpty) {
-        buffer.writeln('<ul>');
-        for (final bullet in bullets) {
-          final bulletText = bullet.toString().trim();
-          if (bulletText.isEmpty) {
-            continue;
-          }
-          buffer.writeln('<li>${_escapeTeacherResultHtml(bulletText)}</li>');
-        }
-        buffer.writeln('</ul>');
-      }
-      for (final blank in blankSelections) {
-        final item = (blank as Map<dynamic, dynamic>).cast<String, dynamic>();
-        final hint = (item['hint'] ?? '').toString().trim();
-        final chosen = (item['chosenOptionText'] ?? '').toString().trim();
-        final correct = (item['correctOptionText'] ?? '').toString().trim();
-        buffer.writeln(
-          '<p><strong>${_escapeTeacherResultHtml(hint.isEmpty ? 'Blank' : hint)}:</strong> ${_escapeTeacherResultHtml(chosen.isEmpty ? 'No selection recorded' : chosen)}${correct.isEmpty ? '' : ' <span class="muted">(Correct: ${_escapeTeacherResultHtml(correct)})</span>'}</p>',
-        );
-      }
-      buffer.writeln('</div>');
-    }
-    if (finalEssayText.isNotEmpty) {
-      buffer
-        ..writeln('<div class="question-card essay">')
-        ..writeln('<h6>Final essay</h6>')
-        ..writeln('<p>${_teacherResultHtmlWithSafeLinks(finalEssayText)}</p>')
-        ..writeln('</div>');
-    }
-    buffer.writeln('</section>');
-    return buffer.toString();
-  }
-
-  String _buildTeacherQuestionOptionsHtml({
-    required Map<dynamic, dynamic> options,
-    required String selectedLetter,
-    required String correctLetter,
-  }) {
-    if (options.isEmpty) {
-      return '<p class="empty-copy">No option set was saved for this question.</p>';
-    }
-
-    final orderedEntries = options.entries.toList(growable: false)
-      ..sort(
-        (left, right) => left.key.toString().compareTo(right.key.toString()),
-      );
-
-    final buffer = StringBuffer()..writeln('<ul class="option-list">');
-    for (final entry in orderedEntries) {
-      final label = entry.key.toString();
-      final value = entry.value.toString();
-      final classes = [
-        if (label == selectedLetter) 'selected',
-        if (label == correctLetter) 'correct',
-      ].join(' ');
-      buffer.writeln(
-        '<li class="option-row $classes"><span class="option-badge">${_escapeTeacherResultHtml(label)}</span><div class="option-copy"><span>${_escapeTeacherResultHtml(value.isEmpty ? 'No option text saved.' : value)}</span></div></li>',
-      );
-    }
-    buffer.writeln('</ul>');
-    return buffer.toString();
-  }
-
-  String _teacherResultDateForExport(_TeacherResultExportRow row) {
-    final metaDate = row.resultPackage.meta.assignedDate.trim();
-    if (metaDate.isNotEmpty) {
-      return metaDate;
-    }
-    return _studentResultDateKeyForResult(row.result);
-  }
-
-  String _teacherSubjectNameForExport(_TeacherResultExportRow row) {
-    final metaSubject = row.resultPackage.meta.subject.trim();
-    if (metaSubject.isNotEmpty) {
-      return metaSubject;
-    }
-    final subjectName = (row.result.subject?.name ?? '').trim();
-    return subjectName.isEmpty ? 'No subject' : subjectName;
-  }
-
-  String _teacherResultFormatLabel(ResultHistoryItem result) {
-    if (result.isPaperAssessment) {
-      return 'Paper assessment';
-    }
-    if (result.draftFormat == 'ESSAY_BUILDER') {
-      return 'Essay Builder';
-    }
-    if (result.draftFormat == 'THEORY') {
-      return 'Theory';
-    }
-    return '${result.questionCount} questions';
-  }
-
-  String _buildTeacherMetaCardHtml({
-    required String label,
-    required String value,
-  }) {
-    return '<div class="meta-card"><span class="meta-label">${_escapeTeacherResultHtml(label)}</span><strong class="meta-value">${_escapeTeacherResultHtml(value)}</strong></div>';
-  }
-
-  String _buildTeacherResultsStyles() {
-    return '''
-body { margin: 0; font-family: Arial, sans-serif; background: #eef6ff; color: #1f315d; }
-.page { max-width: 1080px; margin: 0 auto; padding: 32px 24px 48px; }
-.hero, .date-group, .subject-group, .result-card { background: rgba(255,255,255,0.92); border-radius: 28px; box-shadow: 0 18px 40px rgba(71,108,173,0.08); }
-.hero { padding: 28px; margin-bottom: 20px; }
-.copy-chip, .result-pill, .option-badge { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; font-weight: 700; }
-.copy-chip { padding: 8px 14px; background: #dfe9ff; color: #34508f; margin-bottom: 12px; }
-.hero h1, .date-group h2, .subject-group h3, .result-card h4, .question-card h6 { margin: 0; }
-.hero-summary { color: #6d7ea8; line-height: 1.6; margin: 10px 0 0; }
-.meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 20px; }
-.meta-grid.compact { margin-top: 18px; }
-.meta-card { background: #f4f8ff; border-radius: 20px; padding: 14px 16px; }
-.meta-label { display: block; font-size: 12px; color: #7a89ad; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
-.meta-value { font-size: 15px; color: #1f315d; }
-.date-group { padding: 24px; margin-bottom: 18px; }
-.date-group h2 { font-size: 24px; margin-bottom: 18px; }
-.subject-group { padding: 20px; margin-top: 14px; }
-.subject-group h3 { font-size: 19px; margin-bottom: 14px; color: #34508f; }
-.result-card { padding: 22px; margin-bottom: 14px; }
-.result-header { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
-.result-subtitle, .empty-copy, .muted { color: #6d7ea8; }
-.result-pill { padding: 8px 14px; background: #eff5ff; color: #34508f; white-space: nowrap; }
-.evidence-block { margin-top: 18px; }
-.evidence-block h5 { margin: 0 0 12px; font-size: 17px; }
-.question-card { border-radius: 20px; padding: 16px; background: #f8fbff; margin-bottom: 12px; border: 1px solid rgba(87, 119, 186, 0.12); }
-.question-card.success { background: #f0fbf4; }
-.question-card.support { background: #fff8ef; }
-.question-card.theory { background: #f7f4ff; }
-.question-card.essay { background: #f4fbff; }
-.question-card h6 { font-size: 16px; margin-bottom: 10px; }
-.question-card p, .question-card li { line-height: 1.55; }
-.option-list { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
-.option-row { display: flex; gap: 10px; align-items: flex-start; border-radius: 16px; padding: 10px 12px; background: white; border: 1px solid rgba(87, 119, 186, 0.12); }
-.option-row.selected { border-color: #6d8bff; }
-.option-row.correct { background: #effbf1; border-color: #8cd39e; }
-.option-badge { min-width: 28px; height: 28px; background: #34508f; color: white; font-size: 12px; }
-.option-copy { flex: 1; }
-@media (max-width: 700px) {
-  .page { padding: 20px 16px 40px; }
-  .result-header { flex-direction: column; }
-  .result-pill { white-space: normal; }
-}
-''';
-  }
-
-  String _escapeTeacherResultHtml(String value) {
-    return value
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
-  }
-
-  String _teacherResultHtmlWithSafeLinks(String value) {
-    final pattern = RegExp(
-      r'''(?:https?://|www\.)[^\s<>{}\[\]"']+''',
-      caseSensitive: false,
-    );
-    final output = StringBuffer();
-    var cursor = 0;
-    for (final match in pattern.allMatches(value)) {
-      output.write(
-        _escapeTeacherResultHtml(value.substring(cursor, match.start)),
-      );
-      final raw = match.group(0) ?? '';
-      final visible = raw.replaceFirst(RegExp(r'[),.;!?]+$'), '');
-      final trailing = raw.substring(visible.length);
-      final target = visible.toLowerCase().startsWith('www.')
-          ? 'https://$visible'
-          : visible;
-      final uri = Uri.tryParse(target);
-      if (uri != null && const {'http', 'https'}.contains(uri.scheme)) {
-        output
-          ..write('<a href="${_escapeTeacherResultHtml(uri.toString())}" ')
-          ..write('target="_blank" rel="noopener noreferrer">')
-          ..write(_escapeTeacherResultHtml(visible))
-          ..write('</a>')
-          ..write(_escapeTeacherResultHtml(trailing));
-      } else {
-        output.write(_escapeTeacherResultHtml(raw));
-      }
-      cursor = match.end;
-    }
-    output.write(_escapeTeacherResultHtml(value.substring(cursor)));
-    return output.toString();
   }
 
   String _studentResultDateKeyForResult(ResultHistoryItem result) {
@@ -7705,16 +7205,6 @@ class _TeacherStudentResultCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _TeacherResultExportRow {
-  const _TeacherResultExportRow({
-    required this.result,
-    required this.resultPackage,
-  });
-
-  final ResultHistoryItem result;
-  final ResultPackageData resultPackage;
 }
 
 class _AssessmentDraftListResult {
