@@ -126,13 +126,6 @@ void main() {
       tester.getTopLeft(find.text('Send result')).dy,
       tester.getTopLeft(find.text('Redo')).dy,
     );
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('result_actions_mission-1')),
-        matching: find.byType(OutlinedButton),
-      ),
-      findsNWidgets(2),
-    );
   });
 
   testWidgets('Result actions wrap on narrow width without overflow', (
@@ -239,16 +232,26 @@ void main() {
     expect(find.byKey(const Key('assigned_level_filter_p1')), findsOneWidget);
     expect(find.byKey(const Key('assigned_level_filter_p2')), findsOneWidget);
     expect(find.byKey(const Key('assigned_level_filter_p3')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_level_filter_p4')), findsOneWidget);
     expect(find.byKey(const Key('assigned_level_filter_m1')), findsOneWidget);
     expect(find.byKey(const Key('assigned_level_filter_m2')), findsOneWidget);
     expect(find.byKey(const Key('assigned_level_filter_m3')), findsOneWidget);
-    expect(find.text('Objective 1'), findsOneWidget);
-    expect(find.text('Theory 1'), findsOneWidget);
-    expect(find.text('Essay 1'), findsOneWidget);
-    expect(find.text('Assessment A 1'), findsOneWidget);
-    expect(find.text('Assessment B 1'), findsOneWidget);
-    expect(find.byKey(const Key('assigned_group_P1')), findsOneWidget);
-    expect(find.byKey(const Key('assigned_group_P2')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_filter_objective')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_filter_theory')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_filter_essay')), findsOneWidget);
+    expect(
+      find.byKey(const Key('assigned_filter_assessmentA')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('assigned_filter_assessmentB')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('assigned_mission_objective-p1')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('assigned_mission_essay-p2')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('assigned_level_filter_p2')));
     await tester.pump();
@@ -256,16 +259,21 @@ void main() {
     expect(find.text('P1 Objective'), findsNothing);
     expect(find.text('P1 Theory'), findsNothing);
     expect(find.text('P2 Essay'), findsOneWidget);
-    expect(find.byKey(const Key('assigned_group_P1')), findsNothing);
-    expect(find.byKey(const Key('assigned_group_P2')), findsOneWidget);
+    expect(
+      find.byKey(const Key('assigned_mission_objective-p1')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('assigned_mission_essay-p2')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('assigned_filter_assessmentA')));
     await tester.pump();
 
     expect(find.text('P2 Assessment A'), findsOneWidget);
     expect(find.text('P2 Assessment B'), findsNothing);
-    expect(find.byKey(const Key('assigned_group_P1')), findsNothing);
-    expect(find.byKey(const Key('assigned_group_P2')), findsOneWidget);
+    expect(
+      find.byKey(const Key('assigned_mission_assessment-a-p2')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byKey(const Key('assigned_level_filter_all')));
     await tester.tap(find.byKey(const Key('assigned_filter_theory')));
@@ -273,8 +281,8 @@ void main() {
 
     expect(find.text('P1 Theory'), findsOneWidget);
     expect(find.text('P2 Assessment A'), findsNothing);
-    expect(find.byKey(const Key('assigned_group_P1')), findsOneWidget);
-    expect(find.byKey(const Key('assigned_group_P2')), findsNothing);
+    expect(find.byKey(const Key('assigned_mission_theory-p1')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_mission_essay-p2')), findsNothing);
   });
 
   testWidgets('Assigned Missions stays compact on a narrow screen', (

@@ -125,11 +125,12 @@ MissionPayload _draftMission({
   required String id,
   required String title,
   required String taskCode,
+  String draftFormat = 'QUESTIONS',
 }) {
   return MissionPayload.fromJson(<String, dynamic>{
     'id': id,
     'title': title,
-    'draftFormat': 'QUESTIONS',
+    'draftFormat': draftFormat,
     'questionCount': 5,
     'taskCodes': <String>[taskCode],
     'status': 'draft',
@@ -144,7 +145,12 @@ TeacherWorkspaceSupplementalData _supplementalWithDraftMissions() {
     draftMissions: <MissionPayload>[
       _draftMission(id: 'draft-p1', title: 'P1 Draft', taskCode: 'P1'),
       _draftMission(id: 'draft-p2', title: 'P2 Draft', taskCode: 'P2'),
-      _draftMission(id: 'draft-m1', title: 'M1 Draft', taskCode: 'M1'),
+      _draftMission(
+        id: 'draft-m1',
+        title: 'M1 Draft',
+        taskCode: 'M1',
+        draftFormat: 'THEORY',
+      ),
     ],
     recentMissions: const <MissionPayload>[],
     studentResults: const <ResultHistoryItem>[],
@@ -378,9 +384,15 @@ void main() {
     expect(find.byKey(const Key('draft_level_filter_p1')), findsOneWidget);
     expect(find.byKey(const Key('draft_level_filter_p2')), findsOneWidget);
     expect(find.byKey(const Key('draft_level_filter_p3')), findsOneWidget);
+    expect(find.byKey(const Key('draft_level_filter_p4')), findsOneWidget);
     expect(find.byKey(const Key('draft_level_filter_m1')), findsOneWidget);
     expect(find.byKey(const Key('draft_level_filter_m2')), findsOneWidget);
     expect(find.byKey(const Key('draft_level_filter_m3')), findsOneWidget);
+    expect(find.byKey(const Key('draft_filter_all')), findsOneWidget);
+    expect(find.byKey(const Key('draft_filter_objective')), findsOneWidget);
+    expect(find.byKey(const Key('draft_filter_theory')), findsOneWidget);
+    expect(find.byKey(const Key('draft_filter_essay')), findsOneWidget);
+    expect(find.byKey(const Key('draft_filter_assessmentA')), findsOneWidget);
     expect(find.text('P1 Draft'), findsOneWidget);
     expect(find.text('P2 Draft'), findsOneWidget);
     expect(find.text('M1 Draft'), findsOneWidget);
@@ -393,6 +405,14 @@ void main() {
     expect(find.text('P2 Draft'), findsOneWidget);
     expect(find.text('M1 Draft'), findsNothing);
     expect(find.text('1 shown'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('draft_level_filter_all')));
+    await tester.tap(find.byKey(const Key('draft_filter_theory')));
+    await tester.pump();
+
+    expect(find.text('P1 Draft'), findsNothing);
+    expect(find.text('P2 Draft'), findsNothing);
+    expect(find.text('M1 Draft'), findsOneWidget);
   });
 
   testWidgets('late old-student data cannot overwrite a new selection', (
