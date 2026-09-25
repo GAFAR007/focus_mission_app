@@ -121,6 +121,41 @@ TeacherWorkspaceSupplementalData _supplementalFor(
   );
 }
 
+MissionPayload _draftMission({
+  required String id,
+  required String title,
+  required String taskCode,
+}) {
+  return MissionPayload.fromJson(<String, dynamic>{
+    'id': id,
+    'title': title,
+    'draftFormat': 'QUESTIONS',
+    'questionCount': 5,
+    'taskCodes': <String>[taskCode],
+    'status': 'draft',
+    'subject': const <String, dynamic>{'id': 'business', 'name': 'Business'},
+    'availableOnDate': '2026-09-25',
+  });
+}
+
+TeacherWorkspaceSupplementalData _supplementalWithDraftMissions() {
+  return TeacherWorkspaceSupplementalData(
+    criteria: const <CriterionOverview>[],
+    draftMissions: <MissionPayload>[
+      _draftMission(id: 'draft-p1', title: 'P1 Draft', taskCode: 'P1'),
+      _draftMission(id: 'draft-p2', title: 'P2 Draft', taskCode: 'P2'),
+      _draftMission(id: 'draft-m1', title: 'M1 Draft', taskCode: 'M1'),
+    ],
+    recentMissions: const <MissionPayload>[],
+    studentResults: const <ResultHistoryItem>[],
+    notificationInbox: const NotificationInboxData(
+      unreadCount: 0,
+      notifications: <AppNotification>[],
+    ),
+    targets: const <TargetSummary>[],
+  );
+}
+
 Map<String, dynamic> _responseForPath(String path) {
   if (path.endsWith('/teacher/students')) {
     return <String, dynamic>{
@@ -327,6 +362,37 @@ void main() {
 
     expect(find.text('Alpha review ready'), findsWidgets);
     expect(find.textContaining('Loading reviews and history'), findsNothing);
+  });
+
+  testWidgets('Draft Missions filters by task focus without changing data', (
+    tester,
+  ) async {
+    final api = _ControlledTeacherWorkspaceApi();
+    await _pumpTeacherScreen(tester, api);
+    api.supplementalByStudent['student-a']!.complete(
+      _supplementalWithDraftMissions(),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('draft_level_filter_all')), findsOneWidget);
+    expect(find.byKey(const Key('draft_level_filter_p1')), findsOneWidget);
+    expect(find.byKey(const Key('draft_level_filter_p2')), findsOneWidget);
+    expect(find.byKey(const Key('draft_level_filter_p3')), findsOneWidget);
+    expect(find.byKey(const Key('draft_level_filter_m1')), findsOneWidget);
+    expect(find.byKey(const Key('draft_level_filter_m2')), findsOneWidget);
+    expect(find.byKey(const Key('draft_level_filter_m3')), findsOneWidget);
+    expect(find.text('P1 Draft'), findsOneWidget);
+    expect(find.text('P2 Draft'), findsOneWidget);
+    expect(find.text('M1 Draft'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('draft_level_filter_p2')));
+    await tester.tap(find.byKey(const Key('draft_level_filter_p2')));
+    await tester.pump();
+
+    expect(find.text('P1 Draft'), findsNothing);
+    expect(find.text('P2 Draft'), findsOneWidget);
+    expect(find.text('M1 Draft'), findsNothing);
+    expect(find.text('1 shown'), findsOneWidget);
   });
 
   testWidgets('late old-student data cannot overwrite a new selection', (

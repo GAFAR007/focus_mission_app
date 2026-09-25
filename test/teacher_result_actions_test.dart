@@ -226,7 +226,7 @@ void main() {
     ];
   }
 
-  testWidgets('Assigned Missions filters types and separates P1 from P2', (
+  testWidgets('Assigned Missions combines level and type filters', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -235,7 +235,13 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('assigned_filter_all')), findsOneWidget);
-    expect(find.text('All 5'), findsOneWidget);
+    expect(find.byKey(const Key('assigned_level_filter_all')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_level_filter_p1')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_level_filter_p2')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_level_filter_p3')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_level_filter_m1')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_level_filter_m2')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_level_filter_m3')), findsOneWidget);
     expect(find.text('Objective 1'), findsOneWidget);
     expect(find.text('Theory 1'), findsOneWidget);
     expect(find.text('Essay 1'), findsOneWidget);
@@ -244,14 +250,14 @@ void main() {
     expect(find.byKey(const Key('assigned_group_P1')), findsOneWidget);
     expect(find.byKey(const Key('assigned_group_P2')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('assigned_filter_theory')));
+    await tester.tap(find.byKey(const Key('assigned_level_filter_p2')));
     await tester.pump();
 
-    expect(find.text('P1 Theory'), findsOneWidget);
     expect(find.text('P1 Objective'), findsNothing);
-    expect(find.text('P2 Essay'), findsNothing);
-    expect(find.byKey(const Key('assigned_group_P1')), findsOneWidget);
-    expect(find.byKey(const Key('assigned_group_P2')), findsNothing);
+    expect(find.text('P1 Theory'), findsNothing);
+    expect(find.text('P2 Essay'), findsOneWidget);
+    expect(find.byKey(const Key('assigned_group_P1')), findsNothing);
+    expect(find.byKey(const Key('assigned_group_P2')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('assigned_filter_assessmentA')));
     await tester.pump();
@@ -260,6 +266,15 @@ void main() {
     expect(find.text('P2 Assessment B'), findsNothing);
     expect(find.byKey(const Key('assigned_group_P1')), findsNothing);
     expect(find.byKey(const Key('assigned_group_P2')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('assigned_level_filter_all')));
+    await tester.tap(find.byKey(const Key('assigned_filter_theory')));
+    await tester.pump();
+
+    expect(find.text('P1 Theory'), findsOneWidget);
+    expect(find.text('P2 Assessment A'), findsNothing);
+    expect(find.byKey(const Key('assigned_group_P1')), findsOneWidget);
+    expect(find.byKey(const Key('assigned_group_P2')), findsNothing);
   });
 
   testWidgets('Assigned Missions stays compact on a narrow screen', (

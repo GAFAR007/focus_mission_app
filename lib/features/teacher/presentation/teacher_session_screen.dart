@@ -5538,7 +5538,7 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-class _DraftMissionsPanel extends StatelessWidget {
+class _DraftMissionsPanel extends StatefulWidget {
   const _DraftMissionsPanel({
     required this.missions,
     required this.dailyDraftCount,
@@ -5576,7 +5576,23 @@ class _DraftMissionsPanel extends StatelessWidget {
   final ValueChanged<MissionPayload> onReuse;
 
   @override
+  State<_DraftMissionsPanel> createState() => _DraftMissionsPanelState();
+}
+
+class _DraftMissionsPanelState extends State<_DraftMissionsPanel> {
+  String _selectedLevel = _allMissionLevelsFilter;
+
+  @override
   Widget build(BuildContext context) {
+    final missions = widget.missions;
+    final levelFilters = _missionLevelFilters(missions);
+    final selectedLevel = levelFilters.contains(_selectedLevel)
+        ? _selectedLevel
+        : _allMissionLevelsFilter;
+    final filteredMissions = missions
+        .where((mission) => _missionMatchesLevel(mission, selectedLevel))
+        .toList(growable: false);
+
     return SoftPanel(
       colors: const [Color(0xFFF7FBFF), Color(0xFFE6F3FF)],
       child: Column(
@@ -5590,22 +5606,24 @@ class _DraftMissionsPanel extends StatelessWidget {
                 runSpacing: 8,
                 alignment: isCompact ? WrapAlignment.start : WrapAlignment.end,
                 children: [
-                  TextButton.icon(
-                    onPressed: onOpenDailyDrafts,
+                  OutlinedButton.icon(
+                    onPressed: widget.onOpenDailyDrafts,
+                    style: _missionOutlinedActionStyle(),
                     icon: const Icon(Icons.list_alt_rounded, size: 18),
                     label: Text(
-                      dailyDraftCount <= 0
+                      widget.dailyDraftCount <= 0
                           ? 'Daily drafts'
-                          : 'Daily drafts ($dailyDraftCount)',
+                          : 'Daily drafts (${widget.dailyDraftCount})',
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: onOpenAssessmentDrafts,
+                  OutlinedButton.icon(
+                    onPressed: widget.onOpenAssessmentDrafts,
+                    style: _missionOutlinedActionStyle(),
                     icon: const Icon(Icons.assignment_rounded, size: 18),
                     label: Text(
-                      assessmentDraftCount <= 0
+                      widget.assessmentDraftCount <= 0
                           ? 'Assessment drafts'
-                          : 'Assessment drafts ($assessmentDraftCount)',
+                          : 'Assessment drafts (${widget.assessmentDraftCount})',
                     ),
                   ),
                 ],
@@ -5665,14 +5683,40 @@ class _DraftMissionsPanel extends StatelessWidget {
           ),
           if (missions.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.compact),
-            if (!isSelectingDrafts)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: onToggleDraftSelectionMode,
-                  icon: const Icon(Icons.checklist_rtl_rounded, size: 18),
-                  label: const Text('Select drafts'),
-                ),
+            _MissionFilterLabel(label: 'Task focus'),
+            const SizedBox(height: 7),
+            _MissionLevelFilterBar(
+              keyPrefix: 'draft_level_filter',
+              filters: levelFilters,
+              selectedFilter: selectedLevel,
+              missions: missions,
+              onSelected: (filter) {
+                setState(() {
+                  // WHY: This is a presentation-only filter. Draft ownership,
+                  // scheduling, content, and publish state remain unchanged.
+                  _selectedLevel = filter;
+                });
+              },
+            ),
+            const SizedBox(height: AppSpacing.compact),
+            if (!widget.isSelectingDrafts)
+              Row(
+                children: [
+                  Text(
+                    '${filteredMissions.length} shown',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  OutlinedButton.icon(
+                    onPressed: widget.onToggleDraftSelectionMode,
+                    style: _missionOutlinedActionStyle(),
+                    icon: const Icon(Icons.checklist_rtl_rounded, size: 18),
+                    label: const Text('Select drafts'),
+                  ),
+                ],
               )
             else
               Container(
@@ -5691,28 +5735,29 @@ class _DraftMissionsPanel extends StatelessWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      selectedDraftMissionIds.isEmpty
+                      widget.selectedDraftMissionIds.isEmpty
                           ? 'Selection mode active'
-                          : '${selectedDraftMissionIds.length} selected',
+                          : '${widget.selectedDraftMissionIds.length} selected',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppPalette.navy,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     TextButton(
-                      onPressed: isDeletingDrafts || isArchivingDrafts
+                      onPressed:
+                          widget.isDeletingDrafts || widget.isArchivingDrafts
                           ? null
-                          : onCancelDraftSelection,
+                          : widget.onCancelDraftSelection,
                       child: const Text('Cancel'),
                     ),
                     TextButton.icon(
                       onPressed:
-                          isArchivingDrafts ||
-                              isDeletingDrafts ||
-                              selectedDraftMissionIds.isEmpty
+                          widget.isArchivingDrafts ||
+                              widget.isDeletingDrafts ||
+                              widget.selectedDraftMissionIds.isEmpty
                           ? null
-                          : onArchiveSelectedDrafts,
-                      icon: isArchivingDrafts
+                          : widget.onArchiveSelectedDrafts,
+                      icon: widget.isArchivingDrafts
                           ? const SizedBox(
                               width: 14,
                               height: 14,
@@ -5720,17 +5765,19 @@ class _DraftMissionsPanel extends StatelessWidget {
                             )
                           : const Icon(Icons.archive_outlined, size: 18),
                       label: Text(
-                        isArchivingDrafts ? 'Archiving...' : 'Archive selected',
+                        widget.isArchivingDrafts
+                            ? 'Archiving...'
+                            : 'Archive selected',
                       ),
                     ),
                     TextButton.icon(
                       onPressed:
-                          isArchivingDrafts ||
-                              isDeletingDrafts ||
-                              selectedDraftMissionIds.isEmpty
+                          widget.isArchivingDrafts ||
+                              widget.isDeletingDrafts ||
+                              widget.selectedDraftMissionIds.isEmpty
                           ? null
-                          : onDeleteSelectedDrafts,
-                      icon: isDeletingDrafts
+                          : widget.onDeleteSelectedDrafts,
+                      icon: widget.isDeletingDrafts
                           ? const SizedBox(
                               width: 14,
                               height: 14,
@@ -5741,11 +5788,11 @@ class _DraftMissionsPanel extends StatelessWidget {
                         foregroundColor: const Color(0xFFB3261E),
                       ),
                       label: Text(
-                        isDeletingDrafts
+                        widget.isDeletingDrafts
                             ? 'Deleting...'
-                            : selectedDraftMissionIds.isEmpty
+                            : widget.selectedDraftMissionIds.isEmpty
                             ? 'Delete selected'
-                            : 'Delete selected (${selectedDraftMissionIds.length})',
+                            : 'Delete selected (${widget.selectedDraftMissionIds.length})',
                       ),
                     ),
                   ],
@@ -5766,32 +5813,34 @@ class _DraftMissionsPanel extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             )
+          else if (filteredMissions.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.item),
+              child: Text(
+                'No $selectedLevel draft missions.',
+                key: const Key('draft_missions_empty_filter'),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+              ),
+            )
           else
-            ...missions.map((mission) {
-              final isSelected = selectedDraftMissionIds.contains(mission.id);
+            ...filteredMissions.map((mission) {
+              final isSelected = widget.selectedDraftMissionIds.contains(
+                mission.id,
+              );
               return Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.compact),
-                child: _MissionCard(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _DraftMissionListItem(
                   mission: mission,
-                  badgeLabel: 'Draft',
                   dateLabel: _formatMissionDate(
                     mission.availableOnDate ?? mission.createdAt,
                   ),
-                  actionLabel: isSelectingDrafts
-                      ? (isSelected ? 'Selected for delete' : 'Tap to select')
-                      : 'Edit draft',
-                  showSelectionControl: isSelectingDrafts,
+                  isSelecting: widget.isSelectingDrafts,
                   isSelected: isSelected,
-                  onSelectionTap: () => onToggleDraftSelection(mission),
-                  quaternaryActionLabel: isSelectingDrafts
-                      ? null
-                      : 'Use for another student',
-                  onQuaternaryTap: isSelectingDrafts
-                      ? null
-                      : () => onReuse(mission),
-                  onTap: isSelectingDrafts
-                      ? () => onToggleDraftSelection(mission)
-                      : () => onEdit(mission),
+                  onSelect: () => widget.onToggleDraftSelection(mission),
+                  onEdit: () => widget.onEdit(mission),
+                  onReuse: () => widget.onReuse(mission),
                 ),
               );
             }),
@@ -5831,6 +5880,189 @@ class _DraftMissionsPanel extends StatelessWidget {
     ];
 
     return labels[month - 1];
+  }
+}
+
+class _DraftMissionListItem extends StatelessWidget {
+  const _DraftMissionListItem({
+    required this.mission,
+    required this.dateLabel,
+    required this.isSelecting,
+    required this.isSelected,
+    required this.onSelect,
+    required this.onEdit,
+    required this.onReuse,
+  });
+
+  final MissionPayload mission;
+  final String dateLabel;
+  final bool isSelecting;
+  final bool isSelected;
+  final VoidCallback onSelect;
+  final VoidCallback onEdit;
+  final VoidCallback onReuse;
+
+  @override
+  Widget build(BuildContext context) {
+    final missionType = _assignedMissionFilterFor(mission).label;
+    final taskFocus = mission.taskCodes.isEmpty
+        ? 'No task focus'
+        : mission.taskCodes.join(' + ');
+    final missionUnit = mission.draftFormat == 'ESSAY_BUILDER'
+        ? '${mission.questionCount} sentences'
+        : '${mission.questionCount} questions';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isSelecting ? onSelect : onEdit,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected
+                  ? AppPalette.primaryBlue
+                  : AppPalette.primaryBlue.withValues(alpha: 0.13),
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final details = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    mission.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: AppPalette.navy,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${mission.subject?.name ?? 'Mission'} · $missionUnit · ${mission.sessionType}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _CompactMissionTag(
+                        label: taskFocus,
+                        foregroundColor: AppPalette.primaryBlue,
+                        backgroundColor: AppPalette.primaryBlue.withValues(
+                          alpha: 0.1,
+                        ),
+                      ),
+                      _CompactMissionTag(label: missionType),
+                      _CompactMissionTag(
+                        label: dateLabel,
+                        icon: Icons.calendar_today_outlined,
+                      ),
+                    ],
+                  ),
+                  if (mission.teacherNote.trim().isNotEmpty) ...[
+                    const SizedBox(height: 7),
+                    Text(
+                      mission.teacherNote.trim(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              );
+              final actions = isSelecting
+                  ? _DraftSelectionControl(
+                      isSelected: isSelected,
+                      onTap: onSelect,
+                    )
+                  : Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: onEdit,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppPalette.primaryBlue,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(0, 38),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('Edit'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: onReuse,
+                          style: _missionOutlinedActionStyle(),
+                          icon: const Icon(
+                            Icons.person_add_alt_1_rounded,
+                            size: 16,
+                          ),
+                          label: const Text('Reuse'),
+                        ),
+                      ],
+                    );
+
+              if (constraints.maxWidth < 620) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    details,
+                    const SizedBox(height: 10),
+                    Align(alignment: Alignment.centerLeft, child: actions),
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: details),
+                  const SizedBox(width: 14),
+                  actions,
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DraftSelectionControl extends StatelessWidget {
+  const _DraftSelectionControl({required this.isSelected, required this.onTap});
+
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      style: _missionOutlinedActionStyle(
+        foregroundColor: isSelected ? Colors.white : AppPalette.navy,
+        backgroundColor: isSelected ? AppPalette.primaryBlue : Colors.white,
+      ),
+      icon: Icon(
+        isSelected ? Icons.check_circle_rounded : Icons.circle_outlined,
+        size: 17,
+      ),
+      label: Text(isSelected ? 'Selected' : 'Select'),
+    );
   }
 }
 
@@ -5909,6 +6141,200 @@ class _StandalonePapersPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+const String _allMissionLevelsFilter = 'All';
+const List<String> _coreMissionLevelFilters = <String>[
+  'P1',
+  'P2',
+  'P3',
+  'M1',
+  'M2',
+  'M3',
+];
+
+List<String> _missionLevelFilters(List<MissionPayload> missions) {
+  final extraLevels =
+      missions
+          .expand((mission) => mission.taskCodes)
+          .map((code) => code.trim().toUpperCase())
+          .where(
+            (code) =>
+                code.isNotEmpty && !_coreMissionLevelFilters.contains(code),
+          )
+          .toSet()
+          .toList(growable: false)
+        ..sort(_compareMissionTaskCodes);
+  return <String>[
+    _allMissionLevelsFilter,
+    ..._coreMissionLevelFilters,
+    ...extraLevels,
+  ];
+}
+
+int _compareMissionTaskCodes(String left, String right) {
+  int rank(String value) {
+    final match = RegExp(r'^([A-Z]+)(\d+)$').firstMatch(value);
+    if (match == null) return 10000;
+    final prefix = match.group(1);
+    final prefixRank = switch (prefix) {
+      'P' => 0,
+      'M' => 1000,
+      'D' => 2000,
+      _ => 9000,
+    };
+    return prefixRank + (int.tryParse(match.group(2) ?? '') ?? 999);
+  }
+
+  final rankComparison = rank(left).compareTo(rank(right));
+  return rankComparison == 0 ? left.compareTo(right) : rankComparison;
+}
+
+bool _missionMatchesLevel(MissionPayload mission, String selectedLevel) {
+  if (selectedLevel == _allMissionLevelsFilter) return true;
+  return mission.taskCodes.any(
+    (code) => code.trim().toUpperCase() == selectedLevel,
+  );
+}
+
+class _MissionFilterLabel extends StatelessWidget {
+  const _MissionFilterLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: AppPalette.navy,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
+class _MissionLevelFilterBar extends StatelessWidget {
+  const _MissionLevelFilterBar({
+    required this.keyPrefix,
+    required this.filters,
+    required this.selectedFilter,
+    required this.missions,
+    required this.onSelected,
+  });
+
+  final String keyPrefix;
+  final List<String> filters;
+  final String selectedFilter;
+  final List<MissionPayload> missions;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: filters
+            .map((filter) {
+              final count = filter == _allMissionLevelsFilter
+                  ? missions.length
+                  : missions
+                        .where(
+                          (mission) => _missionMatchesLevel(mission, filter),
+                        )
+                        .length;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  key: Key('${keyPrefix}_${filter.toLowerCase()}'),
+                  label: Text('$filter $count'),
+                  selected: selectedFilter == filter,
+                  onSelected: (_) => onSelected(filter),
+                  showCheckmark: false,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 7,
+                  ),
+                  side: BorderSide(
+                    color: selectedFilter == filter
+                        ? AppPalette.primaryBlue
+                        : AppPalette.textMuted.withValues(alpha: 0.32),
+                  ),
+                  selectedColor: AppPalette.primaryBlue,
+                  backgroundColor: Colors.white.withValues(alpha: 0.9),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: selectedFilter == filter
+                        ? Colors.white
+                        : AppPalette.navy,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _CompactMissionTag extends StatelessWidget {
+  const _CompactMissionTag({
+    required this.label,
+    this.icon,
+    this.foregroundColor = AppPalette.navy,
+    this.backgroundColor = const Color(0xFFF1F5FA),
+  });
+
+  final String label;
+  final IconData? icon;
+  final Color foregroundColor;
+  final Color backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 13, color: foregroundColor),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: foregroundColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+ButtonStyle _missionOutlinedActionStyle({
+  Color foregroundColor = AppPalette.navy,
+  Color backgroundColor = Colors.white,
+}) {
+  return OutlinedButton.styleFrom(
+    foregroundColor: foregroundColor,
+    backgroundColor: backgroundColor,
+    minimumSize: const Size(0, 38),
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    side: BorderSide(color: AppPalette.primaryBlue.withValues(alpha: 0.7)),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  );
 }
 
 enum _AssignedMissionFilter {
@@ -6008,6 +6434,7 @@ class TeacherAssignedMissionsPanel extends StatefulWidget {
 class _TeacherAssignedMissionsPanelState
     extends State<TeacherAssignedMissionsPanel> {
   _AssignedMissionFilter _selectedFilter = _AssignedMissionFilter.all;
+  String _selectedLevel = _allMissionLevelsFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -6054,6 +6481,13 @@ class _TeacherAssignedMissionsPanelState
           ? 'No assigned XP yet'
           : '$totalEarnedXp/$totalAssignedXp XP',
     ];
+    final levelFilters = _missionLevelFilters(missions);
+    final selectedLevel = levelFilters.contains(_selectedLevel)
+        ? _selectedLevel
+        : _allMissionLevelsFilter;
+    final levelFilteredMissions = missions
+        .where((mission) => _missionMatchesLevel(mission, selectedLevel))
+        .toList(growable: false);
     final availableFilters = <_AssignedMissionFilter>[
       _AssignedMissionFilter.all,
       _AssignedMissionFilter.objective,
@@ -6070,7 +6504,7 @@ class _TeacherAssignedMissionsPanelState
     final selectedFilter = availableFilters.contains(_selectedFilter)
         ? _selectedFilter
         : _AssignedMissionFilter.all;
-    final filteredMissions = missions
+    final filteredMissions = levelFilteredMissions
         .where(
           (mission) =>
               selectedFilter == _AssignedMissionFilter.all ||
@@ -6127,10 +6561,28 @@ class _TeacherAssignedMissionsPanelState
               progressRatio: assignedProgressRatio,
             ),
             const SizedBox(height: AppSpacing.compact),
+            _MissionFilterLabel(label: 'Task focus'),
+            const SizedBox(height: 7),
+            _MissionLevelFilterBar(
+              keyPrefix: 'assigned_level_filter',
+              filters: levelFilters,
+              selectedFilter: selectedLevel,
+              missions: missions,
+              onSelected: (filter) {
+                setState(() {
+                  // WHY: Task-focus filtering is view-only and must never
+                  // change the mission's qualification evidence or result.
+                  _selectedLevel = filter;
+                });
+              },
+            ),
+            const SizedBox(height: AppSpacing.compact),
+            _MissionFilterLabel(label: 'Mission type'),
+            const SizedBox(height: 7),
             _AssignedMissionFilterBar(
               filters: availableFilters,
               selectedFilter: selectedFilter,
-              missions: missions,
+              missions: levelFilteredMissions,
               onSelected: (filter) {
                 setState(() {
                   // WHY: Filtering changes only the teacher's view. Mission
@@ -6149,7 +6601,9 @@ class _TeacherAssignedMissionsPanelState
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.item),
                 child: Text(
-                  'No ${selectedFilter.label} missions assigned.',
+                  selectedLevel == _allMissionLevelsFilter
+                      ? 'No ${selectedFilter.label} missions assigned.'
+                      : 'No $selectedLevel ${selectedFilter.label.toLowerCase()} missions assigned.',
                   key: const Key('assigned_missions_empty_filter'),
                   style: Theme.of(
                     context,
@@ -6274,14 +6728,14 @@ class _AssignedMissionFilterBar extends StatelessWidget {
                     ? AppPalette.primaryBlue
                     : AppPalette.textMuted.withValues(alpha: 0.28),
               ),
-              selectedColor: AppPalette.primaryBlue.withValues(alpha: 0.14),
-              backgroundColor: Colors.white.withValues(alpha: 0.72),
+              selectedColor: AppPalette.primaryBlue,
+              backgroundColor: Colors.white.withValues(alpha: 0.9),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
               labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: selectedFilter == filter
-                    ? AppPalette.primaryBlue
+                    ? Colors.white
                     : AppPalette.navy,
                 fontWeight: FontWeight.w700,
               ),
@@ -6355,28 +6809,19 @@ class _AssignedMissionTaskSection extends StatelessWidget {
           const SizedBox(height: 4),
           ...missions.asMap().entries.map((entry) {
             final mission = entry.value;
-            return Column(
-              children: [
-                if (entry.key > 0)
-                  Divider(
-                    height: 1,
-                    color: AppPalette.textMuted.withValues(alpha: 0.18),
-                  ),
-                _AssignedMissionListItem(
-                  key: Key('assigned_mission_${mission.id}'),
-                  mission: mission,
-                  isSendingResult: sendingResultMissionIds.contains(mission.id),
-                  isManagingEvidence: resultEvidenceActionMissionIds.contains(
-                    mission.id,
-                  ),
-                  onEdit: () => onEdit(mission),
-                  onMoveBackToDraft: () => onMoveBackToDraft(mission),
-                  onSendResult: () => onSendResult(mission),
-                  onViewResult: () => onViewResult(mission),
-                  onRedoResult: () => onRedoResult(mission),
-                  onMoveResult: () => onMoveResult(mission),
-                ),
-              ],
+            return _AssignedMissionListItem(
+              key: Key('assigned_mission_${mission.id}'),
+              mission: mission,
+              isSendingResult: sendingResultMissionIds.contains(mission.id),
+              isManagingEvidence: resultEvidenceActionMissionIds.contains(
+                mission.id,
+              ),
+              onEdit: () => onEdit(mission),
+              onMoveBackToDraft: () => onMoveBackToDraft(mission),
+              onSendResult: () => onSendResult(mission),
+              onViewResult: () => onViewResult(mission),
+              onRedoResult: () => onRedoResult(mission),
+              onMoveResult: () => onMoveResult(mission),
             );
           }),
         ],
@@ -6451,8 +6896,14 @@ class _AssignedMissionListItem extends StatelessWidget {
 
     // WHY: Assigned missions are presented as compact list rows rather than
     // separate oversized cards so teachers can scan P1 and P2 quickly.
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppPalette.orange.withValues(alpha: 0.2)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -6560,24 +7011,24 @@ class _AssignedMissionListItem extends StatelessWidget {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              TextButton.icon(
+              FilledButton.icon(
                 onPressed: onEdit,
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppPalette.primaryBlue,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 38),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 icon: const Icon(Icons.edit_outlined, size: 16),
                 label: const Text('Edit'),
               ),
-              TextButton(
+              OutlinedButton(
                 onPressed: onMoveBackToDraft,
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  foregroundColor: AppPalette.navy,
-                ),
+                style: _missionOutlinedActionStyle(),
                 child: const Text('Move to draft'),
               ),
               if (hasResultPackage)
@@ -8848,8 +9299,9 @@ class _MissionSecondaryActionButton extends StatelessWidget {
         ),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         foregroundColor: AppPalette.navy,
-        side: BorderSide(color: AppPalette.primaryBlue.withValues(alpha: 0.45)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        backgroundColor: Colors.white.withValues(alpha: 0.92),
+        side: BorderSide(color: AppPalette.primaryBlue.withValues(alpha: 0.72)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       icon: Icon(icon, size: 16),
       label: Text(
