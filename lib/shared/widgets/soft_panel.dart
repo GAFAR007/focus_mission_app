@@ -7,7 +7,8 @@
  * screen from reimplementing premium card styling.
  * HOW:
  * Render a decorated container with gradient fill, rounded corners, and soft
- * shadow around the child widget.
+ * shadow around the child widget, or an opt-in solid bordered surface for
+ * compact dashboards without changing existing callers.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -23,8 +24,10 @@ class SoftPanel extends StatelessWidget {
     this.padding = const EdgeInsets.all(AppSpacing.section),
     this.colors,
     this.margin,
+    this.solid = false,
   });
 
+  final bool solid;
   final Widget child;
   final EdgeInsetsGeometry padding;
   final List<Color>? colors;
@@ -36,25 +39,36 @@ class SoftPanel extends StatelessWidget {
       margin: margin,
       padding: padding,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors:
-              colors ??
-              [
-                Colors.white.withValues(alpha: 0.90),
-                Colors.white.withValues(alpha: 0.74),
-              ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        color: solid ? (colors?.first ?? AppPalette.surface) : null,
+        gradient: solid
+            ? null
+            : LinearGradient(
+                colors:
+                    colors ??
+                    [
+                      Colors.white.withValues(alpha: 0.90),
+                      Colors.white.withValues(alpha: 0.74),
+                    ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+        borderRadius: BorderRadius.circular(
+          solid ? AppSpacing.radiusMd : AppSpacing.radiusXl,
         ),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.65)),
-        boxShadow: const [
-          BoxShadow(
-            color: AppPalette.shadow,
-            blurRadius: 30,
-            offset: Offset(0, 16),
-          ),
-        ],
+        border: Border.all(
+          color: solid
+              ? AppPalette.navy.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.65),
+        ),
+        boxShadow: solid
+            ? const []
+            : const [
+                BoxShadow(
+                  color: AppPalette.shadow,
+                  blurRadius: 30,
+                  offset: Offset(0, 16),
+                ),
+              ],
       ),
       child: child,
     );

@@ -154,6 +154,7 @@ class WeeklyTimetableCalendar extends StatefulWidget {
     this.subtitle = 'Switch between a full week and the current month.',
     this.showHeader = true,
     this.showPanel = true,
+    this.solidPanel = false,
     this.date,
     this.onDateChanged,
     this.onDateTap,
@@ -169,6 +170,7 @@ class WeeklyTimetableCalendar extends StatefulWidget {
   final String subtitle;
   final bool showHeader;
   final bool showPanel;
+  final bool solidPanel;
   final DateTime? date;
   final ValueChanged<DateTime>? onDateChanged;
   final ValueChanged<DateTime>? onDateTap;
@@ -212,6 +214,7 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
       children: [
         if (widget.showHeader) ...[
           _PlannerHeader(
+            solid: widget.solidPanel,
             title: widget.title,
             subtitle: widget.subtitle,
             actionLabel: widget.actionLabel,
@@ -287,7 +290,13 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
       return plannerContent;
     }
 
-    return SoftPanel(child: plannerContent);
+    return SoftPanel(
+      solid: widget.solidPanel,
+      padding: EdgeInsets.all(
+        widget.solidPanel ? AppSpacing.item : AppSpacing.section,
+      ),
+      child: plannerContent,
+    );
   }
 
   void _moveBackward() {
@@ -334,12 +343,14 @@ class _WeeklyTimetableCalendarState extends State<WeeklyTimetableCalendar> {
 class _PlannerHeader extends StatelessWidget {
   const _PlannerHeader({
     required this.title,
+    this.solid = false,
     required this.subtitle,
     this.actionLabel,
     this.actionIcon = Icons.add_rounded,
     this.onActionPressed,
   });
 
+  final bool solid;
   final String title;
   final String subtitle;
   final String? actionLabel;
@@ -369,14 +380,17 @@ class _PlannerHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 48,
-                  height: 48,
+                  width: solid ? 36 : 48,
+                  height: solid ? 36 : 48,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: AppPalette.teacherGradient,
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: solid ? AppPalette.navy : null,
+                    gradient: solid
+                        ? null
+                        : const LinearGradient(
+                            colors: AppPalette.teacherGradient,
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Icon(
@@ -391,7 +405,9 @@ class _PlannerHeader extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: Theme.of(context).textTheme.titleLarge,
+                        style: solid
+                            ? Theme.of(context).textTheme.titleMedium
+                            : Theme.of(context).textTheme.titleLarge,
                       ),
                       const SizedBox(height: 4),
                       Text(

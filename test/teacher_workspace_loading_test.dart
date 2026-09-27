@@ -405,6 +405,8 @@ void main() {
       'Add student',
       'Open analytics',
       'Task Focus work',
+      'Qualification Review',
+      'Student Results',
       'Save',
     ]) {
       expect(
@@ -438,6 +440,8 @@ void main() {
         'Add student',
         'Open analytics',
         'Task Focus work',
+        'Qualification Review',
+        'Student Results',
         'Save',
       ]) {
         final button = tester.getRect(find.text(label));
@@ -512,6 +516,8 @@ void main() {
       findsOneWidget,
     );
     final certification = find.byKey(const Key('teacher_certification'));
+    await tester.tap(find.byKey(const Key('open_qualification_review')));
+    await tester.pump();
     final review = find.byKey(const Key('teacher_qualification_review'));
     final inbox = find.byType(NotificationPanel);
     expect(tester.getSize(certification).height, lessThan(350));
@@ -591,6 +597,69 @@ void main() {
     expect(find.text('Business principles'), findsOneWidget);
     await tester.tap(find.text(notification.title));
     expect(opened, same(notification));
+  });
+
+  testWidgets('top utilities open on demand and reset when switching students', (
+    tester,
+  ) async {
+    final api = _ControlledTeacherWorkspaceApi();
+    await _pumpTeacherScreen(tester, api);
+    final reviewAction = find.byKey(const Key('open_qualification_review'));
+    final resultsAction = find.byKey(const Key('open_student_results'));
+    final reviewPanel = find.byKey(const Key('teacher_qualification_review'));
+    final resultsPanel = find.byKey(const Key('teacher_student_results'));
+    expect(tester.widget<OutlinedButton>(reviewAction).onPressed, isNull);
+    expect(tester.widget<OutlinedButton>(resultsAction).onPressed, isNull);
+    api.supplementalByStudent['student-a']!.complete(
+      _supplementalWithDraftMissions(),
+    );
+    await tester.pump();
+    expect(reviewPanel, findsNothing);
+    expect(resultsPanel, findsNothing);
+
+    await tester.tap(reviewAction);
+    await tester.pump();
+    expect(reviewPanel, findsOneWidget);
+    expect(
+      find.text("No criteria match this teacher's subject yet."),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('Close Qualification Review'));
+    await tester.pump();
+    expect(reviewPanel, findsNothing);
+
+    await tester.tap(resultsAction);
+    await tester.pump();
+    expect(resultsPanel, findsOneWidget);
+    expect(find.text('Upload Result'), findsOneWidget);
+    expect(find.text('Download Day'), findsOneWidget);
+    expect(find.text('Result date'), findsOneWidget);
+    expect(
+      find.text(
+        'No saved results are available yet for this student in your subjects.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(resultsAction);
+    await tester.pump();
+    expect(resultsPanel, findsNothing);
+    await tester.tap(resultsAction);
+    await tester.tap(reviewAction);
+    await tester.pump();
+
+    await tester.tap(find.text('Switch student'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.textContaining('Student Beta').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    api.supplementalByStudent['student-b']!.complete(
+      _supplementalFor('student-b', 'Beta ready'),
+    );
+    await tester.pump();
+    expect(reviewPanel, findsNothing);
+    expect(resultsPanel, findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Draft Missions filters by task focus without changing data', (

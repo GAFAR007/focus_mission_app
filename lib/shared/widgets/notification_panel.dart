@@ -42,9 +42,10 @@ class NotificationPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoftPanel(
+      solid: compact,
       padding: EdgeInsets.all(compact ? AppSpacing.item : AppSpacing.section),
       colors: compact
-          ? const [Color(0xFFF4F6FA), Color(0xFFF4F6FA)]
+          ? const [AppPalette.surface, AppPalette.surface]
           : const [Color(0xFFFFFBF2), Color(0xFFFFF0D3)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

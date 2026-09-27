@@ -138,6 +138,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   bool _showTeacherTimetableEditor = false;
   bool _isAssignedMissionsExpanded = false;
   bool _isStudentResultsExpanded = false;
+  bool _isQualificationReviewExpanded = false;
   bool _isLessonPanelExpanded = false;
   bool _isDownloadingDayResults = false;
   String _downloadingResultPackageId = '';
@@ -336,6 +337,14 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     });
   }
 
+  void _toggleQualificationReview() {
+    setState(() {
+      // WHY: Review remains available without occupying dashboard space until
+      // the teacher opens the utility for the selected learner.
+      _isQualificationReviewExpanded = !_isQualificationReviewExpanded;
+    });
+  }
+
   void _toggleStudentResultsExpanded() {
     setState(() {
       // WHY: Result history grows fast, so opening it on demand prevents it
@@ -423,6 +432,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     _selectedDraftMissionIds.clear();
     _isAssignedMissionsExpanded = false;
     _isStudentResultsExpanded = false;
+    _isQualificationReviewExpanded = false;
     _isLessonPanelExpanded = false;
     _isLoadingSupplementalWorkspace = false;
     _supplementalWorkspaceError = null;
@@ -672,6 +682,42 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       icon: const Icon(Icons.account_tree_rounded, size: 16),
                       label: const Text('Task Focus work'),
                     ),
+                    OutlinedButton.icon(
+                      key: const Key('open_qualification_review'),
+                      onPressed:
+                          _isLoadingSupplementalWorkspace ||
+                              _supplementalWorkspaceError != null
+                          ? null
+                          : _toggleQualificationReview,
+                      style: _missionOutlinedActionStyle(
+                        foregroundColor: _isQualificationReviewExpanded
+                            ? Colors.white
+                            : AppPalette.navy,
+                        backgroundColor: _isQualificationReviewExpanded
+                            ? AppPalette.navy
+                            : Colors.white,
+                      ),
+                      icon: const Icon(Icons.fact_check_outlined, size: 16),
+                      label: const Text('Qualification Review'),
+                    ),
+                    OutlinedButton.icon(
+                      key: const Key('open_student_results'),
+                      onPressed:
+                          _isLoadingSupplementalWorkspace ||
+                              _supplementalWorkspaceError != null
+                          ? null
+                          : _toggleStudentResultsExpanded,
+                      style: _missionOutlinedActionStyle(
+                        foregroundColor: _isStudentResultsExpanded
+                            ? Colors.white
+                            : AppPalette.navy,
+                        backgroundColor: _isStudentResultsExpanded
+                            ? AppPalette.navy
+                            : Colors.white,
+                      ),
+                      icon: const Icon(Icons.assessment_outlined, size: 16),
+                      label: const Text('Student Results'),
+                    ),
                   ],
                   yearGroupEditor: StudentYearGroupPanel(
                     title: 'Student year group',
@@ -691,6 +737,62 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       ? _buildSupplementalWorkspaceStatus(workspace)
                       : null,
                 ),
+                if (!_isLoadingSupplementalWorkspace &&
+                    _supplementalWorkspaceError == null) ...[
+                  if (_isQualificationReviewExpanded) ...[
+                    const SizedBox(height: AppSpacing.item),
+                    _TeacherCriterionPanel(
+                      criteria: teacherCriteria,
+                      onClose: _toggleQualificationReview,
+                      onTap: (criterion) =>
+                          _openCriterionReview(workspace, criterion),
+                    ),
+                  ],
+                  if (_isStudentResultsExpanded) ...[
+                    const SizedBox(height: AppSpacing.item),
+                    _TeacherStudentResultsPanel(
+                      studentName: workspace.selectedStudent.name,
+                      subjectFilters: resultSubjectFilters,
+                      selectedSubject: _selectedResultSubject,
+                      dateFilters: resultDateFilters,
+                      selectedDate: _selectedResultDate,
+                      filteredResults: filteredStudentResults,
+                      allResults: studentResults,
+                      isExpanded: _isStudentResultsExpanded,
+                      onToggleExpanded: _toggleStudentResultsExpanded,
+                      onSelectSubject: (value) =>
+                          setState(() => _selectedResultSubject = value),
+                      onSelectDate: (value) =>
+                          setState(() => _selectedResultDate = value),
+                      onOpenResult: (mission) =>
+                          _openStudentResultHistory(workspace, mission),
+                      onDownloadResult: (result) => _downloadStudentResult(
+                        workspace: workspace,
+                        result: result,
+                      ),
+                      onUploadResult: () => _openUploadResultFromStudentResults(
+                        workspace,
+                        lessonLabel: activeLesson,
+                        selectedSubject: selectedSubject,
+                      ),
+                      onDownloadDayResults: () => _downloadSelectedDayResults(
+                        workspace: workspace,
+                        results: downloadDayResults,
+                      ),
+                      canUploadResult:
+                          canCreateFallbackResultUpload &&
+                          !selectedDateIsFuture,
+                      canDownloadDayResults:
+                          _selectedResultDate !=
+                              _allTeacherResultDatesFilterLabel &&
+                          downloadDayResults.isNotEmpty,
+                      isDownloadingDayResults: _isDownloadingDayResults,
+                      downloadsLocked: _teacherResultDownloadsLocked,
+                      downloadingResultPackageId: _downloadingResultPackageId,
+                      uploadResultHelperText: uploadResultHelperText,
+                    ),
+                  ],
+                ],
                 AnimatedSize(
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
@@ -718,12 +820,6 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 if (!_isLoadingSupplementalWorkspace &&
                     _supplementalWorkspaceError == null) ...[
                   const SizedBox(height: AppSpacing.item),
-                  _TeacherCriterionPanel(
-                    criteria: teacherCriteria,
-                    onTap: (criterion) =>
-                        _openCriterionReview(workspace, criterion),
-                  ),
-                  const SizedBox(height: AppSpacing.item),
                   NotificationPanel(
                     compact: true,
                     title: 'Teacher Inbox',
@@ -738,6 +834,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                 ],
                 const SizedBox(height: AppSpacing.item),
                 WeeklyTimetableCalendar(
+                  solidPanel: true,
                   title: 'Teacher Timetable',
                   subtitle:
                       '${workspace.selectedStudent.name}\'s Monday to Sunday planner with a full month view.',
@@ -912,50 +1009,11 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                     resultEvidenceActionMissionIds:
                         _resultEvidenceActionMissionIds,
                   ),
-                  const SizedBox(height: AppSpacing.item),
-                  _TeacherStudentResultsPanel(
-                    studentName: workspace.selectedStudent.name,
-                    subjectFilters: resultSubjectFilters,
-                    selectedSubject: _selectedResultSubject,
-                    dateFilters: resultDateFilters,
-                    selectedDate: _selectedResultDate,
-                    filteredResults: filteredStudentResults,
-                    allResults: studentResults,
-                    isExpanded: _isStudentResultsExpanded,
-                    onToggleExpanded: _toggleStudentResultsExpanded,
-                    onSelectSubject: (value) =>
-                        setState(() => _selectedResultSubject = value),
-                    onSelectDate: (value) =>
-                        setState(() => _selectedResultDate = value),
-                    onOpenResult: (mission) =>
-                        _openStudentResultHistory(workspace, mission),
-                    onDownloadResult: (result) => _downloadStudentResult(
-                      workspace: workspace,
-                      result: result,
-                    ),
-                    onUploadResult: () => _openUploadResultFromStudentResults(
-                      workspace,
-                      lessonLabel: activeLesson,
-                      selectedSubject: selectedSubject,
-                    ),
-                    onDownloadDayResults: () => _downloadSelectedDayResults(
-                      workspace: workspace,
-                      results: downloadDayResults,
-                    ),
-                    canUploadResult:
-                        canCreateFallbackResultUpload && !selectedDateIsFuture,
-                    canDownloadDayResults:
-                        _selectedResultDate !=
-                            _allTeacherResultDatesFilterLabel &&
-                        downloadDayResults.isNotEmpty,
-                    isDownloadingDayResults: _isDownloadingDayResults,
-                    downloadsLocked: _teacherResultDownloadsLocked,
-                    downloadingResultPackageId: _downloadingResultPackageId,
-                    uploadResultHelperText: uploadResultHelperText,
-                  ),
                 ],
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
+                  solid: true,
+                  padding: const EdgeInsets.all(AppSpacing.item),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1013,9 +1071,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                                 width: 42,
                                 height: 42,
                                 decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: AppPalette.teacherGradient,
-                                  ),
+                                  color: _assignedMissionAccent,
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                                 child: Icon(
@@ -4471,12 +4527,10 @@ class _StudentContextCard extends StatelessWidget {
                 children: [
                   CircleAvatar(
                     radius: 20,
-                    backgroundColor: AppPalette.primaryBlue.withValues(
-                      alpha: 0.1,
-                    ),
+                    backgroundColor: AppPalette.navy,
                     child: const Icon(
                       Icons.person_outline_rounded,
-                      color: AppPalette.primaryBlue,
+                      color: Colors.white,
                       size: 22,
                     ),
                   ),
@@ -4513,9 +4567,10 @@ class _StudentContextCard extends StatelessWidget {
     );
 
     return SoftPanel(
+      solid: true,
       key: const Key('teacher_student_lesson_context'),
       padding: const EdgeInsets.all(AppSpacing.item),
-      colors: const [_missionPanelSurface, _missionPanelSurface],
+      colors: const [_teacherSectionSurface, _teacherSectionSurface],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -4523,7 +4578,7 @@ class _StudentContextCard extends StatelessWidget {
             'Student & Lesson Context',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: AppSpacing.compact),
+          const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
               // WHY: Keep the learner/date together. Actions move beneath them
@@ -4555,7 +4610,7 @@ class _StudentContextCard extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(height: AppSpacing.compact),
+          const SizedBox(height: 8),
           yearGroupEditor,
           if (status != null) ...[
             const SizedBox(height: AppSpacing.compact),
@@ -4916,14 +4971,20 @@ class _StandalonePaperStudentSelectionSheetState
 }
 
 class _TeacherCriterionPanel extends StatelessWidget {
-  const _TeacherCriterionPanel({required this.criteria, required this.onTap});
+  const _TeacherCriterionPanel({
+    required this.criteria,
+    required this.onTap,
+    required this.onClose,
+  });
 
+  final VoidCallback onClose;
   final List<CriterionOverview> criteria;
   final ValueChanged<CriterionOverview> onTap;
 
   @override
   Widget build(BuildContext context) {
     return SoftPanel(
+      solid: true,
       key: const Key('teacher_qualification_review'),
       padding: const EdgeInsets.all(AppSpacing.item),
       colors: const [_missionPanelSurface, _missionPanelSurface],
@@ -4943,6 +5004,11 @@ class _TeacherCriterionPanel extends StatelessWidget {
                   'Qualification Review',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
+              ),
+              IconButton(
+                tooltip: 'Close Qualification Review',
+                onPressed: onClose,
+                icon: const Icon(Icons.close_rounded, size: 20),
               ),
             ],
           ),
@@ -5144,6 +5210,7 @@ class _DraftMissionsPanelState extends State<_DraftMissionsPanel> {
         .toList(growable: false);
 
     return SoftPanel(
+      solid: true,
       padding: const EdgeInsets.all(AppSpacing.item),
       colors: const [_missionPanelSurface, _missionPanelSurface],
       child: Column(
@@ -5701,6 +5768,7 @@ const String _allMissionLevelsFilter = 'All';
 const Color _draftMissionAccent = Color(0xFF3156D3);
 const Color _assignedMissionAccent = Color(0xFF0F766E);
 const Color _missionPanelSurface = Color(0xFFF4F6FA);
+const Color _teacherSectionSurface = Color(0xFFE7EDF4);
 const Color _missionFilterSurface = Color(0xFFE9EDF3);
 const List<String> _coreMissionLevelFilters = <String>[
   'P1',
@@ -6114,6 +6182,8 @@ class _TeacherAssignedMissionsPanelState
           });
 
     return SoftPanel(
+      solid: true,
+      padding: const EdgeInsets.all(AppSpacing.item),
       colors: const [_missionPanelSurface, _missionPanelSurface],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6639,7 +6709,9 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
     ];
 
     return SoftPanel(
-      colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
+      solid: true,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      key: const Key('teacher_student_results'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -8084,15 +8156,36 @@ class _TeacherCertificationPanel extends StatelessWidget {
     };
 
     return SoftPanel(
+      solid: true,
       key: const Key('teacher_certification'),
       padding: const EdgeInsets.all(AppSpacing.item),
-      colors: const [_missionPanelSurface, _missionPanelSurface],
+      colors: const [_teacherSectionSurface, _teacherSectionSurface],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Task-focus certification',
-            style: Theme.of(context).textTheme.titleMedium,
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppPalette.navy,
+                  borderRadius: BorderRadius.circular(AppSpacing.chip),
+                ),
+                child: const Icon(
+                  Icons.workspace_premium_outlined,
+                  size: 20,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Task-focus certification',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
