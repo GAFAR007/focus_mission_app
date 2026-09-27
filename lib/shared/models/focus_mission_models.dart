@@ -11,6 +11,8 @@
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
+import 'xp_journey.dart';
+
 class AppUser {
   const AppUser({
     required this.id,
@@ -451,8 +453,10 @@ class StudentDashboardData {
     required this.todayStandalonePapers,
     this.today,
     this.assignedMissions = const [],
+    this.xpAchievements = const [],
   });
 
+  final List<XpAchievement> xpAchievements;
   final List<MissionPayload> assignedMissions;
   final AppUser student;
   final TodaySchedule? today;
@@ -468,6 +472,9 @@ class StudentDashboardData {
         .toList();
 
     return StudentDashboardData(
+      xpAchievements: (json['xpAchievements'] as List? ?? const [])
+          .map((e) => XpAchievement.fromJson(_asMap(e)))
+          .toList(),
       assignedMissions: (json['assignedMissions'] as List<dynamic>? ?? const [])
           .map((item) => MissionPayload.fromJson(_asMap(item)))
           .toList(growable: false),

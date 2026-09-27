@@ -13,6 +13,8 @@
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
 import 'dart:convert';
+import 'dart:math';
+import '../../shared/models/xp_journey.dart';
 
 import 'package:http/http.dart' as http;
 
@@ -178,6 +180,18 @@ class FocusMissionApi {
       (json['user'] as Map<dynamic, dynamic>? ?? const {})
           .cast<String, dynamic>(),
     );
+  }
+
+  Future<XpLeaderboard> fetchXpLeaderboard({
+    required String token,
+    String period = 'overall',
+  }) async {
+    final json = await _requestJson(
+      'GET',
+      '/xp/leaderboard?period=$period',
+      token: token,
+    );
+    return XpLeaderboard.fromJson(json);
   }
 
   Future<StudentDashboardData> fetchStudentDashboard({
@@ -2949,6 +2963,11 @@ class FocusMissionApi {
     final uri = Uri.parse('${ApiConfig.baseUrl}$path');
     final headers = <String, String>{
       'Content-Type': 'application/json',
+      if (method == 'POST')
+        'Idempotency-Key': List.generate(
+          24,
+          (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0'),
+        ).join(),
       if (token != null) 'Authorization': 'Bearer $token',
       'X-School-Access-Token': ?gateToken,
     };

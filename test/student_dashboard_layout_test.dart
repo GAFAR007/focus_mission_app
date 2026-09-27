@@ -18,6 +18,7 @@ import 'package:focus_mission_app/features/student/presentation/student_subject_
 import 'package:focus_mission_app/features/student/presentation/student_result_report_screen.dart';
 import 'package:focus_mission_app/features/student/presentation/flexible_learning_helper_sheet.dart';
 import 'package:focus_mission_app/shared/models/focus_mission_models.dart';
+import 'package:focus_mission_app/shared/widgets/profile_avatar_button.dart';
 
 const _session = AuthSession(
   token: 'synthetic-token',
@@ -32,6 +33,7 @@ const _session = AuthSession(
 
 class _StudentApi extends FocusMissionApi {
   final bool scheduled;
+  int dashboardXp = 554;
   bool hasMissions = false;
   List<Map<String, dynamic>> assignments = [];
   String? requestedMission;
@@ -61,7 +63,7 @@ class _StudentApi extends FocusMissionApi {
         'id': 'student',
         'name': 'Student Example',
         'role': 'student',
-        'xp': 554,
+        'xp': dashboardXp,
         'streak': 1,
         'daysSinceFirstLogin': 200,
       },
@@ -454,11 +456,26 @@ void main() {
     },
   );
 
+  testWidgets('profile journey uses the current dashboard balance', (
+    tester,
+  ) async {
+    final api = _StudentApi()..dashboardXp = 6420;
+    await _pump(tester, api: api);
+    final profile = tester.widget<ProfileAvatarButton>(
+      find.byType(ProfileAvatarButton),
+    );
+    profile.onTap!();
+    await tester.pumpAndSettle();
+    expect(find.text('Total XP: 6,420'), findsNWidgets(2));
+    expect(find.text('6K Journey Complete'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('XP, focus and certification states retain their data', (
     tester,
   ) async {
     await _pump(tester);
-    expect(find.text('XP: 554 / 200'), findsOneWidget);
+    expect(find.text('554 / 6,000 XP'), findsOneWidget);
     expect(find.text('20 / 200 XP'), findsOneWidget);
     expect(find.text('Daily bonus 20/20'), findsOneWidget);
     expect(find.text('Performance 0/100'), findsOneWidget);

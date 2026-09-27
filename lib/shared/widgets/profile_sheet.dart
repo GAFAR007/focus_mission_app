@@ -10,6 +10,8 @@
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
+import '../models/xp_journey.dart';
+import 'xp_leaderboard_sheet.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_palette.dart';
@@ -20,11 +22,13 @@ import '../models/focus_mission_models.dart';
 import 'avatar_badge.dart';
 import 'gradient_button.dart';
 import 'soft_panel.dart';
+import 'xp_journey_panel.dart';
 
 Future<AppUser?> showProfileSheet(
   BuildContext context, {
   required AuthSession session,
   FocusMissionApi? api,
+  List<XpAchievement> xpAchievements = const [],
   Future<void> Function()? onSignOut,
 }) {
   return showModalBottomSheet<AppUser>(
@@ -33,6 +37,7 @@ Future<AppUser?> showProfileSheet(
     backgroundColor: Colors.transparent,
     builder: (_) => _ProfileSheet(
       session: session,
+      xpAchievements: xpAchievements,
       api: api ?? FocusMissionApi(),
       onSignOut: onSignOut,
     ),
@@ -42,11 +47,13 @@ Future<AppUser?> showProfileSheet(
 class _ProfileSheet extends StatefulWidget {
   const _ProfileSheet({
     required this.session,
+    this.xpAchievements = const [],
     required this.api,
     this.onSignOut,
   });
 
   final AuthSession session;
+  final List<XpAchievement> xpAchievements;
   final FocusMissionApi api;
   final Future<void> Function()? onSignOut;
 
@@ -192,11 +199,11 @@ class _ProfileSheetState extends State<_ProfileSheet> {
                                                         .trim(),
                                                   ),
                                                 if ((widget
-                                                            .session
-                                                            .user
-                                                            .subjectSpecialty ??
-                                                        '')
-                                                    .isNotEmpty ||
+                                                                .session
+                                                                .user
+                                                                .subjectSpecialty ??
+                                                            '')
+                                                        .isNotEmpty ||
                                                     subjectLabels.isNotEmpty)
                                                   _MetaPill(
                                                     label: subjectLabels.join(
@@ -237,6 +244,54 @@ class _ProfileSheetState extends State<_ProfileSheet> {
                                         ),
                                       ),
                                     ],
+                                  ),
+                                  if (widget.session.user.role ==
+                                      'student') ...[
+                                    const SizedBox(height: AppSpacing.section),
+                                    XpJourneyPanel(
+                                      totalXp: widget.session.user.xp,
+                                      achievements: widget.xpAchievements,
+                                    ),
+                                  ],
+                                  if (widget.xpAchievements.isNotEmpty)
+                                    ExpansionTile(
+                                      title: const Text(
+                                        'Milestone achievements',
+                                      ),
+                                      children: [
+                                        for (final award
+                                            in widget.xpAchievements)
+                                          ListTile(
+                                            leading: const Icon(
+                                              Icons.emoji_events_outlined,
+                                            ),
+                                            title: Text(
+                                              '${XpJourney.shortLabel(award.threshold)} XP achieved',
+                                            ),
+                                            subtitle: Text(
+                                              award.isLegacy ||
+                                                      award.achievedAt == null
+                                                  ? 'Achieved before tracking began'
+                                                  : MaterialLocalizations.of(
+                                                      context,
+                                                    ).formatMediumDate(
+                                                      award.achievedAt!
+                                                          .toLocal(),
+                                                    ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  OutlinedButton.icon(
+                                    onPressed: () => showXpLeaderboard(
+                                      context,
+                                      api: widget.api,
+                                      token: widget.session.token,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.leaderboard_outlined,
+                                    ),
+                                    label: const Text('Leaderboard'),
                                   ),
                                   const SizedBox(height: AppSpacing.section),
                                   Wrap(

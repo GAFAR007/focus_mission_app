@@ -14,6 +14,7 @@
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
+import '../../../shared/widgets/xp_leaderboard_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,6 +23,7 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/utils/auth_session_store.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
+import '../../../shared/models/xp_journey.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/mission_card.dart';
 import '../../../shared/widgets/profile_avatar_button.dart';
@@ -205,14 +207,24 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       onBack: () => Navigator.of(context).pop(),
                       user: _session.user,
                       onLogout: _signOut,
-                      onProfileTap: _openProfile,
+                      onProfileTap: () => _openProfile(
+                        data.dashboard.student.xp,
+                        data.dashboard.xpAchievements,
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.section),
                     ProgressHeroCard(
                       name: _session.user.name,
                       streakLabel: _journeyLabel(data.dashboard.student),
                       currentXp: data.dashboard.student.xp,
-                      goalXp: 200,
+                      goalXp: XpJourney.goalXp,
+                      showXpJourney: true,
+                      xpAchievements: data.dashboard.xpAchievements,
+                      onLeaderboard: () => showXpLeaderboard(
+                        context,
+                        api: _api,
+                        token: _session.token,
+                      ),
                       trailingIcon: Icons.emoji_events_rounded,
                       avatarUrl: _session.user.avatar,
                       titleBadge:
@@ -769,10 +781,15 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     }
   }
 
-  Future<void> _openProfile() async {
+  Future<void> _openProfile(
+    int currentXp,
+    List<XpAchievement> achievements,
+  ) async {
     final updatedUser = await showProfileSheet(
       context,
-      session: _session,
+      xpAchievements: achievements,
+      // Use the same server balance as the hero rather than the login snapshot.
+      session: _session.copyWith(user: _session.user.copyWith(xp: currentXp)),
       api: _api,
       onSignOut: _signOut,
     );

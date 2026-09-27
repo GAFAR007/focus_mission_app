@@ -17,6 +17,8 @@ import '../../core/constants/app_palette.dart';
 import '../../core/constants/app_spacing.dart';
 import 'avatar_badge.dart';
 import 'soft_panel.dart';
+import 'xp_journey_panel.dart';
+import '../models/xp_journey.dart';
 
 class ProgressHeroCard extends StatelessWidget {
   const ProgressHeroCard({
@@ -27,11 +29,17 @@ class ProgressHeroCard extends StatelessWidget {
     required this.goalXp,
     required this.trailingIcon,
     this.avatarUrl,
+    this.showXpJourney = false,
+    this.xpAchievements = const [],
+    this.onLeaderboard,
     this.titleBadge,
     this.highlightMessage,
     this.statBadges = const <String>[],
   });
 
+  final bool showXpJourney;
+  final List<XpAchievement> xpAchievements;
+  final VoidCallback? onLeaderboard;
   final String name;
   final String streakLabel;
   final int currentXp;
@@ -71,6 +79,20 @@ class ProgressHeroCard extends StatelessWidget {
                         context,
                       ).textTheme.titleLarge?.copyWith(color: Colors.white),
                     ),
+                    if (showXpJourney &&
+                        XpJourney(
+                              currentXp,
+                              achievements: xpAchievements,
+                            ).highestMilestone !=
+                            null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${XpJourney.shortLabel(XpJourney(currentXp, achievements: xpAchievements).highestMilestone!)} XP milestone',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: AppPalette.sun),
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Text(
                       streakLabel,
@@ -139,28 +161,37 @@ class ProgressHeroCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
-          Text(
-            'XP: $currentXp / $goalXp',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: Colors.white),
-          ),
-          const SizedBox(height: 8),
-          TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: progress),
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOutCubic,
-            builder: (context, animatedProgress, child) =>
-                LinearProgressIndicator(
-                  value: animatedProgress,
-                  minHeight: 8,
-                  borderRadius: BorderRadius.circular(20),
-                  backgroundColor: Colors.white.withValues(alpha: 0.16),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFF77CFB2),
+          if (showXpJourney)
+            XpJourneyPanel(
+              totalXp: currentXp,
+              onDark: true,
+              achievements: xpAchievements,
+              onLeaderboard: onLeaderboard,
+            )
+          else ...[
+            Text(
+              'XP: $currentXp / $goalXp',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+            TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: progress),
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              builder: (context, animatedProgress, child) =>
+                  LinearProgressIndicator(
+                    value: animatedProgress,
+                    minHeight: 8,
+                    borderRadius: BorderRadius.circular(20),
+                    backgroundColor: Colors.white.withValues(alpha: 0.16),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Color(0xFF77CFB2),
+                    ),
                   ),
-                ),
-          ),
+            ),
+          ],
         ],
       ),
     );
