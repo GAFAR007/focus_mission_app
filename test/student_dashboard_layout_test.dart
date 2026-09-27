@@ -301,10 +301,11 @@ void main() {
       expect(find.text('Morning Mission'), findsOneWidget);
       expect(find.text('Afternoon Mission'), findsOneWidget);
       expect(find.text('Business completed'), findsNothing);
-      expect(find.text('Business available'), findsOneWidget);
-      expect(find.text('Business redo_requested'), findsOneWidget);
-      await tester.ensureVisible(find.widgetWithText(ActionChip, 'P3'));
-      await tester.tap(find.widgetWithText(ActionChip, 'P3'));
+      expect(find.text('Business available'), findsNothing);
+      expect(find.text('Business redo_requested'), findsNothing);
+      expect(find.text('Business 2'), findsOneWidget);
+      await tester.ensureVisible(find.widgetWithText(ActionChip, 'P3 2'));
+      await tester.tap(find.widgetWithText(ActionChip, 'P3 2'));
       await tester.pumpAndSettle();
       expect(find.text('Business · P3'), findsWidgets);
       expect(find.text('Completed · Locked · Attempt 1'), findsOneWidget);
@@ -335,11 +336,121 @@ void main() {
           },
         ];
       await _pump(tester, api: api);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('available_subject_business')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('available_subject_business')),
+      );
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Start mission'));
       await tester.tap(find.text('Start mission'));
       await tester.pump();
       expect(api.requestedMission, 'old-monday-mission');
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final width in [390.0, 768.0, 1440.0]) {
+    testWidgets(
+      '11 outstanding missions stay in a compact subject index at $width',
+      (tester) async {
+        final api = _StudentApi()
+          ..assignments = [
+            for (var i = 0; i < 11; i++)
+              {
+                'id': 'assignment-$i',
+                'title': 'Outstanding mission $i',
+                'subject': {
+                  'id': i < 2 ? 'maths' : 'life',
+                  'name': i < 2 ? 'Mathematics' : 'Life Skill',
+                },
+                'taskCodes': ['P2'],
+                'sessionType': 'afternoon',
+                'availableOnDate': '2026-09-21',
+                'availableOnDay': 'Monday',
+                'assignmentStatus': i == 0
+                    ? 'in_progress'
+                    : i == 1
+                    ? 'redo_requested'
+                    : 'available',
+                if (i == 1) 'redoOfMissionId': 'previous-attempt',
+                'assignmentAttempt': i == 1 ? 2 : 1,
+              },
+          ];
+        await _pump(tester, api: api, width: width);
+        expect(find.text('Mathematics 2'), findsOneWidget);
+        expect(find.text('Life Skill 9'), findsOneWidget);
+        expect(
+          find.text('1 in progress · Choose a subject to continue.'),
+          findsOneWidget,
+        );
+        for (var i = 0; i < 11; i++) {
+          expect(find.text('Outstanding mission $i'), findsNothing);
+        }
+        expect(find.text('Start mission'), findsNothing);
+        expect(find.text('Continue'), findsNothing);
+        expect(find.text('View all missions'), findsOneWidget);
+        expect(
+          find.byTooltip('P2 · In progress · 2 available · 2 total'),
+          findsOneWidget,
+        );
+        // Opening the summary is navigation only. Starting still requires an
+        // explicit action on the same assignment ID in the shared panel.
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('available_subject_maths')),
+        );
+        await tester.tap(find.byKey(const ValueKey('available_subject_maths')));
+        await tester.pumpAndSettle();
+        expect(api.requestedMission, isNull);
+        expect(find.text('Outstanding mission 0'), findsOneWidget);
+        expect(find.text('Outstanding mission 1'), findsOneWidget);
+        expect(find.text('Outstanding mission 2'), findsNothing);
+        expect(find.text('In progress · Attempt 1'), findsOneWidget);
+        expect(find.text('Redo requested · Attempt 2'), findsOneWidget);
+        expect(
+          find.text('Assigned 2026-09-21 · Original lesson: Monday afternoon'),
+          findsNWidgets(2),
+        );
+        expect(find.text('Continue'), findsOneWidget);
+        expect(find.text('Start again'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        expect(api.requestedMission, 'assignment-0');
+      },
+    );
+  }
+
+  testWidgets(
+    'View all exposes every available record once and preserves redo action',
+    (tester) async {
+      final api = _StudentApi()
+        ..assignments = [
+          for (var i = 0; i < 3; i++)
+            {
+              'id': 'redo-$i',
+              'title': 'Redo mission $i',
+              'taskCodes': ['P2', 'M1'],
+              'subject': {'id': 'maths', 'name': 'Mathematics'},
+              'sessionType': 'morning',
+              'assignmentStatus': 'redo_requested',
+              'redoOfMissionId': 'old-$i',
+              'assignmentAttempt': 2,
+            },
+        ];
+      await _pump(tester, api: api);
+      await tester.ensureVisible(find.text('View all missions'));
+      await tester.tap(find.text('View all missions'));
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 3; i++) {
+        expect(find.text('Redo mission $i'), findsOneWidget);
+      }
+      expect(find.text('3 available missions'), findsOneWidget);
+      expect(api.requestedMission, isNull);
+      await tester.tap(find.text('Start again').first);
+      await tester.pumpAndSettle();
+      expect(api.requestedMission, 'redo-0');
     },
   );
 

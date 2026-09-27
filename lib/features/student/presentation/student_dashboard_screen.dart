@@ -321,27 +321,25 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           '${data.dashboard.assignedMissions.where((m) => !m.isAssignmentLocked).length} remaining · Available every day until completed.',
                     ),
                     const SizedBox(height: AppSpacing.item),
-                    if (data.dashboard.assignedMissions.every(
-                      (m) => m.isAssignmentLocked,
-                    ))
-                      const SoftPanel(
-                        solid: true,
-                        padding: EdgeInsets.all(AppSpacing.item),
-                        child: Text(
-                          'All caught up. New assignments will appear here.',
-                        ),
-                      ),
-                    ...data.dashboard.assignedMissions
-                        .where((m) => !m.isAssignmentLocked)
-                        .map(
-                          (mission) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _AssignedWorkRow(
-                              mission: mission,
-                              onAction: () => _openAssignedMission(mission),
-                            ),
-                          ),
-                        ),
+                    _AvailableMissionSummary(
+                      missions: data.dashboard.assignedMissions,
+                      onOpenSubject: (subjectId) {
+                        final missions = data.dashboard.assignedMissions
+                            .where(
+                              (m) =>
+                                  !m.isAssignmentLocked &&
+                                  (subjectId == null ||
+                                      m.subject?.id == subjectId),
+                            )
+                            .toList();
+                        _openMissionPanel(
+                          subjectId == null
+                              ? 'Available Missions'
+                              : '${missions.first.subject?.name ?? 'Subject'} · Available missions',
+                          missions,
+                        );
+                      },
+                    ),
                     if (data.dashboard.todayStandalonePapers.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.section),
                       const _SectionLead(
@@ -581,6 +579,16 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
               (taskCode == null || m.taskCodes.contains(taskCode)),
         )
         .toList();
+    await _openMissionPanel(
+      '${subject.subjectName} · ${taskCode ?? 'All task focuses'}',
+      missions,
+    );
+  }
+
+  Future<void> _openMissionPanel(
+    String title,
+    List<MissionPayload> missions,
+  ) async {
     final chosen = await showModalBottomSheet<MissionPayload>(
       context: context,
       useSafeArea: true,
@@ -592,20 +600,23 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.item),
           children: [
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 4),
             Text(
-              '${subject.subjectName} · ${taskCode ?? 'All task focuses'}',
-              style: Theme.of(context).textTheme.titleLarge,
+              '${missions.where((m) => !m.isAssignmentLocked).length} available missions',
             ),
             const SizedBox(height: 16),
-            for (final locked in [false, true]) ...[
-              if (missions.any((m) => m.isAssignmentLocked == locked)) ...[
-                Text(
-                  locked ? 'Completed' : 'Available',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+            for (final group in [
+              'In progress',
+              'Redo requested',
+              'Available',
+              'Completed',
+            ]) ...[
+              if (missions.any((m) => _missionPanelGroup(m) == group)) ...[
+                Text(group, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 ...missions
-                    .where((m) => m.isAssignmentLocked == locked)
+                    .where((m) => _missionPanelGroup(m) == group)
                     .map(
                       (mission) => Padding(
                         padding: const EdgeInsets.only(bottom: 10),
@@ -2372,7 +2383,17 @@ class _MySubjectCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final taskCodes = missions.expand((m) => m.taskCodes).toSet().toList();
+    final availableCount = missions.where((m) => !m.isAssignmentLocked).length;
+    final inProgressCount = missions
+        .where(
+          (m) => !m.isAssignmentLocked && m.assignmentStatus == 'in_progress',
+        )
+        .length;
+    // Prioritise unfinished focuses while retaining completed work in the panel.
+    final taskCodes = [
+      ...missions.where((m) => !m.isAssignmentLocked),
+      ...missions.where((m) => m.isAssignmentLocked),
+    ].expand((m) => m.taskCodes).toSet().toList();
     final subjectColor = _mySubjectColor(summary.subjectColor);
     final remainingLabel = summary.remainingTaskCodes.isEmpty
         ? summary.certificateUnlocked
@@ -2445,6 +2466,15 @@ class _MySubjectCard extends StatelessWidget {
             ],
             if (missions.isNotEmpty) ...[
               const SizedBox(height: 8),
+              Text(
+                availableCount == 0
+                    ? 'All assigned work completed'
+                    : '$availableCount ${availableCount == 1 ? 'mission' : 'missions'} available${inProgressCount > 0 ? ' · $inProgressCount in progress' : ''}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
               Wrap(
                 spacing: 6,
                 runSpacing: 4,
@@ -2457,12 +2487,15 @@ class _MySubjectCard extends StatelessWidget {
                           .toList(),
                       onTap: () => onTaskFocus(code),
                     ),
-                  if (taskCodes.length > 6 || taskCodes.isEmpty)
+                  if (taskCodes.length > 6 ||
+                      missions.any((m) => m.taskCodes.isEmpty))
                     ActionChip(
                       label: Text(
                         taskCodes.isEmpty
                             ? 'Assigned work'
-                            : '+${taskCodes.length - 6} more',
+                            : taskCodes.length > 6
+                            ? '+${taskCodes.length - 6} more'
+                            : 'All work',
                       ),
                       onPressed: () => onTaskFocus(null),
                     ),
@@ -2674,23 +2707,35 @@ class _TaskFocusChip extends StatelessWidget {
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) {
+    final availableCount = missions.where((m) => !m.isAssignmentLocked).length;
+    final inProgress = missions.any(
+      (m) => !m.isAssignmentLocked && m.assignmentStatus == 'in_progress',
+    );
     final redo = missions.any((m) => m.isRedoRequested);
-    final available = missions.any((m) => !m.isAssignmentLocked);
-    final label = redo
+    final available = availableCount > 0;
+    final label = inProgress
+        ? 'In progress'
+        : redo
         ? 'Redo requested'
         : available
         ? 'Available'
         : 'Completed and locked';
-    final color = redo
+    final color = inProgress
+        ? AppPalette.primaryBlue
+        : redo
         ? const Color(0xFF9A6415)
         : available
         ? AppPalette.primaryBlue
         : const Color(0xFF227A68);
+    final count = available ? availableCount : missions.length;
     return Tooltip(
-      message: '$code · $label',
+      message:
+          '$code · $label · $availableCount available · ${missions.length} total',
       child: ActionChip(
         avatar: Icon(
-          redo
+          inProgress
+              ? Icons.play_arrow_rounded
+              : redo
               ? Icons.replay_rounded
               : available
               ? Icons.circle
@@ -2698,7 +2743,7 @@ class _TaskFocusChip extends StatelessWidget {
           size: 16,
           color: color,
         ),
-        label: Text(code),
+        label: Text(count > 1 ? '$code $count' : code),
         onPressed: onTap,
         backgroundColor: color.withValues(alpha: 0.08),
       ),
@@ -2769,6 +2814,91 @@ class _AssignedWorkRow extends StatelessWidget {
             ),
             label: Text(action),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+String _missionPanelGroup(MissionPayload mission) {
+  if (mission.isAssignmentLocked) return 'Completed';
+  if (mission.assignmentStatus == 'in_progress') return 'In progress';
+  if (mission.isRedoRequested) return 'Redo requested';
+  return 'Available';
+}
+
+// The dashboard indexes subjects; individual assignment rows live only in the
+// existing mission panel. Grouping here never creates or changes assignments.
+class _AvailableMissionSummary extends StatelessWidget {
+  const _AvailableMissionSummary({
+    required this.missions,
+    required this.onOpenSubject,
+  });
+  final List<MissionPayload> missions;
+  final ValueChanged<String?> onOpenSubject;
+
+  @override
+  Widget build(BuildContext context) {
+    final available = missions.where((m) => !m.isAssignmentLocked).toList();
+    final bySubject = <String?, List<MissionPayload>>{};
+    for (final mission in available) {
+      bySubject.putIfAbsent(mission.subject?.id, () => []).add(mission);
+    }
+    final inProgress = available
+        .where((m) => m.assignmentStatus == 'in_progress')
+        .length;
+    return SoftPanel(
+      solid: true,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (available.isEmpty)
+            const Text('All caught up. New assignments will appear here.')
+          else ...[
+            if (inProgress > 0) ...[
+              Text(
+                '$inProgress in progress · Choose a subject to continue.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                for (final entry in bySubject.entries)
+                  Tooltip(
+                    message:
+                        '${entry.value.first.subject?.name ?? 'Subject'} · ${entry.value.length} available · ${entry.value.where((m) => m.assignmentStatus == 'in_progress').length} in progress',
+                    child: ActionChip(
+                      key: ValueKey('available_subject_${entry.key}'),
+                      avatar: Icon(
+                        entry.value.any(
+                              (m) => m.assignmentStatus == 'in_progress',
+                            )
+                            ? Icons.play_arrow_rounded
+                            : Icons.menu_book_outlined,
+                        size: 18,
+                        color: AppPalette.primaryBlue,
+                      ),
+                      label: Text(
+                        '${entry.value.first.subject?.name ?? 'Subject'} ${entry.value.length}',
+                      ),
+                      onPressed: () => onOpenSubject(entry.key),
+                    ),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: () => onOpenSubject(null),
+                  icon: const Icon(Icons.list_alt_rounded, size: 18),
+                  label: const Text('View all missions'),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
