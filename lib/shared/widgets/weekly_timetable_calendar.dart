@@ -7,7 +7,7 @@
  * on one timetable component that can represent the schedule clearly.
  * HOW:
  * Build reusable date panels, week and month layouts, and slot cards from the
- * shared timetable models.
+ * shared timetable models, with an optional compact date row for context cards.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -24,17 +24,60 @@ class CurrentDatePanel extends StatelessWidget {
   const CurrentDatePanel({
     super.key,
     this.title = 'Today',
+    this.compact = false,
     this.subtitle,
     this.date,
   });
 
   final String title;
+  final bool compact;
   final String? subtitle;
   final DateTime? date;
 
   @override
   Widget build(BuildContext context) {
     final resolvedDate = date ?? DateTime.now();
+
+    // WHY: Embedded context cards already provide a surface and heading, so
+    // retain the same date formatting without nesting another large panel.
+    if (compact) {
+      return Semantics(
+        label: title,
+        child: Row(
+          children: [
+            const Icon(
+              Icons.calendar_month_outlined,
+              size: 20,
+              color: AppPalette.primaryBlue,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _formatLongDate(resolvedDate),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppPalette.primaryBlue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(AppSpacing.chip),
+              ),
+              child: Text(
+                _formatShortDate(resolvedDate),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppPalette.navy,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return SoftPanel(
       colors: const [Color(0xF0FFFFFF), Color(0xD7EDF9FF)],

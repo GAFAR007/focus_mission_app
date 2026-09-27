@@ -626,78 +626,70 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   onProfileTap: _openProfile,
                 ),
                 const SizedBox(height: AppSpacing.section),
-                CurrentDatePanel(
-                  title: 'Selected Lesson Date',
+                _StudentContextCard(
+                  student: workspace.selectedStudent,
                   date: _selectedLessonDate,
-                  subtitle:
-                      '${workspace.selectedStudent.name}\'s timetable now spans the full week and month. Pick the class date you want to prepare.',
-                ),
-                const SizedBox(height: AppSpacing.item),
-                _StudentPickerCard(student: workspace.selectedStudent),
-                if (_isLoadingSupplementalWorkspace ||
-                    _supplementalWorkspaceError != null) ...[
-                  const SizedBox(height: AppSpacing.compact),
-                  _buildSupplementalWorkspaceStatus(workspace),
-                ],
-                const SizedBox(height: AppSpacing.compact),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      TextButton.icon(
-                        onPressed: () => _openStudentPicker(workspace),
-                        icon: const Icon(Icons.swap_horiz_rounded),
-                        label: const Text('Switch student'),
+                  onStudentTap: () => _openStudentPicker(workspace),
+                  actions: [
+                    OutlinedButton.icon(
+                      onPressed: () => _openStudentPicker(workspace),
+                      style: _missionOutlinedActionStyle(),
+                      icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                      label: const Text('Switch student'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(
+                        () =>
+                            _showCreateStudentPanel = !_showCreateStudentPanel,
                       ),
-                      TextButton.icon(
-                        onPressed: () => setState(
-                          () => _showCreateStudentPanel =
-                              !_showCreateStudentPanel,
-                        ),
-                        icon: Icon(
-                          _showCreateStudentPanel
-                              ? Icons.keyboard_arrow_up_rounded
-                              : Icons.person_add_alt_1_rounded,
-                        ),
-                        label: Text(
-                          _showCreateStudentPanel
-                              ? 'Hide new student'
-                              : 'Add student',
-                        ),
+                      style: _missionOutlinedActionStyle(),
+                      icon: Icon(
+                        _showCreateStudentPanel
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.person_add_alt_1_rounded,
+                        size: 16,
                       ),
-                      TextButton.icon(
-                        onPressed: () => _openTeacherAnalytics(workspace),
-                        icon: const Icon(Icons.insights_rounded),
-                        label: const Text('Open analytics'),
+                      label: Text(
+                        _showCreateStudentPanel
+                            ? 'Hide new student'
+                            : 'Add student',
                       ),
-                      TextButton.icon(
-                        onPressed: workspace.teacherSubjects.isEmpty
-                            ? null
-                            : () => _openStudentMissionPathway(
-                                workspace,
-                                selectedSubject,
-                              ),
-                        icon: const Icon(Icons.account_tree_rounded),
-                        label: const Text('Task Focus work'),
-                      ),
-                    ],
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _openTeacherAnalytics(workspace),
+                      style: _missionOutlinedActionStyle(),
+                      icon: const Icon(Icons.insights_rounded, size: 16),
+                      label: const Text('Open analytics'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: workspace.teacherSubjects.isEmpty
+                          ? null
+                          : () => _openStudentMissionPathway(
+                              workspace,
+                              selectedSubject,
+                            ),
+                      style: _missionOutlinedActionStyle(),
+                      icon: const Icon(Icons.account_tree_rounded, size: 16),
+                      label: const Text('Task Focus work'),
+                    ),
+                  ],
+                  yearGroupEditor: StudentYearGroupPanel(
+                    title: 'Student year group',
+                    subtitle: '',
+                    compact: true,
+                    selectedYearGroup: _selectedStudentYearGroup,
+                    onChanged: (value) => setState(
+                      () => _selectedStudentYearGroup = (value ?? '').trim(),
+                    ),
+                    onSave: () => _saveSelectedStudentYearGroup(workspace),
+                    isSaving: _isSavingStudentYearGroup,
+                    saveLabel: 'Save',
                   ),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                StudentYearGroupPanel(
-                  title: 'Student year group',
-                  subtitle:
-                      'Teachers can keep the learner year current here so profile context and grouped Test/Exam targeting stay accurate.',
-                  selectedYearGroup: _selectedStudentYearGroup,
-                  onChanged: (value) => setState(
-                    () => _selectedStudentYearGroup = (value ?? '').trim(),
-                  ),
-                  onSave: () => _saveSelectedStudentYearGroup(workspace),
-                  isSaving: _isSavingStudentYearGroup,
-                  saveLabel: 'Save year group',
+                  status:
+                      _isLoadingSupplementalWorkspace ||
+                          _supplementalWorkspaceError != null
+                      ? _buildSupplementalWorkspaceStatus(workspace)
+                      : null,
                 ),
                 AnimatedSize(
                   duration: const Duration(milliseconds: 220),
@@ -4440,103 +4432,135 @@ class _HeaderButton extends StatelessWidget {
   }
 }
 
-class _StudentPickerCard extends StatelessWidget {
-  const _StudentPickerCard({required this.student});
+class _StudentContextCard extends StatelessWidget {
+  const _StudentContextCard({
+    required this.student,
+    required this.date,
+    required this.onStudentTap,
+    required this.actions,
+    required this.yearGroupEditor,
+    this.status,
+  });
 
   final StudentSummary student;
+  final DateTime date;
+  final VoidCallback onStudentTap;
+  final List<Widget> actions;
+  final Widget yearGroupEditor;
+  final Widget? status;
 
   @override
   Widget build(BuildContext context) {
+    final studentInfo = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CurrentDatePanel(
+          title: 'Selected Lesson Date',
+          date: date,
+          compact: true,
+        ),
+        const SizedBox(height: AppSpacing.compact),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onStudentTap,
+            borderRadius: BorderRadius.circular(AppSpacing.chip),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: AppPalette.primaryBlue.withValues(
+                      alpha: 0.1,
+                    ),
+                    child: const Icon(
+                      Icons.person_outline_rounded,
+                      color: AppPalette.primaryBlue,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.compact),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          student.name,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${student.yearGroup.trim().isEmpty ? 'Year group not set' : student.yearGroup.trim()} · ${student.xp} XP',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: AppPalette.textMuted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
     return SoftPanel(
+      key: const Key('teacher_student_lesson_context'),
+      padding: const EdgeInsets.all(AppSpacing.item),
+      colors: const [_missionPanelSurface, _missionPanelSurface],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: AppPalette.teacherGradient,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.group_rounded, color: Colors.white),
-              ),
-              const SizedBox(width: AppSpacing.item),
-              Expanded(
-                child: Text(
-                  'Selected Student',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              Icon(
-                Icons.assignment_ind_rounded,
-                color: AppPalette.textMuted.withValues(alpha: 0.8),
-              ),
-            ],
+          Text(
+            'Student & Lesson Context',
+            style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: AppSpacing.item),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.item,
-              vertical: AppSpacing.compact,
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.74),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: AppPalette.studentGradient,
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.person_rounded,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${student.name} · ${student.xp} XP',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodyLarge?.copyWith(color: AppPalette.navy),
-                      ),
-                      if (student.yearGroup.trim().isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          student.yearGroup.trim(),
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: AppPalette.textMuted,
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 14,
-                  color: AppPalette.textMuted,
-                ),
-              ],
-            ),
+          const SizedBox(height: AppSpacing.compact),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // WHY: Keep the learner/date together. Actions move beneath them
+              // on smaller windows and wrap at their natural button widths.
+              final isWide = constraints.maxWidth >= 900;
+              final actionBar = Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: isWide ? WrapAlignment.end : WrapAlignment.start,
+                children: actions,
+              );
+              if (isWide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: studentInfo),
+                    const SizedBox(width: AppSpacing.screen),
+                    Expanded(child: actionBar),
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  studentInfo,
+                  const SizedBox(height: AppSpacing.compact),
+                  actionBar,
+                ],
+              );
+            },
           ),
+          const SizedBox(height: AppSpacing.compact),
+          yearGroupEditor,
+          if (status != null) ...[
+            const SizedBox(height: AppSpacing.compact),
+            status!,
+          ],
         ],
       ),
     );

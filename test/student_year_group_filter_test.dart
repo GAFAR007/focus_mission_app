@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:focus_mission_app/features/management/presentation/management_overview_screen.dart';
 import 'package:focus_mission_app/shared/models/focus_mission_models.dart';
 import 'package:focus_mission_app/shared/widgets/student_year_group_filter.dart';
+import 'package:focus_mission_app/shared/widgets/student_year_group_panel.dart';
 
 void main() {
   const students = <StudentSummary>[
@@ -129,6 +130,54 @@ void main() {
     );
     await tester.tap(find.text('Open picker'));
     await tester.pumpAndSettle();
+  }
+
+  for (final compact in [false, true]) {
+    testWidgets('year group keeps explicit saving (compact: $compact)', (
+      tester,
+    ) async {
+      var selected = 'Year 10';
+      var saves = 0;
+      var isSaving = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) => StudentYearGroupPanel(
+                title: 'Student year group',
+                subtitle: 'Update student context',
+                compact: compact,
+                selectedYearGroup: selected,
+                onChanged: (value) => setState(() => selected = value!),
+                onSave: () => setState(() {
+                  saves++;
+                  isSaving = true;
+                }),
+                isSaving: isSaving,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Year 11').last);
+      await tester.pumpAndSettle();
+      expect(selected, 'Year 11');
+      expect(saves, 0);
+      await tester.tap(find.text('Save year group'));
+      await tester.pump();
+      expect(saves, 1);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byWidgetPredicate((widget) => widget is FilledButton),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(tester.takeException(), isNull);
+    });
   }
 
   test('All shows every authorised student', () {

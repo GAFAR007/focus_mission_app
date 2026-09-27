@@ -352,7 +352,8 @@ void main() {
     final api = _ControlledTeacherWorkspaceApi();
     await _pumpTeacherScreen(tester, api);
 
-    expect(find.textContaining('Student Alpha · 10 XP'), findsOneWidget);
+    expect(find.text('Student Alpha'), findsOneWidget);
+    expect(find.text('Year 10 · 10 XP'), findsOneWidget);
     expect(find.text('Switch student'), findsOneWidget);
     expect(
       find.text(
@@ -368,6 +369,70 @@ void main() {
 
     expect(find.text('Alpha review ready'), findsWidgets);
     expect(find.textContaining('Loading reviews and history'), findsNothing);
+  });
+
+  testWidgets('student context stays compact and wraps at narrow widths', (
+    tester,
+  ) async {
+    final api = _ControlledTeacherWorkspaceApi();
+    await _pumpTeacherScreen(tester, api);
+    api.supplementalByStudent['student-a']!.complete(
+      _supplementalFor('student-a', 'Ready'),
+    );
+    await tester.pump();
+
+    final contextFinder = find.byKey(
+      const Key('teacher_student_lesson_context'),
+    );
+    final contextCard = tester.widget(contextFinder);
+    expect(tester.getSize(contextFinder).height, lessThan(260));
+    expect(find.text('Selected Student'), findsNothing);
+    expect(find.text('Student year group'), findsNothing);
+    for (final label in [
+      'Switch student',
+      'Add student',
+      'Open analytics',
+      'Task Focus work',
+      'Save',
+    ]) {
+      expect(
+        find.descendant(of: contextFinder, matching: find.text(label)),
+        findsOneWidget,
+      );
+    }
+
+    for (final width in [320.0, 390.0, 768.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 900));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: contextCard,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull, reason: 'Context at $width px');
+      final bounds = tester.getRect(contextFinder);
+      expect(bounds.right, lessThanOrEqualTo(width - 24));
+      // Text wraps more at narrow widths; require every control to remain
+      // within the card rather than imposing a fixed mobile height.
+      expect(bounds.bottom, lessThanOrEqualTo(900));
+      for (final label in [
+        'Switch student',
+        'Add student',
+        'Open analytics',
+        'Task Focus work',
+        'Save',
+      ]) {
+        final button = tester.getRect(find.text(label));
+        expect(button.right, lessThanOrEqualTo(bounds.right));
+        expect(button.left, greaterThanOrEqualTo(bounds.left));
+      }
+    }
   });
 
   testWidgets('Draft Missions filters by task focus without changing data', (
@@ -428,7 +493,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.textContaining('Student Beta · 20 XP'), findsOneWidget);
+    expect(find.text('Student Beta'), findsOneWidget);
+    expect(find.text('Year 11 · 20 XP'), findsOneWidget);
     api.supplementalByStudent['student-b']!.complete(
       _supplementalFor('student-b', 'Beta review ready'),
     );
@@ -454,7 +520,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.textContaining('Student Alpha · 10 XP'), findsOneWidget);
+    expect(find.text('Student Alpha'), findsOneWidget);
+    expect(find.text('Year 10 · 10 XP'), findsOneWidget);
     expect(find.text('Switch student'), findsOneWidget);
     expect(
       find.text(

@@ -7,7 +7,7 @@
  * roles need one consistent control for updating it.
  * HOW:
  * Show a short explainer, a year-group dropdown, and a save action inside a
- * standard soft panel.
+ * standard soft panel, or inline when embedded in a compact context card.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -28,6 +28,7 @@ class StudentYearGroupPanel extends StatelessWidget {
     required this.onSave,
     required this.isSaving,
     this.saveLabel = 'Save year group',
+    this.compact = false,
     this.secondaryActionLabel,
     this.secondaryActionIcon,
     this.onSecondaryAction,
@@ -40,12 +41,63 @@ class StudentYearGroupPanel extends StatelessWidget {
   final VoidCallback onSave;
   final bool isSaving;
   final String saveLabel;
+  final bool compact;
   final String? secondaryActionLabel;
   final IconData? secondaryActionIcon;
   final VoidCallback? onSecondaryAction;
 
   @override
   Widget build(BuildContext context) {
+    final yearGroupField = DropdownButtonFormField<String>(
+      key: ValueKey<String>(selectedYearGroup.trim()),
+      initialValue: selectedYearGroup.trim(),
+      decoration: _yearGroupFieldDecoration(compact: compact),
+      isExpanded: true,
+      items: <DropdownMenuItem<String>>[
+        const DropdownMenuItem<String>(value: '', child: Text('Not set yet')),
+        ...kStudentYearGroupOptions.map(
+          (yearGroup) => DropdownMenuItem<String>(
+            value: yearGroup,
+            child: Text(yearGroup),
+          ),
+        ),
+      ],
+      onChanged: onChanged,
+    );
+    final saveButton = FilledButton.icon(
+      style: FilledButton.styleFrom(
+        minimumSize: Size(0, compact ? 38 : 46),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 18,
+          vertical: compact ? 8 : 14,
+        ),
+        backgroundColor: compact ? AppPalette.primaryBlue : AppPalette.navy,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(compact ? AppSpacing.chip : 18),
+        ),
+      ),
+      onPressed: isSaving ? null : onSave,
+      icon: Icon(isSaving ? Icons.hourglass_top_rounded : Icons.save_rounded),
+      label: Text(
+        isSaving ? (compact ? 'Saving...' : 'Saving year group...') : saveLabel,
+      ),
+    );
+
+    // WHY: Reuse the explicit-save control inside teacher context without
+    // changing the management panel or introducing an autosave API call.
+    if (compact) {
+      return Wrap(
+        spacing: AppSpacing.compact,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(width: 200, child: yearGroupField),
+          saveButton,
+        ],
+      );
+    }
+
     return SoftPanel(
       colors: const [Color(0xFFF8FCFF), Color(0xFFEAF5FF)],
       child: Column(
@@ -60,24 +112,7 @@ class StudentYearGroupPanel extends StatelessWidget {
             ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
           ),
           const SizedBox(height: AppSpacing.item),
-          DropdownButtonFormField<String>(
-            key: ValueKey<String>(selectedYearGroup.trim()),
-            initialValue: selectedYearGroup.trim(),
-            decoration: _yearGroupFieldDecoration(),
-            items: <DropdownMenuItem<String>>[
-              const DropdownMenuItem<String>(
-                value: '',
-                child: Text('Not set yet'),
-              ),
-              ...kStudentYearGroupOptions.map(
-                (yearGroup) => DropdownMenuItem<String>(
-                  value: yearGroup,
-                  child: Text(yearGroup),
-                ),
-              ),
-            ],
-            onChanged: onChanged,
-          ),
+          yearGroupField,
           const SizedBox(height: AppSpacing.item),
           Align(
             alignment: Alignment.centerLeft,
@@ -85,25 +120,7 @@ class StudentYearGroupPanel extends StatelessWidget {
               spacing: 12,
               runSpacing: 12,
               children: [
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 46),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 14,
-                    ),
-                    backgroundColor: AppPalette.navy,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  onPressed: isSaving ? null : onSave,
-                  icon: Icon(
-                    isSaving ? Icons.hourglass_top_rounded : Icons.save_rounded,
-                  ),
-                  label: Text(isSaving ? 'Saving year group...' : saveLabel),
-                ),
+                saveButton,
                 if ((secondaryActionLabel ?? '').trim().isNotEmpty &&
                     onSecondaryAction != null)
                   OutlinedButton.icon(
@@ -140,16 +157,22 @@ class StudentYearGroupPanel extends StatelessWidget {
   }
 }
 
-InputDecoration _yearGroupFieldDecoration() {
+InputDecoration _yearGroupFieldDecoration({bool compact = false}) {
   final baseBorder = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+    borderRadius: BorderRadius.circular(
+      compact ? AppSpacing.chip : AppSpacing.radiusMd,
+    ),
     borderSide: BorderSide(color: AppPalette.sky.withValues(alpha: 0.72)),
   );
   return InputDecoration(
     labelText: 'Year group',
+    isDense: compact,
     filled: true,
     fillColor: AppPalette.surface.withValues(alpha: 0.96),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+    contentPadding: EdgeInsets.symmetric(
+      horizontal: compact ? 12 : 18,
+      vertical: compact ? 12 : 18,
+    ),
     border: baseBorder,
     enabledBorder: baseBorder,
     focusedBorder: baseBorder.copyWith(
