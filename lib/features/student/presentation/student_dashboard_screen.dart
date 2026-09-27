@@ -215,7 +215,12 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       goalXp: 200,
                       trailingIcon: Icons.emoji_events_rounded,
                       avatarUrl: _session.user.avatar,
-                      titleBadge: _heroTitleBadge(today),
+                      titleBadge:
+                          data.dashboard.assignedMissions.any(
+                            (m) => !m.isAssignmentLocked,
+                          )
+                          ? 'Work ready'
+                          : _heroTitleBadge(today),
                       highlightMessage: _heroHighlightMessage(data, today),
                       statBadges: <String>[
                         '${mySubjects.length} subjects',
@@ -418,7 +423,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     const _SectionLead(
                       title: 'My Subjects',
                       subtitle:
-                          'Open a subject when you want a calm, read-only progress check.',
+                          'Choose a task focus for assigned work, or open your progress report.',
                     ),
                     const SizedBox(height: AppSpacing.item),
                     if (mySubjects.isEmpty)
@@ -1520,6 +1525,12 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   }
 
   String _heroHighlightMessage(_StudentScreenData data, TodaySchedule? today) {
+    final remaining = data.dashboard.assignedMissions
+        .where((m) => !m.isAssignmentLocked)
+        .length;
+    if (remaining > 0) {
+      return '$remaining ${remaining == 1 ? 'mission is' : 'missions are'} ready whenever you are. Choose one from Available Missions.';
+    }
     final remainingXp =
         (data.dashboard.dailyXp.totalXpCap - data.dashboard.dailyXp.totalXp)
             .clamp(0, data.dashboard.dailyXp.totalXpCap);
