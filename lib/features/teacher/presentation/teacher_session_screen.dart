@@ -550,6 +550,32 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           final selectedSubject = activeLesson == 'Morning'
               ? schedule?.morningMission
               : schedule?.afternoonMission;
+          final paperActions = <Widget>[
+            OutlinedButton.icon(
+              onPressed: () => _openStandalonePaperScreen(
+                workspace: workspace,
+                selectedSubject: selectedSubject,
+                paperKind: 'TEST',
+              ),
+              style: _missionOutlinedActionStyle(
+                foregroundColor: _draftMissionAccent,
+              ),
+              icon: const Icon(Icons.quiz_outlined, size: 16),
+              label: const Text('Create Test'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _openStandalonePaperScreen(
+                workspace: workspace,
+                selectedSubject: selectedSubject,
+                paperKind: 'EXAM',
+              ),
+              style: _missionOutlinedActionStyle(
+                foregroundColor: _draftMissionAccent,
+              ),
+              icon: const Icon(Icons.fact_check_outlined, size: 16),
+              label: const Text('Create Exam'),
+            ),
+          ];
           final selectedTeacher = activeLesson == 'Morning'
               ? schedule?.morningTeacher
               : schedule?.afternoonTeacher;
@@ -806,6 +832,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                     _supplementalWorkspaceError == null) ...[
                   const SizedBox(height: AppSpacing.item),
                   _DraftMissionsPanel(
+                    paperActions: paperActions,
                     missions: dailyDraftMissions
                         .take(5)
                         .toList(growable: false),
@@ -854,19 +881,13 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                         _reuseMissionDraft(workspace, mission),
                   ),
                 ],
-                const SizedBox(height: AppSpacing.item),
-                _StandalonePapersPanel(
-                  onOpenTest: () => _openStandalonePaperScreen(
-                    workspace: workspace,
-                    selectedSubject: selectedSubject,
-                    paperKind: 'TEST',
-                  ),
-                  onOpenExam: () => _openStandalonePaperScreen(
-                    workspace: workspace,
-                    selectedSubject: selectedSubject,
-                    paperKind: 'EXAM',
-                  ),
-                ),
+                // WHY: Paper creation only needs the core workspace, so keep
+                // it available while draft/history data loads or fails.
+                if (_isLoadingSupplementalWorkspace ||
+                    _supplementalWorkspaceError != null) ...[
+                  const SizedBox(height: AppSpacing.item),
+                  Wrap(spacing: 8, runSpacing: 8, children: paperActions),
+                ],
                 if (!_isLoadingSupplementalWorkspace &&
                     _supplementalWorkspaceError == null) ...[
                   const SizedBox(height: AppSpacing.item),
@@ -5040,6 +5061,7 @@ class _StatusPill extends StatelessWidget {
 
 class _DraftMissionsPanel extends StatefulWidget {
   const _DraftMissionsPanel({
+    required this.paperActions,
     required this.missions,
     required this.dailyDraftCount,
     required this.assessmentDraftCount,
@@ -5058,6 +5080,7 @@ class _DraftMissionsPanel extends StatefulWidget {
     required this.onReuse,
   });
 
+  final List<Widget> paperActions;
   final List<MissionPayload> missions;
   final int dailyDraftCount;
   final int assessmentDraftCount;
@@ -5106,6 +5129,7 @@ class _DraftMissionsPanelState extends State<_DraftMissionsPanel> {
         .toList(growable: false);
 
     return SoftPanel(
+      padding: const EdgeInsets.all(AppSpacing.item),
       colors: const [_missionPanelSurface, _missionPanelSurface],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5152,6 +5176,7 @@ class _DraftMissionsPanelState extends State<_DraftMissionsPanel> {
           ),
           const SizedBox(height: 12),
           _DraftMissionToolbar(
+            paperActions: widget.paperActions,
             dailyDraftCount: widget.dailyDraftCount,
             assessmentDraftCount: widget.assessmentDraftCount,
             isSelecting: widget.isSelectingDrafts,
@@ -5370,6 +5395,7 @@ class _DraftMissionsPanelState extends State<_DraftMissionsPanel> {
 
 class _DraftMissionToolbar extends StatelessWidget {
   const _DraftMissionToolbar({
+    required this.paperActions,
     required this.dailyDraftCount,
     required this.assessmentDraftCount,
     required this.isSelecting,
@@ -5378,6 +5404,7 @@ class _DraftMissionToolbar extends StatelessWidget {
     required this.onSelectDrafts,
   });
 
+  final List<Widget> paperActions;
   final int dailyDraftCount;
   final int assessmentDraftCount;
   final bool isSelecting;
@@ -5412,30 +5439,32 @@ class _DraftMissionToolbar extends StatelessWidget {
         ],
       ),
     );
-    final selectButton = TextButton.icon(
-      onPressed: isSelecting ? null : onSelectDrafts,
-      style: TextButton.styleFrom(
-        foregroundColor: _draftMissionAccent,
-        minimumSize: const Size(0, 38),
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+    final actions = <Widget>[
+      ...paperActions,
+      OutlinedButton.icon(
+        onPressed: isSelecting ? null : onSelectDrafts,
+        style: _missionOutlinedActionStyle(
+          foregroundColor: _draftMissionAccent,
+        ),
+        icon: const Icon(Icons.checklist_rtl_rounded, size: 16),
+        label: Text(isSelecting ? 'Selecting drafts' : 'Select drafts'),
       ),
-      icon: const Icon(Icons.checklist_rtl_rounded, size: 18),
-      label: Text(isSelecting ? 'Selecting drafts' : 'Select drafts'),
-    );
+    ];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 620) {
-          return Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [tabs, selectButton],
-          );
-        }
-        return Row(children: [tabs, const Spacer(), selectButton]);
-      },
+    // WHY: Content-sized groups share one row when space permits and wrap
+    // naturally for narrow windows or larger text without stretching buttons.
+    return SizedBox(
+      width: double.infinity,
+      child: Wrap(
+        spacing: AppSpacing.item,
+        runSpacing: AppSpacing.compact,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          tabs,
+          Wrap(spacing: 8, runSpacing: 8, children: actions),
+        ],
+      ),
     );
   }
 }
@@ -5649,83 +5678,6 @@ class _DraftSelectionControl extends StatelessWidget {
         size: 17,
       ),
       label: Text(isSelected ? 'Selected' : 'Select'),
-    );
-  }
-}
-
-class _StandalonePapersPanel extends StatelessWidget {
-  const _StandalonePapersPanel({
-    required this.onOpenTest,
-    required this.onOpenExam,
-  });
-
-  final VoidCallback onOpenTest;
-  final VoidCallback onOpenExam;
-
-  @override
-  Widget build(BuildContext context) {
-    return SoftPanel(
-      colors: const [Color(0xFFFFFCF7), Color(0xFFFFF4E4)],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFF0B45D), Color(0xFFE58E3F)],
-                  ),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.fact_check_rounded,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.item),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Standalone Papers',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Tests and Exams live here as their own mixed-format draft flow, separate from Daily Missions and Assessment drafts.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.item),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              GradientButton(
-                label: 'Open Test screen',
-                colors: AppPalette.teacherGradient,
-                onPressed: onOpenTest,
-              ),
-              GradientButton(
-                label: 'Open Exam screen',
-                colors: const [Color(0xFFF0B45D), Color(0xFFE58E3F)],
-                onPressed: onOpenExam,
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 }
