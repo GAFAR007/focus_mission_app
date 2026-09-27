@@ -7,7 +7,8 @@
  * do not become scattered across role screens.
  * HOW:
  * Render the unread count, show each notification as a tappable card, and fall
- * back to an empty-state message when the inbox is clear.
+ * back to an empty-state message when the inbox is clear. Teacher dashboards
+ * can opt into compact spacing and a neutral surface.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -27,8 +28,10 @@ class NotificationPanel extends StatelessWidget {
     required this.unreadCount,
     required this.emptyMessage,
     required this.onTapNotification,
+    this.compact = false,
   });
 
+  final bool compact;
   final String title;
   final String subtitle;
   final List<AppNotification> notifications;
@@ -39,65 +42,130 @@ class NotificationPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoftPanel(
-      colors: const [Color(0xFFFFFBF2), Color(0xFFFFF0D3)],
+      padding: EdgeInsets.all(compact ? AppSpacing.item : AppSpacing.section),
+      colors: compact
+          ? const [Color(0xFFF4F6FA), Color(0xFFF4F6FA)]
+          : const [Color(0xFFFFFBF2), Color(0xFFFFF0D3)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  gradient: const LinearGradient(
-                    colors: [AppPalette.sun, AppPalette.orange],
-                  ),
+          // WHY: Use the same inbox data/actions with a smaller teacher-only
+          // header; warm colour remains confined to the icon and unread badge.
+          if (compact) ...[
+            Row(
+              children: [
+                const Icon(
+                  Icons.notifications_outlined,
+                  color: AppPalette.orange,
+                  size: 20,
                 ),
-                child: const Icon(
-                  Icons.notifications_active_rounded,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.item),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: AppPalette.surface.withValues(alpha: 0.95),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: AppPalette.sun.withValues(alpha: 0.34),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: unreadCount == 0
+                              ? Colors.white
+                              : AppPalette.sun.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(AppSpacing.chip),
+                        ),
+                        child: Text(
+                          unreadCount == 0 ? 'All read' : '$unreadCount unread',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppPalette.navy),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: Text(
-                  unreadCount == 0 ? 'All read' : '$unreadCount unread',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ),
+          ] else
+            Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    gradient: const LinearGradient(
+                      colors: [AppPalette.sun, AppPalette.orange],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_active_rounded,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.section),
-          if (notifications.isEmpty)
+                const SizedBox(width: AppSpacing.item),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppPalette.surface.withValues(alpha: 0.95),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: AppPalette.sun.withValues(alpha: 0.34),
+                    ),
+                  ),
+                  child: Text(
+                    unreadCount == 0 ? 'All read' : '$unreadCount unread',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
+                  ),
+                ),
+              ],
+            ),
+          SizedBox(height: compact ? AppSpacing.compact : AppSpacing.section),
+          if (notifications.isEmpty && compact)
+            Text(
+              emptyMessage,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            )
+          else if (notifications.isEmpty)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.item),
@@ -118,8 +186,13 @@ class NotificationPanel extends StatelessWidget {
           else
             ...notifications.map(
               (notification) => Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+                padding: EdgeInsets.only(
+                  bottom: compact
+                      ? (notification == notifications.last ? 0 : 8)
+                      : AppSpacing.compact,
+                ),
                 child: _NotificationCard(
+                  compact: compact,
                   notification: notification,
                   onTap: () => onTapNotification(notification),
                 ),
@@ -132,7 +205,13 @@ class NotificationPanel extends StatelessWidget {
 }
 
 class _NotificationCard extends StatelessWidget {
-  const _NotificationCard({required this.notification, required this.onTap});
+  const _NotificationCard({
+    required this.notification,
+    required this.onTap,
+    this.compact = false,
+  });
+
+  final bool compact;
 
   final AppNotification notification;
   final VoidCallback onTap;
@@ -152,7 +231,9 @@ class _NotificationCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         child: Ink(
-          padding: const EdgeInsets.all(AppSpacing.item),
+          padding: EdgeInsets.all(
+            compact ? AppSpacing.compact : AppSpacing.item,
+          ),
           decoration: BoxDecoration(
             color: background,
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -162,19 +243,24 @@ class _NotificationCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Wrap(
-                spacing: 10,
-                runSpacing: 10,
+                spacing: compact ? 6 : 10,
+                runSpacing: compact ? 6 : 10,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
                     notification.title,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: compact
+                        ? Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppPalette.navy,
+                            fontWeight: FontWeight.w700,
+                          )
+                        : Theme.of(context).textTheme.titleMedium,
                   ),
                   if (!notification.isRead)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compact ? 8 : 10,
+                        vertical: compact ? 3 : 6,
                       ),
                       decoration: BoxDecoration(
                         color: AppPalette.sun.withValues(alpha: 0.18),
@@ -196,22 +282,30 @@ class _NotificationCard extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: compact ? 4 : 8),
               Text(
                 notification.message,
-                style: Theme.of(context).textTheme.bodyMedium,
+                style: compact
+                    ? Theme.of(context).textTheme.bodySmall
+                    : Theme.of(context).textTheme.bodyMedium,
               ),
               if ((notification.studentName ?? '').isNotEmpty ||
                   (notification.criterionTitle ?? '').isNotEmpty) ...[
-                const SizedBox(height: 10),
+                SizedBox(height: compact ? 6 : 10),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
                     if ((notification.studentName ?? '').isNotEmpty)
-                      _MiniPill(label: notification.studentName!),
+                      _MiniPill(
+                        label: notification.studentName!,
+                        compact: compact,
+                      ),
                     if ((notification.criterionTitle ?? '').isNotEmpty)
-                      _MiniPill(label: notification.criterionTitle!),
+                      _MiniPill(
+                        label: notification.criterionTitle!,
+                        compact: compact,
+                      ),
                   ],
                 ),
               ],
@@ -246,14 +340,19 @@ class _NotificationCard extends StatelessWidget {
 }
 
 class _MiniPill extends StatelessWidget {
-  const _MiniPill({required this.label});
+  const _MiniPill({required this.label, this.compact = false});
+
+  final bool compact;
 
   final String label;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 12,
+        vertical: compact ? 4 : 8,
+      ),
       decoration: BoxDecoration(
         color: AppPalette.backgroundTop,
         borderRadius: BorderRadius.circular(999),

@@ -19,6 +19,7 @@ import 'package:focus_mission_app/core/theme/app_theme.dart';
 import 'package:focus_mission_app/core/utils/focus_mission_api.dart';
 import 'package:focus_mission_app/features/teacher/presentation/teacher_session_screen.dart';
 import 'package:focus_mission_app/shared/models/focus_mission_models.dart';
+import 'package:focus_mission_app/shared/widgets/notification_panel.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -53,7 +54,10 @@ const _subjects = <SubjectSummary>[
   SubjectSummary(id: 'business', name: 'Business'),
 ];
 
-StudentDashboardData _dashboardFor(StudentSummary student) {
+StudentDashboardData _dashboardFor(
+  StudentSummary student, {
+  List<Map<String, dynamic>> certifications = const [],
+}) {
   return StudentDashboardData.fromJson(<String, dynamic>{
     'student': <String, dynamic>{
       'id': student.id,
@@ -66,12 +70,15 @@ StudentDashboardData _dashboardFor(StudentSummary student) {
     'recentSessions': const <dynamic>[],
     'dailyXp': const <String, dynamic>{},
     'subjectProgress': const <dynamic>[],
-    'subjectCertification': const <dynamic>[],
+    'subjectCertification': certifications,
     'todayStandalonePapers': const <dynamic>[],
   });
 }
 
-TeacherWorkspaceData _essentialWorkspace(String requestedStudentId) {
+TeacherWorkspaceData _essentialWorkspace(
+  String requestedStudentId, {
+  List<Map<String, dynamic>> certifications = const [],
+}) {
   final selected = _students.firstWhere(
     (student) => student.id == requestedStudentId,
     orElse: () => _students.first,
@@ -81,7 +88,7 @@ TeacherWorkspaceData _essentialWorkspace(String requestedStudentId) {
     students: _students,
     teacherSubjects: _subjects,
     selectedStudent: selected,
-    selectedDashboard: _dashboardFor(selected),
+    selectedDashboard: _dashboardFor(selected, certifications: certifications),
     timetable: const <TodaySchedule>[],
     criteria: const <CriterionOverview>[],
     draftMissions: const <MissionPayload>[],
@@ -240,7 +247,9 @@ Map<String, dynamic> _responseForPath(String path) {
 }
 
 class _ControlledTeacherWorkspaceApi extends FocusMissionApi {
-  _ControlledTeacherWorkspaceApi();
+  _ControlledTeacherWorkspaceApi({this.certifications = const []});
+
+  final List<Map<String, dynamic>> certifications;
 
   final Map<String, Completer<TeacherWorkspaceSupplementalData>>
   supplementalByStudent =
@@ -253,7 +262,10 @@ class _ControlledTeacherWorkspaceApi extends FocusMissionApi {
     String dateKey = '',
     bool includeSupplementalData = true,
   }) async {
-    return _essentialWorkspace((selectedStudentId ?? '').trim());
+    return _essentialWorkspace(
+      (selectedStudentId ?? '').trim(),
+      certifications: certifications,
+    );
   }
 
   @override
@@ -433,6 +445,152 @@ void main() {
         expect(button.left, greaterThanOrEqualTo(bounds.left));
       }
     }
+  });
+
+  testWidgets('compact lower panels preserve certification evidence and wrap', (
+    tester,
+  ) async {
+    final api = _ControlledTeacherWorkspaceApi(
+      certifications: [
+        {
+          'subjectId': 'business',
+          'subjectName': 'Business',
+          'certificationLabel': 'Course Certification',
+          'requiredTaskCodes': [
+            'D1',
+            'D2',
+            'M1',
+            'M2',
+            'M3',
+            'P1',
+            'P2',
+            'P3',
+            'P4',
+            'P5',
+            'P6',
+            'P7',
+          ],
+          'passedTaskCodes': ['P1'],
+          'remainingTaskCodes': [
+            'D1',
+            'D2',
+            'M1',
+            'M2',
+            'M3',
+            'P2',
+            'P3',
+            'P4',
+            'P5',
+            'P6',
+            'P7',
+          ],
+          'completionPercentage': 8,
+          'averagePassedScorePercent': 80,
+          'planVersion': 3,
+          'planSource': 'teacher_plan',
+          'planChangeReason': 'Lesson 3',
+          'evidenceRows': [
+            {'taskCode': 'P1', 'status': 'passed', 'bestScorePercent': 80},
+            {'taskCode': 'P2', 'status': 'pending_review'},
+          ],
+        },
+      ],
+    );
+    await _pumpTeacherScreen(tester, api);
+    api.supplementalByStudent['student-a']!.complete(
+      _supplementalWithDraftMissions(),
+    );
+    await tester.pump();
+    expect(find.text('1/12 passed'), findsOneWidget);
+    expect(find.text('P1 · 80%'), findsOneWidget);
+    expect(find.text('P2 · Pending'), findsOneWidget);
+    expect(find.text('Edit objectives'), findsOneWidget);
+    expect(
+      find.text(
+        '8% complete · Average on passed focuses 80.0% · Plan v3 · Teacher-owned plan · Last changed Lesson 3',
+      ),
+      findsOneWidget,
+    );
+    final certification = find.byKey(const Key('teacher_certification'));
+    final review = find.byKey(const Key('teacher_qualification_review'));
+    final inbox = find.byType(NotificationPanel);
+    expect(tester.getSize(certification).height, lessThan(350));
+    expect(tester.getSize(review).height, lessThan(150));
+    expect(tester.getSize(inbox).height, lessThan(150));
+    final panels = [
+      tester.widget(certification),
+      tester.widget(review),
+      tester.widget(inbox),
+    ];
+    for (final width in [320.0, 390.0, 768.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 900));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: panels,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'Lower panels at $width px',
+      );
+      expect(find.text('P1 · 80%'), findsOneWidget);
+      expect(find.text('Edit objectives'), findsOneWidget);
+      expect(find.text('All read'), findsOneWidget);
+    }
+  });
+
+  testWidgets('compact inbox preserves notification content and tap identity', (
+    tester,
+  ) async {
+    const notification = AppNotification(
+      id: 'review-1',
+      type: 'criterion_submitted',
+      title: 'Review submitted Business criterion',
+      message: 'Student work is ready for teacher review.',
+      isRead: false,
+      studentName: 'Student Alpha',
+      criterionTitle: 'Business principles',
+    );
+    AppNotification? opened;
+    await tester.binding.setSurfaceSize(const Size(320, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: NotificationPanel(
+              compact: true,
+              title: 'Teacher Inbox',
+              subtitle: 'Review submission alerts.',
+              notifications: const [notification],
+              unreadCount: 1,
+              emptyMessage: 'No alerts.',
+              onTapNotification: (value) => opened = value,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('1 unread'), findsOneWidget);
+    expect(find.text('New'), findsOneWidget);
+    expect(find.text('Student Alpha'), findsOneWidget);
+    expect(find.text('Business principles'), findsOneWidget);
+    await tester.tap(find.text(notification.title));
+    expect(opened, same(notification));
   });
 
   testWidgets('Draft Missions filters by task focus without changing data', (

@@ -725,13 +725,13 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   ),
                   const SizedBox(height: AppSpacing.item),
                   NotificationPanel(
+                    compact: true,
                     title: 'Teacher Inbox',
                     subtitle:
-                        'Review submission alerts and locked learning checks without leaving this screen.',
+                        'Review submission alerts and locked learning checks.',
                     notifications: notificationInbox.notifications,
                     unreadCount: notificationInbox.unreadCount,
-                    emptyMessage:
-                        'No review alerts right now. New criterion submissions and lock reviews will appear here.',
+                    emptyMessage: 'No review alerts right now.',
                     onTapNotification: (notification) =>
                         _openNotification(workspace, notification),
                   ),
@@ -4924,64 +4924,55 @@ class _TeacherCriterionPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoftPanel(
+      key: const Key('teacher_qualification_review'),
+      padding: const EdgeInsets.all(AppSpacing.item),
+      colors: const [_missionPanelSurface, _missionPanelSurface],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: AppPalette.teacherGradient,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(
-                  Icons.fact_check_rounded,
-                  color: Colors.white,
-                ),
+              const Icon(
+                Icons.fact_check_outlined,
+                size: 20,
+                color: AppPalette.primaryBlue,
               ),
-              const SizedBox(width: AppSpacing.item),
+              const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Qualification Review',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Reset locked knowledge checks and review submitted criteria for your own subject only.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  'Qualification Review',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.section),
+          const SizedBox(height: 4),
+          Text(
+            'Reset locked knowledge checks and review submitted criteria for your own subject.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ),
+          const SizedBox(height: AppSpacing.compact),
           if (criteria.isEmpty)
-            const SoftPanel(
-              padding: EdgeInsets.all(AppSpacing.item),
-              child: Text('No criteria match this teacher\'s subject yet.'),
+            Text(
+              'No criteria match this teacher\'s subject yet.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
             )
           else
             ...criteria.map(
               (criterion) => Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.item),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: InkWell(
                   onTap: () => onTap(criterion),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                   child: Ink(
-                    padding: const EdgeInsets.all(AppSpacing.item),
+                    padding: const EdgeInsets.all(AppSpacing.compact),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.72),
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                     ),
                     child: Row(
                       children: [
@@ -4991,7 +4982,7 @@ class _TeacherCriterionPanel extends StatelessWidget {
                             children: [
                               Text(
                                 criterion.criterion.title,
-                                style: Theme.of(context).textTheme.titleMedium,
+                                style: Theme.of(context).textTheme.bodyLarge,
                               ),
                               const SizedBox(height: 6),
                               Text(
@@ -4999,10 +4990,10 @@ class _TeacherCriterionPanel extends StatelessWidget {
                                 style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(color: AppPalette.textMuted),
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 8),
                               Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
+                                spacing: 6,
+                                runSpacing: 6,
                                 children: [
                                   _StatusPill(
                                     label: _criterionStateLabel(
@@ -8093,7 +8084,9 @@ class _TeacherCertificationPanel extends StatelessWidget {
     };
 
     return SoftPanel(
-      colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
+      key: const Key('teacher_certification'),
+      padding: const EdgeInsets.all(AppSpacing.item),
+      colors: const [_missionPanelSurface, _missionPanelSurface],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -8101,32 +8094,28 @@ class _TeacherCertificationPanel extends StatelessWidget {
             'Task-focus certification',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             'Set the certification objectives for each subject you teach, then target one task focus per qualifying mission so progress stays auditable.',
             style: Theme.of(
               context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
           ),
           const SizedBox(height: AppSpacing.compact),
           if (subjects.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.item),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.78),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              ),
-              child: Text(
-                'No timetable subjects are assigned to this teacher for $studentName yet.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
+            Text(
+              'No timetable subjects are assigned to this teacher for $studentName yet.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
             )
           else
             ...subjects.map((subject) {
               final certification = certificationsBySubject[subject.subjectId];
               return Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.compact),
+                padding: EdgeInsets.only(
+                  bottom: subject == subjects.last ? 0 : 8,
+                ),
                 child: _TeacherCertificationCard(
                   subject: subject,
                   certification: certification,
@@ -8179,128 +8168,126 @@ class _TeacherCertificationCard extends StatelessWidget {
         ? remainingTaskCodes.isEmpty
               ? 'All required task focuses are complete.'
               : 'Still needed: ${remainingTaskCodes.join(', ')}'
-        : 'No certification objectives set yet. Pick the task focuses this student must pass for ${subject.subjectName}.';
+        : 'No certification objectives set yet.';
+    final mutedStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted);
+    // WHY: Keep all plan/progress metadata visible in one wrapping secondary
+    // line, using the existing server-provided values without recalculating.
+    final metadata = hasPlan
+        ? <String>[
+            '${certification!.completionPercentage}% complete',
+            'Average on passed focuses ${certification!.averagePassedScorePercent.toStringAsFixed(1)}%',
+            if ((certification!.planVersion ?? 0) > 0) ...[
+              'Plan v${certification!.planVersion}',
+              certification!.planSource == 'teacher_plan'
+                  ? 'Teacher-owned plan'
+                  : 'Legacy template',
+            ],
+            if ((certification!.planChangeReason ?? '').isNotEmpty)
+              'Last changed ${certification!.planChangeReason}',
+          ]
+        : const <String>[];
+    final action = OutlinedButton.icon(
+      onPressed: onEditPlan,
+      style: _missionOutlinedActionStyle(foregroundColor: _draftMissionAccent),
+      icon: Icon(
+        hasPlan ? Icons.edit_note_rounded : Icons.playlist_add_rounded,
+        size: 16,
+      ),
+      label: Text(hasPlan ? 'Edit objectives' : 'Set objectives'),
+    );
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.item),
+      padding: const EdgeInsets.all(AppSpacing.compact),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppPalette.navy.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      subject.subjectName,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      hasPlan
-                          ? certification!.certificationLabel
-                          : 'Set the live certification plan for this student and subject.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
-                    ),
-                  ],
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  subject.subjectName,
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: hasPlan
-                      ? (isUnlocked ? AppPalette.mint : AppPalette.sun)
-                            .withValues(alpha: 0.14)
-                      : AppPalette.sky.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  !hasPlan
-                      ? 'Needs setup'
-                      : isUnlocked
-                      ? 'Certificate unlocked'
-                      : '${passedTaskCodes.length}/${requiredTaskCodes.length} passed',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: !hasPlan
-                        ? AppPalette.sky
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: hasPlan
+                        ? (isUnlocked ? AppPalette.mint : AppPalette.sun)
+                              .withValues(alpha: 0.14)
+                        : AppPalette.sky.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(AppSpacing.chip),
+                  ),
+                  child: Text(
+                    !hasPlan
+                        ? 'Needs setup'
                         : isUnlocked
-                        ? AppPalette.mint
-                        : AppPalette.orange,
-                    fontWeight: FontWeight.w700,
+                        ? 'Certificate unlocked'
+                        : '${passedTaskCodes.length}/${requiredTaskCodes.length} passed',
+                    style: mutedStyle?.copyWith(
+                      color: !hasPlan
+                          ? AppPalette.navy
+                          : isUnlocked
+                          ? AppPalette.mint
+                          : AppPalette.orange,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            summaryText,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+              ],
+            ),
           ),
           if (hasPlan) ...[
-            const SizedBox(height: 6),
-            Text(
-              '${certification!.completionPercentage}% complete · Average on passed focuses ${certification!.averagePassedScorePercent.toStringAsFixed(1)}%',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if ((certification!.planVersion ?? 0) > 0) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Plan v${certification!.planVersion} · ${certification!.planSource == 'teacher_plan' ? 'Teacher-owned plan' : 'Legacy template'}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-              ),
-            ],
-            if ((certification!.planChangeReason ?? '').isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Last change: ${certification!.planChangeReason}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-                ),
-              ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: requiredTaskCodes
-                  .map((taskCode) {
-                    final evidence = _evidenceForTaskCode(taskCode);
-                    return _TeacherCertificationChip(
-                      taskCode: taskCode,
-                      status: evidence?.status ?? 'not_started',
-                      scorePercent: evidence?.bestScorePercent ?? 0,
-                    );
-                  })
-                  .toList(growable: false),
-            ),
+            const SizedBox(height: 4),
+            Text(certification!.certificationLabel, style: mutedStyle),
+            const SizedBox(height: 4),
+            Text(summaryText, style: mutedStyle),
+            const SizedBox(height: 4),
+            Text(metadata.join(' · '), style: mutedStyle),
           ],
-          const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: onEditPlan,
-              icon: Icon(
-                hasPlan ? Icons.edit_note_rounded : Icons.playlist_add_rounded,
-              ),
-              label: Text(hasPlan ? 'Update objectives' : 'Set objectives'),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              spacing: AppSpacing.compact,
+              runSpacing: 8,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (hasPlan)
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: requiredTaskCodes
+                        .map((taskCode) {
+                          final evidence = _evidenceForTaskCode(taskCode);
+                          return _TeacherCertificationChip(
+                            taskCode: taskCode,
+                            status: evidence?.status ?? 'not_started',
+                            scorePercent: evidence?.bestScorePercent ?? 0,
+                          );
+                        })
+                        .toList(growable: false),
+                  )
+                else
+                  Text(summaryText, style: mutedStyle),
+                action,
+              ],
             ),
           ),
         ],
@@ -8356,7 +8343,7 @@ class _TeacherCertificationChip extends StatelessWidget {
         : taskCode;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
