@@ -11,7 +11,8 @@
  * cards, allow creation of student/teacher accounts, expose active/archived
  * roster controls, and provide subject-filtered result review for students.
  * Compact two-column summaries open the existing tools on demand; the
- * timetable retains its existing layout and behaviour.
+ * timetable retains its existing layout and behaviour. Navy headers, solid
+ * surfaces and status accents provide the approved management visual hierarchy.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -1454,11 +1455,15 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                 _SelectedStudentCard(
                   student: workspace.selectedStudent,
                   actions: Align(
-                    alignment: Alignment.centerRight,
+                    alignment: MediaQuery.sizeOf(context).width < 700
+                        ? Alignment.centerLeft
+                        : Alignment.centerRight,
                     child: Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      alignment: WrapAlignment.end,
+                      alignment: MediaQuery.sizeOf(context).width < 700
+                          ? WrapAlignment.start
+                          : WrapAlignment.end,
                       children: [
                         TextButton.icon(
                           onPressed: () =>
@@ -1501,7 +1506,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                 : 'Archive student',
                           ),
                           style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFF9E4053),
+                            foregroundColor: Colors.white,
+                            backgroundColor: const Color(0xFFAD4959),
                           ),
                         ),
                       ],
@@ -1521,6 +1527,11 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             title: 'Student year group',
                             subtitle: '',
                             compact: true,
+                            expandCompactField: true,
+                            saveButtonStyle: FilledButton.styleFrom(
+                              backgroundColor: AppPalette.navy,
+                              minimumSize: const Size(0, 44),
+                            ),
                             selectedYearGroup: _selectedStudentYearGroup,
                             onChanged: (value) => setState(
                               () => _selectedStudentYearGroup = (value ?? '')
@@ -1533,7 +1544,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             saveLabel: 'Save',
                           ),
                           const SizedBox(height: 8),
-                          TextButton.icon(
+                          OutlinedButton.icon(
                             onPressed: () => _openDashboardTool(
                               _targetsPanelKey,
                               () => _showStudentTargetsPanel = true,
@@ -1547,58 +1558,143 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     _ManagementSummaryCard(
                       title: 'Delivery Snapshot',
                       icon: Icons.insights_outlined,
-                      child: Wrap(
-                        spacing: 0,
-                        runSpacing: 12,
-                        children: [
-                          _ManagementSnapshotStat(
-                            value: '${workspace.students.length}',
-                            label: 'Assigned',
-                            divider: true,
+                      badge: const _ManagementStatusBadge(
+                        label: 'Overview',
+                        color: Color(0xFF2E865D),
+                      ),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F8FE),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AppPalette.navy.withValues(alpha: 0.14),
                           ),
-                          _ManagementSnapshotStat(
-                            value: '${overview.metrics.weeklyXp}',
-                            label: 'Weekly XP',
-                            divider: true,
-                          ),
-                          _ManagementSnapshotStat(
-                            value: '${overview.metrics.completedMissions}',
-                            label: 'Completed',
-                            divider: true,
-                          ),
-                          _ManagementSnapshotStat(
-                            value: '${inbox.unreadCount}',
-                            label: 'Alerts',
-                          ),
-                        ],
+                        ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final narrow = constraints.maxWidth < 400;
+                            final stats = <Widget>[
+                              _ManagementSnapshotStat(
+                                value: '${workspace.students.length}',
+                                label: 'Assigned',
+                                divider: true,
+                              ),
+                              _ManagementSnapshotStat(
+                                value: '${overview.metrics.weeklyXp}',
+                                label: 'Weekly XP',
+                                divider: !narrow,
+                              ),
+                              _ManagementSnapshotStat(
+                                value: '${overview.metrics.completedMissions}',
+                                label: 'Completed',
+                                divider: true,
+                              ),
+                              _ManagementSnapshotStat(
+                                value: '${inbox.unreadCount}',
+                                label: 'Alerts',
+                              ),
+                            ];
+                            // WHY: Two short rows keep statistic labels readable on
+                            // phones; desktop retains the approved four-cell strip.
+                            final columns = narrow ? 2 : 4;
+                            return Column(
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < stats.length;
+                                  index += columns
+                                ) ...[
+                                  if (index > 0)
+                                    Divider(
+                                      height: 1,
+                                      color: AppPalette.navy.withValues(
+                                        alpha: 0.14,
+                                      ),
+                                    ),
+                                  IntrinsicHeight(
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        for (
+                                          var cell = index;
+                                          cell < index + columns;
+                                          cell++
+                                        )
+                                          Expanded(child: stats[cell]),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            );
+                          },
+                        ),
                       ),
                     ),
                     _ManagementSummaryCard(
                       title: 'Student Targets',
                       icon: Icons.flag_outlined,
+                      accent: const Color(0xFF187F79),
+                      badge: _ManagementStatusBadge(
+                        label:
+                            '${dashboardTargets.where((target) => target.status == 'pending').length} pending',
+                        color: const Color(0xFFAC6B18),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '${dashboardTargets.length} total · ${dashboardTargets.where((target) => target.status == 'pending').length} pending · ${dashboardTargets.fold<int>(0, (total, target) => total + target.xpAwarded)} XP',
-                            style: Theme.of(context).textTheme.bodyMedium,
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _ManagementStatusBadge(
+                                label: '${dashboardTargets.length} total',
+                              ),
+                              _ManagementStatusBadge(
+                                label:
+                                    '${dashboardTargets.fold<int>(0, (total, target) => total + target.xpAwarded)} XP',
+                              ),
+                              _ManagementStatusBadge(
+                                label:
+                                    '${dashboardTargets.where((target) => target.status == 'completed').length} completed',
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            latestTarget == null
-                                ? 'No targets recorded for this month.'
-                                : latestTarget.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          if (latestTarget != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              '${latestTarget.status.replaceAll('_', ' ')} · ${latestTarget.difficulty}${latestTarget.awardDateKey.isEmpty ? '' : ' · ${latestTarget.awardDateKey}'}',
-                              style: Theme.of(context).textTheme.bodySmall,
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FBFF),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppPalette.navy.withValues(alpha: 0.14),
+                              ),
                             ),
-                          ],
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  latestTarget == null
+                                      ? 'No targets recorded for this month.'
+                                      : latestTarget.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyLarge,
+                                ),
+                                if (latestTarget != null) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${latestTarget.status.replaceAll('_', ' ')} · ${latestTarget.difficulty}${latestTarget.awardDateKey.isEmpty ? '' : ' · ${latestTarget.awardDateKey}'}',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
                             key: const Key('management_view_targets'),
@@ -1618,12 +1714,26 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     _ManagementSummaryCard(
                       title: 'Task Focus',
                       icon: Icons.workspace_premium_outlined,
+                      accent: const Color(0xFF3D996D),
+                      badge: _ManagementStatusBadge(
+                        label:
+                            '${data.certifications.fold<int>(0, (total, item) => total + item.passedTaskCodes.length)}/${data.certifications.fold<int>(0, (total, item) => total + item.requiredTaskCodes.length)} passed',
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           ...data.certifications.map(
-                            (certification) => Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
+                            (certification) => Container(
+                              padding: const EdgeInsets.symmetric(vertical: 9),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: AppPalette.navy.withValues(
+                                      alpha: 0.10,
+                                    ),
+                                  ),
+                                ),
+                              ),
                               child: Row(
                                 children: [
                                   Expanded(
@@ -1675,14 +1785,13 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     _ManagementSummaryCard(
                       title: 'Student Results',
                       icon: Icons.assessment_outlined,
+                      badge: _ManagementStatusBadge(
+                        label: '${data.recentResults.length} saved results',
+                        color: const Color(0xFF2E865D),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '${data.recentResults.length} saved results',
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          const SizedBox(height: 4),
                           Text(
                             latestResultDate == null
                                 ? 'No result dates available yet.'
@@ -1708,11 +1817,15 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     _ManagementSummaryCard(
                       title: 'Management Inbox',
                       icon: Icons.notifications_outlined,
+                      accent: const Color(0xFFCA8726),
+                      badge: _ManagementStatusBadge(
+                        label: '${inbox.unreadCount} unread',
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${inbox.unreadCount} unread · ${inbox.notifications.length} notifications',
+                            '${inbox.notifications.length} notifications',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                           const SizedBox(height: 8),
@@ -3326,6 +3439,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
+                  solid: true,
+                  padding: const EdgeInsets.all(AppSpacing.item),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -6424,28 +6539,33 @@ class _ManagementResultExportRow {
 
 class _ManagementDashboardGrid extends StatelessWidget {
   const _ManagementDashboardGrid({required this.children});
-
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // WHY: Use natural-height paired cards on desktop; stack on small screens
-        // so summaries and controls never require horizontal scrolling.
-        final width = constraints.maxWidth >= 1000
-            ? (constraints.maxWidth - AppSpacing.item) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: AppSpacing.item,
-          runSpacing: AppSpacing.item,
-          children: children
-              .map((child) => SizedBox(width: width, child: child))
-              .toList(growable: false),
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final paired = constraints.maxWidth >= 1000;
+      final width = paired
+          ? (constraints.maxWidth - AppSpacing.item) / 2
+          : constraints.maxWidth;
+      // WHY: A shared minimum balances desktop pairs while natural heights keep
+      // large text, wrapped controls and longer summaries fully visible.
+      return Wrap(
+        spacing: AppSpacing.item,
+        runSpacing: AppSpacing.item,
+        children: [
+          for (final child in children)
+            SizedBox(
+              width: width,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: paired ? 220 : 0),
+                child: child,
+              ),
+            ),
+        ],
+      );
+    },
+  );
 }
 
 class _ManagementSummaryCard extends StatelessWidget {
@@ -6453,46 +6573,112 @@ class _ManagementSummaryCard extends StatelessWidget {
     required this.title,
     required this.icon,
     required this.child,
+    this.accent = AppPalette.navy,
+    this.badge,
   });
-
   final String title;
   final IconData icon;
   final Widget child;
+  final Color accent;
+  final Widget? badge;
 
   @override
   Widget build(BuildContext context) {
-    return SoftPanel(
-      solid: true,
-      padding: const EdgeInsets.all(AppSpacing.item),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: AppPalette.navy,
-                  borderRadius: BorderRadius.circular(AppSpacing.chip),
-                ),
-                child: Icon(icon, color: Colors.white, size: 18),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-            ],
+    final theme = Theme.of(context);
+    return Theme(
+      // WHY: Limit approved button styling to dashboard summaries; the shared
+      // timetable and all role-specific detail workflows retain their themes.
+      data: theme.copyWith(
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 44),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            foregroundColor: AppPalette.navy,
+            backgroundColor: Colors.white,
+            side: BorderSide(color: AppPalette.navy.withValues(alpha: 0.22)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
-          const SizedBox(height: AppSpacing.compact),
-          child,
-        ],
+        ),
+      ),
+      child: SoftPanel(
+        solid: true,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final heading = Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: accent,
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 21),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(title, style: theme.textTheme.titleMedium),
+                    ),
+                  ],
+                );
+                if (badge == null) return heading;
+                if (constraints.maxWidth < 430) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [heading, const SizedBox(height: 10), badge!],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: heading),
+                    const SizedBox(width: 8),
+                    badge!,
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            child,
+          ],
+        ),
       ),
     );
   }
+}
+
+class _ManagementStatusBadge extends StatelessWidget {
+  const _ManagementStatusBadge({
+    required this.label,
+    this.color = AppPalette.navy,
+  });
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: color.withValues(alpha: 0.16)),
+    ),
+    child: Text(
+      label,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: color,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 }
 
 class _ManagementSnapshotStat extends StatelessWidget {
@@ -6501,84 +6687,120 @@ class _ManagementSnapshotStat extends StatelessWidget {
     required this.label,
     this.divider = false,
   });
-
   final String value;
   final String label;
   final bool divider;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        border: divider
-            ? Border(
-                right: BorderSide(
-                  color: AppPalette.navy.withValues(alpha: 0.15),
-                ),
-              )
-            : null,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(value, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 2),
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+    decoration: BoxDecoration(
+      border: divider
+          ? Border(
+              right: BorderSide(color: AppPalette.navy.withValues(alpha: 0.14)),
+            )
+          : null,
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(value, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+        ),
+      ],
+    ),
+  );
 }
 
 class _SelectedStudentCard extends StatelessWidget {
   const _SelectedStudentCard({required this.student, required this.actions});
-
   final StudentSummary student;
   final Widget actions;
 
   @override
   Widget build(BuildContext context) {
-    return SoftPanel(
-      solid: true,
-      padding: const EdgeInsets.all(AppSpacing.item),
-      colors: const [Color(0xFFE7EDF4), Color(0xFFE7EDF4)],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Student management',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Row(
+    final theme = Theme.of(context);
+    final identity = Row(
+      children: [
+        CircleAvatar(
+          radius: 22,
+          backgroundColor: Colors.white.withValues(alpha: 0.13),
+          child: const Icon(Icons.person_outline_rounded, color: Colors.white),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const CircleAvatar(
-                backgroundColor: AppPalette.navy,
-                child: Icon(Icons.person_outline_rounded, color: Colors.white),
+              Text(
+                student.name,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: Colors.white,
+                ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      student.name,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      '${student.yearGroup.trim().isEmpty ? 'Year group not set' : student.yearGroup.trim()} · ${student.xp} XP · ${student.streak} day streak',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+              const SizedBox(height: 3),
+              Text(
+                '${student.yearGroup.trim().isEmpty ? 'Year group not set' : student.yearGroup.trim()} · ${student.xp} XP · ${student.streak} day streak',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFFD6E2F5),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          actions,
-        ],
+        ),
+      ],
+    );
+    return SoftPanel(
+      solid: true,
+      padding: const EdgeInsets.all(22),
+      colors: const [AppPalette.navy],
+      child: TextButtonTheme(
+        data: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            iconSize: 18,
+            backgroundColor: Colors.white.withValues(alpha: 0.10),
+            minimumSize: const Size(0, 44),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.26)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Student management',
+              style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+            ),
+            const SizedBox(height: 14),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth >= 1180) {
+                  return Row(
+                    children: [
+                      Expanded(flex: 2, child: identity),
+                      const SizedBox(width: 16),
+                      Expanded(flex: 3, child: actions),
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [identity, const SizedBox(height: 14), actions],
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

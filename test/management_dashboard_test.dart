@@ -28,6 +28,11 @@ const _student = StudentSummary(
 
 class _DashboardApi extends FocusMissionApi {
   final bool empty;
+  String? savedYearGroup;
+  String? savedStudentId;
+  String? markedNotificationId;
+  bool withNotification = false;
+  bool withSecondStudent = false;
   _DashboardApi({this.empty = false});
 
   @override
@@ -37,18 +42,71 @@ class _DashboardApi extends FocusMissionApi {
     String dateKey = '',
   }) async => MentorWorkspaceData(
     session: _session,
-    students: const [_student],
+    students: [
+      _student,
+      if (withSecondStudent)
+        const StudentSummary(
+          id: 'student-2',
+          name: 'Another Learner',
+          yearGroup: 'Year 10',
+          xp: 0,
+          streak: 0,
+        ),
+    ],
     selectedStudent: _student,
     overview: MentorOverviewData.fromJson({
       'student': {'id': _student.id, 'name': _student.name},
       'metrics': {'weeklyXp': 70, 'completedMissions': 36},
     }),
     timetable: const [],
-    notificationInbox: const NotificationInboxData(
-      unreadCount: 0,
-      notifications: [],
+    notificationInbox: NotificationInboxData(
+      unreadCount: withNotification ? 1 : 0,
+      notifications: withNotification
+          ? [
+              AppNotification(
+                id: 'alert',
+                type: 'learning_review_required',
+                title: 'Review learning check',
+                message: 'A learner needs review.',
+                isRead: false,
+              ),
+            ]
+          : [],
     ),
   );
+
+  @override
+  Future<AppUser> updateManagementStudentYearGroup({
+    required String token,
+    required String studentId,
+    required String yearGroup,
+  }) async {
+    expect(token, _session.token);
+    savedStudentId = studentId;
+    savedYearGroup = yearGroup;
+    return AppUser(
+      id: studentId,
+      name: _student.name,
+      role: 'student',
+      yearGroup: yearGroup,
+    );
+  }
+
+  @override
+  Future<AppNotification> markNotificationRead({
+    required String token,
+    required String notificationId,
+  }) async {
+    expect(token, _session.token);
+    markedNotificationId = notificationId;
+    return AppNotification(
+      id: notificationId,
+      type: 'learning_review_required',
+      title: 'Review learning check',
+      message: 'A learner needs review.',
+      isRead: true,
+    );
+  }
 
   @override
   Future<List<ResultHistoryItem>> fetchManagementStudentResults({
@@ -127,6 +185,7 @@ Future<void> _pump(
   WidgetTester tester, {
   required double width,
   bool empty = false,
+  _DashboardApi? api,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = Size(width, 1100);
@@ -137,7 +196,7 @@ Future<void> _pump(
       theme: AppTheme.lightTheme,
       home: ManagementOverviewScreen(
         session: _session,
-        api: _DashboardApi(empty: empty),
+        api: api ?? _DashboardApi(empty: empty),
       ),
     ),
   );
@@ -150,8 +209,10 @@ void main() {
     (tester) async {
       await _pump(tester, width: 1440);
       expect(tester.takeException(), isNull);
-      expect(find.text('1 total · 1 pending · 0 XP'), findsOneWidget);
-      expect(find.text('1/2 passed'), findsOneWidget);
+      expect(find.text('1 total'), findsOneWidget);
+      expect(find.text('1 pending'), findsOneWidget);
+      expect(find.text('0 XP'), findsOneWidget);
+      expect(find.text('1/2 passed'), findsNWidgets(2));
       expect(find.text('1 saved results'), findsOneWidget);
       expect(find.text('Download target results'), findsNothing);
       expect(find.text('Download filtered results'), findsNothing);
@@ -210,4 +271,87 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('year group edits save through the existing management API', (
+    tester,
+  ) async {
+    final api = _DashboardApi();
+    await _pump(tester, width: 1440, api: api);
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Year 10').last);
+    await tester.pumpAndSettle();
+    expect(api.savedYearGroup, isNull);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(api.savedYearGroup, 'Year 10');
+    expect(api.savedStudentId, 'student');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('certification and administrative forms remain reachable', (
+    tester,
+  ) async {
+    await _pump(tester, width: 1440);
+    for (final entry in {
+      'View evidence': 'Task-focus certification',
+      'Certification setup': 'Certification Setup',
+      'Create account': 'Add New Student',
+      'Teacher subjects': 'Teacher Subject Setup',
+    }.entries) {
+      await tester.ensureVisible(find.text(entry.key));
+      await tester.tap(find.text(entry.key));
+      await tester.pumpAndSettle();
+      expect(find.text(entry.value), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('inbox uses the existing mark-read handler', (tester) async {
+    final api = _DashboardApi()..withNotification = true;
+    await _pump(tester, width: 1440, api: api);
+    await tester.ensureVisible(find.text('Open inbox'));
+    await tester.tap(find.text('Open inbox'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Review learning check').last);
+    await tester.tap(find.text('Review learning check').last);
+    await tester.pumpAndSettle();
+    expect(api.markedNotificationId, 'alert');
+    expect(find.text('0 unread'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'student picker and archive confirmation preserve their workflows',
+    (tester) async {
+      await _pump(
+        tester,
+        width: 1440,
+        api: _DashboardApi()..withSecondStudent = true,
+      );
+      await tester.tap(find.text('Switch student'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ManagementStudentPickerSheet), findsOneWidget);
+      await tester.tap(find.text('Synthetic Learner').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Archive student'));
+      await tester.pumpAndSettle();
+      expect(find.text('Archive student?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Archive student?'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets('last active learner still cannot be archived', (tester) async {
+    await _pump(tester, width: 1440);
+    await tester.tap(find.text('Archive student'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Add another active student before archiving the final learner.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Archive student?'), findsNothing);
+  });
 }

@@ -8,6 +8,7 @@
  * HOW:
  * Show a short explainer, a year-group dropdown, and a save action inside a
  * standard soft panel, or inline when embedded in a compact context card.
+ * Optional layout and button-style overrides fit management summary cards.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -29,6 +30,8 @@ class StudentYearGroupPanel extends StatelessWidget {
     required this.isSaving,
     this.saveLabel = 'Save year group',
     this.compact = false,
+    this.expandCompactField = false,
+    this.saveButtonStyle,
     this.secondaryActionLabel,
     this.secondaryActionIcon,
     this.onSecondaryAction,
@@ -42,6 +45,8 @@ class StudentYearGroupPanel extends StatelessWidget {
   final bool isSaving;
   final String saveLabel;
   final bool compact;
+  final bool expandCompactField;
+  final ButtonStyle? saveButtonStyle;
   final String? secondaryActionLabel;
   final IconData? secondaryActionIcon;
   final VoidCallback? onSecondaryAction;
@@ -64,19 +69,22 @@ class StudentYearGroupPanel extends StatelessWidget {
       ],
       onChanged: onChanged,
     );
-    final saveButton = FilledButton.icon(
-      style: FilledButton.styleFrom(
-        minimumSize: Size(0, compact ? 38 : 46),
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 12 : 18,
-          vertical: compact ? 8 : 14,
-        ),
-        backgroundColor: compact ? AppPalette.primaryBlue : AppPalette.navy,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(compact ? AppSpacing.chip : 18),
-        ),
+    final defaultSaveButtonStyle = FilledButton.styleFrom(
+      minimumSize: Size(0, compact ? 38 : 46),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 12 : 18,
+        vertical: compact ? 8 : 14,
       ),
+      backgroundColor: compact ? AppPalette.primaryBlue : AppPalette.navy,
+      foregroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(compact ? AppSpacing.chip : 18),
+      ),
+    );
+    final saveButton = FilledButton.icon(
+      style:
+          saveButtonStyle?.merge(defaultSaveButtonStyle) ??
+          defaultSaveButtonStyle,
       onPressed: isSaving ? null : onSave,
       icon: Icon(isSaving ? Icons.hourglass_top_rounded : Icons.save_rounded),
       label: Text(
@@ -84,17 +92,43 @@ class StudentYearGroupPanel extends StatelessWidget {
       ),
     );
 
-    // WHY: Reuse the explicit-save control inside teacher context without
-    // changing the management panel or introducing an autosave API call.
+    // WHY: Reuse the same explicit-save control in compact context cards;
+    // presentation options never introduce autosave or change API ownership.
     if (compact) {
-      return Wrap(
-        spacing: AppSpacing.compact,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SizedBox(width: 200, child: yearGroupField),
-          saveButton,
-        ],
+      if (!expandCompactField) {
+        return Wrap(
+          spacing: AppSpacing.compact,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(width: 200, child: yearGroupField),
+            saveButton,
+          ],
+        );
+      }
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          // WHY: Management can fill a dashboard card while narrow layouts
+          // keep the same selector and explicit Save action on separate lines.
+          if (constraints.maxWidth >= 360) {
+            return Row(
+              children: [
+                Expanded(child: yearGroupField),
+                const SizedBox(width: AppSpacing.compact),
+                saveButton,
+              ],
+            );
+          }
+          return Wrap(
+            spacing: AppSpacing.compact,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(width: constraints.maxWidth, child: yearGroupField),
+              saveButton,
+            ],
+          );
+        },
       );
     }
 
