@@ -10,6 +10,8 @@
  * Load management workspace data from the API, show management-focused summary
  * cards, allow creation of student/teacher accounts, expose active/archived
  * roster controls, and provide subject-filtered result review for students.
+ * Compact two-column summaries open the existing tools on demand; the
+ * timetable retains its existing layout and behaviour.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -27,7 +29,6 @@ import '../../../shared/widgets/notification_panel.dart';
 import '../../../shared/widgets/profile_avatar_button.dart';
 import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
-import '../../../shared/widgets/stat_chip.dart';
 import '../../../shared/widgets/student_year_group_filter.dart';
 import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
@@ -102,9 +103,10 @@ Future<String?> showManagementStudentPickerSheet({
 }
 
 class ManagementOverviewScreen extends StatefulWidget {
-  const ManagementOverviewScreen({super.key, required this.session});
+  const ManagementOverviewScreen({super.key, required this.session, this.api});
 
   final AuthSession session;
+  final FocusMissionApi? api;
 
   @override
   State<ManagementOverviewScreen> createState() =>
@@ -112,7 +114,7 @@ class ManagementOverviewScreen extends StatefulWidget {
 }
 
 class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
-  final FocusMissionApi _api = FocusMissionApi();
+  late final FocusMissionApi _api;
   final AuthSessionStore _sessionStore = AuthSessionStore();
   final GlobalKey<FormState> _createUserFormKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
@@ -161,6 +163,14 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   bool _showTimetablePanel = false;
   bool _showStudentResultsPanel = false;
   bool _showStudentTargetsPanel = false;
+  bool _showManagementInbox = false;
+  final _targetsPanelKey = GlobalKey();
+  final _certificationPanelKey = GlobalKey();
+  final _certificationSetupKey = GlobalKey();
+  final _resultsPanelKey = GlobalKey();
+  final _inboxPanelKey = GlobalKey();
+  final _createUserPanelKey = GlobalKey();
+  final _teacherSubjectsPanelKey = GlobalKey();
   bool _certificationEnabled = false;
   AppUser? _lastCreatedUser;
   final Set<String> _selectedCertificationTaskCodes = <String>{};
@@ -169,6 +179,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? FocusMissionApi();
     _session = widget.session;
     _persistSessionSnapshot();
     final now = DateTime.now();
@@ -1296,6 +1307,20 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         .toList(growable: false);
   }
 
+  void _openDashboardTool(GlobalKey panelKey, VoidCallback showPanel) {
+    setState(showPanel);
+    // WHY: Keep the full existing forms/history out of the overview, then
+    // bring the requested tool into view without adding or changing routes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final panelContext = panelKey.currentContext;
+      if (!mounted || panelContext == null) return;
+      Scrollable.ensureVisible(
+        panelContext,
+        duration: const Duration(milliseconds: 220),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return FocusScaffold(
@@ -1371,6 +1396,24 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   orElse: () => data.certificationSubjects.first,
                 );
 
+          final dashboardTargets =
+              _uniqueTargetsFromSections(data.targetDateSections)
+                ..sort((left, right) {
+                  final leftDate = left.awardDateKey.isNotEmpty
+                      ? left.awardDateKey
+                      : (left.createdAt ?? '');
+                  final rightDate = right.awardDateKey.isNotEmpty
+                      ? right.awardDateKey
+                      : (right.createdAt ?? '');
+                  return rightDate.compareTo(leftDate);
+                });
+          final latestTarget = dashboardTargets.isEmpty
+              ? null
+              : dashboardTargets.first;
+          final latestResultDate = resultDateFilters.length > 1
+              ? resultDateFilters[1]
+              : null;
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(AppSpacing.screen),
             child: Column(
@@ -1408,1107 +1451,505 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                   ],
                 ),
                 const SizedBox(height: AppSpacing.section),
-                CurrentDatePanel(
-                  title: 'Management Dashboard',
-                  subtitle:
-                      'Monitor delivery quality, student outcomes, and support activity from one place.',
-                ),
-                const SizedBox(height: AppSpacing.item),
-                _SelectedStudentCard(student: workspace.selectedStudent),
-                const SizedBox(height: AppSpacing.compact),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      TextButton.icon(
-                        onPressed: () =>
-                            _openStudentDayPlan(workspace.selectedStudent),
-                        icon: const Icon(Icons.today_rounded),
-                        label: const Text('View day plan'),
-                      ),
-                      TextButton.icon(
-                        onPressed: _isAnyStudentStatusActionActive
-                            ? null
-                            : () => _openStudentPicker(workspace),
-                        icon: const Icon(Icons.swap_horiz_rounded),
-                        label: const Text('Switch student'),
-                      ),
-                      TextButton.icon(
-                        onPressed: _isAnyStudentStatusActionActive
-                            ? null
-                            : () => _openArchivedStudentsSheet(
-                                data.archivedStudents,
-                              ),
-                        icon: const Icon(Icons.unarchive_outlined),
-                        label: Text(
-                          data.archivedStudents.isEmpty
-                              ? 'View archived'
-                              : 'View archived (${data.archivedStudents.length})',
+                _SelectedStudentCard(
+                  student: workspace.selectedStudent,
+                  actions: Align(
+                    alignment: Alignment.centerRight,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          onPressed: () =>
+                              _openStudentDayPlan(workspace.selectedStudent),
+                          icon: const Icon(Icons.today_rounded),
+                          label: const Text('View day plan'),
                         ),
-                      ),
-                      TextButton.icon(
-                        onPressed: _isAnyStudentStatusActionActive
-                            ? null
-                            : () => _archiveSelectedStudent(workspace),
-                        icon: Icon(
-                          _isArchivingStudent
-                              ? Icons.hourglass_top_rounded
-                              : Icons.archive_outlined,
+                        TextButton.icon(
+                          onPressed: _isAnyStudentStatusActionActive
+                              ? null
+                              : () => _openStudentPicker(workspace),
+                          icon: const Icon(Icons.swap_horiz_rounded),
+                          label: const Text('Switch student'),
                         ),
-                        label: Text(
-                          _isArchivingStudent
-                              ? 'Archiving...'
-                              : 'Archive student',
+                        TextButton.icon(
+                          onPressed: _isAnyStudentStatusActionActive
+                              ? null
+                              : () => _openArchivedStudentsSheet(
+                                  data.archivedStudents,
+                                ),
+                          icon: const Icon(Icons.unarchive_outlined),
+                          label: Text(
+                            data.archivedStudents.isEmpty
+                                ? 'View archived'
+                                : 'View archived (${data.archivedStudents.length})',
+                          ),
                         ),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF9E4053),
+                        TextButton.icon(
+                          onPressed: _isAnyStudentStatusActionActive
+                              ? null
+                              : () => _archiveSelectedStudent(workspace),
+                          icon: Icon(
+                            _isArchivingStudent
+                                ? Icons.hourglass_top_rounded
+                                : Icons.archive_outlined,
+                          ),
+                          label: Text(
+                            _isArchivingStudent
+                                ? 'Archiving...'
+                                : 'Archive student',
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF9E4053),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.item),
-                StudentYearGroupPanel(
-                  title: 'Student year group',
-                  subtitle:
-                      'Management can keep the learner year current here so profiles, class context, and grouped Test/Exam targeting stay correct.',
-                  selectedYearGroup: _selectedStudentYearGroup,
-                  onChanged: (value) => setState(
-                    () => _selectedStudentYearGroup = (value ?? '').trim(),
-                  ),
-                  onSave: () =>
-                      _saveSelectedStudentYearGroup(workspace.selectedStudent),
-                  isSaving: _isSavingStudentYearGroup,
-                  saveLabel: 'Save year group',
-                  secondaryActionLabel: _showStudentTargetsPanel
-                      ? 'Hide student targets'
-                      : 'Student targets',
-                  secondaryActionIcon: _showStudentTargetsPanel
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.flag_rounded,
-                  onSecondaryAction: () => setState(
-                    () => _showStudentTargetsPanel = !_showStudentTargetsPanel,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                SoftPanel(
-                  colors: const [Color(0xFFF9FCFF), Color(0xFFEDF6FF)],
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _ManagementExpandableHeader(
-                        title: 'Student Targets',
-                        subtitle:
-                            'Review daily target outcomes, switch the target date, and export target results for this learner.',
-                        summary: _buildStudentTargetsSummary(
-                          filteredTargets: filteredTargets,
-                          selectedDate: selectedTargetDate,
-                        ),
-                        isExpanded: _showStudentTargetsPanel,
-                        onToggle: () => setState(
-                          () => _showStudentTargetsPanel =
-                              !_showStudentTargetsPanel,
-                        ),
-                      ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        child: !_showStudentTargetsPanel
-                            ? const SizedBox.shrink()
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: AppSpacing.compact),
-                                  LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final compact =
-                                          constraints.maxWidth < 760;
-                                      final dateFilter =
-                                          DropdownButtonFormField<String>(
-                                            initialValue: selectedTargetDate,
-                                            decoration:
-                                                _managementFieldDecoration(
-                                                  labelText: 'Target date',
-                                                ),
-                                            items: targetDateFilters
-                                                .map(
-                                                  (dateLabel) =>
-                                                      DropdownMenuItem<String>(
-                                                        value: dateLabel,
-                                                        child: Text(dateLabel),
-                                                      ),
-                                                )
-                                                .toList(growable: false),
-                                            onChanged: (value) {
-                                              if (value == null) {
-                                                return;
-                                              }
-                                              setState(
-                                                () =>
-                                                    _selectedTargetDate = value,
-                                              );
-                                            },
-                                          );
-                                      final targetCount = Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 8,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: AppPalette.surface.withValues(
-                                            alpha: 0.96,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: AppPalette.sky.withValues(
-                                              alpha: 0.7,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '${filteredTargets.length} daily target${filteredTargets.length == 1 ? '' : 's'}',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall
-                                              ?.copyWith(
-                                                color: AppPalette.navy,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                        ),
-                                      );
-                                      final downloadButton = FilledButton.icon(
-                                        style: _managementFilledActionStyle(
-                                          context,
-                                        ),
-                                        onPressed:
-                                            filteredTargets.isEmpty ||
-                                                _isAnyManagementDownloadActive
-                                            ? null
-                                            : () => _downloadFilteredTargets(
-                                                student:
-                                                    workspace.selectedStudent,
-                                                sections:
-                                                    filteredTargetSections,
-                                                recentResults:
-                                                    data.recentResults,
-                                                teachers: data.teachers,
-                                              ),
-                                        icon: Icon(
-                                          _isDownloadingTargets
-                                              ? Icons.hourglass_top_rounded
-                                              : Icons.download_rounded,
-                                        ),
-                                        label: Text(
-                                          _isDownloadingTargets
-                                              ? 'Preparing target export...'
-                                              : 'Download target results',
-                                        ),
-                                      );
-
-                                      if (compact) {
-                                        return Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            dateFilter,
-                                            const SizedBox(height: 10),
-                                            targetCount,
-                                            const SizedBox(height: 10),
-                                            Align(
-                                              alignment: Alignment.centerLeft,
-                                              child: downloadButton,
-                                            ),
-                                          ],
-                                        );
-                                      }
-
-                                      return Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.end,
-                                        children: [
-                                          Expanded(child: dateFilter),
-                                          const SizedBox(width: 12),
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 10,
-                                            ),
-                                            child: targetCount,
-                                          ),
-                                          const SizedBox(width: 12),
-                                          downloadButton,
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(height: AppSpacing.item),
-                                  ...filteredTargetSections.map((section) {
-                                    final commentResolutions =
-                                        _buildManagementTargetCommentResolutions(
-                                          targets: section.targets,
-                                          dateKey: section.dateKey,
-                                          sessionComments:
-                                              section.sessionComments,
-                                          recentResults: data.recentResults,
-                                          teachers: data.teachers,
-                                        );
-                                    final unmatchedSessionComments =
-                                        _buildUnmatchedTargetComments(
-                                          sessionComments:
-                                              section.sessionComments,
-                                          resolutions: commentResolutions,
-                                        );
-
-                                    return Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: AppSpacing.compact,
-                                      ),
-                                      child: Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(
-                                          AppSpacing.item,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: AppPalette.surface.withValues(
-                                            alpha: 0.96,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            AppSpacing.radiusLg,
-                                          ),
-                                          border: Border.all(
-                                            color: AppPalette.sky.withValues(
-                                              alpha: 0.68,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    section.dateKey,
-                                                    style: Theme.of(
-                                                      context,
-                                                    ).textTheme.titleSmall,
-                                                  ),
-                                                ),
-                                                _ManagementMiniPill(
-                                                  label:
-                                                      '${section.targets.length} target${section.targets.length == 1 ? '' : 's'}',
-                                                  backgroundColor: AppPalette
-                                                      .sky
-                                                      .withValues(alpha: 0.16),
-                                                ),
-                                              ],
-                                            ),
-                                            if (unmatchedSessionComments
-                                                .isNotEmpty) ...[
-                                              const SizedBox(
-                                                height: AppSpacing.compact,
-                                              ),
-                                              Text(
-                                                'Teacher session comments',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodyMedium
-                                                    ?.copyWith(
-                                                      color:
-                                                          AppPalette.textMuted,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                              ),
-                                              const SizedBox(height: 10),
-                                              ...unmatchedSessionComments.map(
-                                                (comment) => Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        bottom: 10,
-                                                      ),
-                                                  child:
-                                                      _ManagementTargetSessionCommentCard(
-                                                        comment: comment,
-                                                      ),
-                                                ),
-                                              ),
-                                            ],
-                                            if (unmatchedSessionComments
-                                                .isNotEmpty)
-                                              const SizedBox(
-                                                height: AppSpacing.compact,
-                                              ),
-                                            if (section.targets.isEmpty &&
-                                                unmatchedSessionComments
-                                                    .isEmpty)
-                                              Container(
-                                                width: double.infinity,
-                                                padding: const EdgeInsets.all(
-                                                  AppSpacing.item,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: AppPalette.surface
-                                                      .withValues(alpha: 0.9),
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        AppSpacing.radiusMd,
-                                                      ),
-                                                  border: Border.all(
-                                                    color: AppPalette.sky
-                                                        .withValues(
-                                                          alpha: 0.58,
-                                                        ),
-                                                  ),
-                                                ),
-                                                child: Text(
-                                                  'No target result was saved for this weekday yet.',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodyMedium
-                                                      ?.copyWith(
-                                                        color: AppPalette
-                                                            .textMuted,
-                                                      ),
-                                                ),
-                                              )
-                                            else
-                                              ...section.targets.map(
-                                                (target) => Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        bottom:
-                                                            AppSpacing.compact,
-                                                      ),
-                                                  child: _ManagementTargetCard(
-                                                    target: target,
-                                                    teacherComments:
-                                                        commentResolutions[_managementTargetIdentityKey(
-                                                              target,
-                                                            )]
-                                                            ?.comments ??
-                                                        const <
-                                                          _ManagementResolvedTargetComment
-                                                        >[],
-                                                    isDownloading:
-                                                        _downloadingTargetId ==
-                                                        target.id,
-                                                    onDownload:
-                                                        _isAnyManagementDownloadActive
-                                                        ? null
-                                                        : () => _downloadTargetResult(
-                                                            student: workspace
-                                                                .selectedStudent,
-                                                            target: target,
-                                                            sections: [section],
-                                                            recentResults: data
-                                                                .recentResults,
-                                                            teachers:
-                                                                data.teachers,
-                                                          ),
-                                                  ),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  }),
-                                ],
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                SoftPanel(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Delivery Snapshot',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: AppSpacing.item),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
+                _ManagementDashboardGrid(
+                  children: [
+                    _ManagementSummaryCard(
+                      title: 'Student details',
+                      icon: Icons.person_outline_rounded,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          StatChip(
-                            value: '${workspace.students.length}',
-                            label: 'Assigned students',
-                            colors: const [
-                              AppPalette.primaryBlue,
-                              AppPalette.aqua,
-                            ],
+                          StudentYearGroupPanel(
+                            title: 'Student year group',
+                            subtitle: '',
+                            compact: true,
+                            selectedYearGroup: _selectedStudentYearGroup,
+                            onChanged: (value) => setState(
+                              () => _selectedStudentYearGroup = (value ?? '')
+                                  .trim(),
+                            ),
+                            onSave: () => _saveSelectedStudentYearGroup(
+                              workspace.selectedStudent,
+                            ),
+                            isSaving: _isSavingStudentYearGroup,
+                            saveLabel: 'Save',
                           ),
-                          StatChip(
-                            value: '${overview.metrics.weeklyXp}',
-                            label: '${workspace.selectedStudent.name} XP',
-                            colors: const [AppPalette.sun, AppPalette.orange],
-                          ),
-                          StatChip(
-                            value: '${overview.metrics.completedMissions}',
-                            label: 'Completed missions',
-                            colors: const [
-                              AppPalette.primaryBlue,
-                              AppPalette.aqua,
-                            ],
-                          ),
-                          StatChip(
-                            value: '${inbox.unreadCount}',
-                            label: 'Unread alerts',
-                            colors: const [AppPalette.sun, AppPalette.orange],
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: () => _openDashboardTool(
+                              _targetsPanelKey,
+                              () => _showStudentTargetsPanel = true,
+                            ),
+                            icon: const Icon(Icons.flag_outlined, size: 16),
+                            label: const Text('Student targets'),
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-                SoftPanel(
-                  colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _ManagementExpandableHeader(
-                        title: 'Task-focus certification',
-                        subtitle:
-                            'Track which required task focuses this student has already passed for each subject.',
-                        summary: _buildCertificationProgressSummary(
-                          filteredCertifications,
-                          selectedSubject: selectedCertificationSubject,
-                        ),
-                        isExpanded: _showCertificationProgressPanel,
-                        onToggle: () => setState(
-                          () => _showCertificationProgressPanel =
-                              !_showCertificationProgressPanel,
-                        ),
+                    ),
+                    _ManagementSummaryCard(
+                      title: 'Delivery Snapshot',
+                      icon: Icons.insights_outlined,
+                      child: Wrap(
+                        spacing: 0,
+                        runSpacing: 12,
+                        children: [
+                          _ManagementSnapshotStat(
+                            value: '${workspace.students.length}',
+                            label: 'Assigned',
+                            divider: true,
+                          ),
+                          _ManagementSnapshotStat(
+                            value: '${overview.metrics.weeklyXp}',
+                            label: 'Weekly XP',
+                            divider: true,
+                          ),
+                          _ManagementSnapshotStat(
+                            value: '${overview.metrics.completedMissions}',
+                            label: 'Completed',
+                            divider: true,
+                          ),
+                          _ManagementSnapshotStat(
+                            value: '${inbox.unreadCount}',
+                            label: 'Alerts',
+                          ),
+                        ],
                       ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        child: !_showCertificationProgressPanel
-                            ? const SizedBox.shrink()
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                    ),
+                    _ManagementSummaryCard(
+                      title: 'Student Targets',
+                      icon: Icons.flag_outlined,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${dashboardTargets.length} total · ${dashboardTargets.where((target) => target.status == 'pending').length} pending · ${dashboardTargets.fold<int>(0, (total, target) => total + target.xpAwarded)} XP',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            latestTarget == null
+                                ? 'No targets recorded for this month.'
+                                : latestTarget.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                          if (latestTarget != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              '${latestTarget.status.replaceAll('_', ' ')} · ${latestTarget.difficulty}${latestTarget.awardDateKey.isEmpty ? '' : ' · ${latestTarget.awardDateKey}'}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            key: const Key('management_view_targets'),
+                            onPressed: () => _openDashboardTool(
+                              _targetsPanelKey,
+                              () => _showStudentTargetsPanel = true,
+                            ),
+                            icon: const Icon(
+                              Icons.open_in_new_rounded,
+                              size: 16,
+                            ),
+                            label: const Text('View targets'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _ManagementSummaryCard(
+                      title: 'Task Focus',
+                      icon: Icons.workspace_premium_outlined,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ...data.certifications.map(
+                            (certification) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Row(
                                 children: [
-                                  const SizedBox(height: AppSpacing.compact),
-                                  Wrap(
-                                    spacing: 10,
-                                    runSpacing: 10,
-                                    children: certificationFilters
-                                        .map(
-                                          (subject) => _SubjectFilterChip(
-                                            label: subject,
-                                            selected:
-                                                subject ==
-                                                selectedCertificationSubject,
-                                            onTap: () => setState(
-                                              () =>
-                                                  _selectedCertificationSubject =
-                                                      subject,
-                                            ),
-                                          ),
-                                        )
-                                        .toList(growable: false),
+                                  Expanded(
+                                    child: Text(certification.subjectName),
                                   ),
-                                  const SizedBox(height: AppSpacing.item),
-                                  if (filteredCertifications.isEmpty)
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(
-                                        AppSpacing.item,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.78,
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusMd,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        'No certification templates are active for this student yet.',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
-                                      ),
-                                    )
-                                  else
-                                    ...filteredCertifications.map(
-                                      (certification) => Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: AppSpacing.compact,
-                                        ),
-                                        child: _ManagementCertificationCard(
-                                          certification: certification,
-                                          missionByResultPackageId: {
-                                            for (final mission
-                                                in data.recentResults)
-                                              mission.latestResultPackageId
-                                                      .trim():
-                                                  mission,
-                                          },
-                                          onOpenResult: (mission) =>
-                                              _openResultReport(
-                                                mission: mission,
-                                                student:
-                                                    workspace.selectedStudent,
-                                              ),
-                                        ),
-                                      ),
-                                    ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${certification.passedTaskCodes.length}/${certification.requiredTaskCodes.length} passed',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
                                 ],
                               ),
+                            ),
+                          ),
+                          Text(
+                            _buildCertificationProgressSummary(
+                              data.certifications,
+                              selectedSubject:
+                                  _allCertificationSubjectsFilterLabel,
+                            ),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton(
+                                onPressed: () => _openDashboardTool(
+                                  _certificationPanelKey,
+                                  () => _showCertificationProgressPanel = true,
+                                ),
+                                child: const Text('View evidence'),
+                              ),
+                              OutlinedButton(
+                                onPressed: () => _openDashboardTool(
+                                  _certificationSetupKey,
+                                  () => _showCertificationSetup = true,
+                                ),
+                                child: const Text('Certification setup'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    _ManagementSummaryCard(
+                      title: 'Student Results',
+                      icon: Icons.assessment_outlined,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${data.recentResults.length} saved results',
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            latestResultDate == null
+                                ? 'No result dates available yet.'
+                                : 'Latest: $latestResultDate',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            key: const Key('management_view_results'),
+                            onPressed: () => _openDashboardTool(
+                              _resultsPanelKey,
+                              () => _showStudentResultsPanel = true,
+                            ),
+                            icon: const Icon(
+                              Icons.receipt_long_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('View results & downloads'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _ManagementSummaryCard(
+                      title: 'Management Inbox',
+                      icon: Icons.notifications_outlined,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${inbox.unreadCount} unread · ${inbox.notifications.length} notifications',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            inbox.notifications.isEmpty
+                                ? 'No management notifications yet.'
+                                : inbox.notifications.first.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton(
+                            onPressed: () => _openDashboardTool(
+                              _inboxPanelKey,
+                              () => _showManagementInbox = true,
+                            ),
+                            child: const Text('Open inbox'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.item),
-                SoftPanel(
-                  colors: const [Color(0xFFFFFCF6), Color(0xFFFFF3E4)],
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _ManagementExpandableHeader(
-                        title: 'Certification Setup',
-                        subtitle:
-                            'Choose which task focuses a student must pass to unlock the subject certificate. Changes are blocked after live evidence exists.',
-                        summary: _buildCertificationSetupSummary(
-                          selectedCertificationSettings,
-                        ),
-                        isExpanded: _showCertificationSetup,
-                        onToggle: () => setState(
-                          () => _showCertificationSetup =
-                              !_showCertificationSetup,
-                        ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _openDashboardTool(
+                        _createUserPanelKey,
+                        () => _showCreateUserPanel = true,
                       ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        child: !_showCertificationSetup
-                            ? const SizedBox.shrink()
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: AppSpacing.compact),
-                                  if (data.certificationSubjects.isEmpty)
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(
-                                        AppSpacing.item,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.78,
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusMd,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        'No subjects are available to configure yet.',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
-                                      ),
-                                    )
-                                  else ...[
-                                    DropdownButtonFormField<String>(
-                                      initialValue:
-                                          selectedCertificationSettings
-                                              ?.subjectId,
-                                      decoration: _managementFieldDecoration(
-                                        labelText: 'Subject',
-                                      ),
-                                      items: data.certificationSubjects
-                                          .map(
-                                            (subject) =>
-                                                DropdownMenuItem<String>(
-                                                  value: subject.subjectId,
-                                                  child: Text(
-                                                    subject.subjectName,
+                      icon: const Icon(
+                        Icons.person_add_alt_1_outlined,
+                        size: 16,
+                      ),
+                      label: const Text('Create account'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _openDashboardTool(
+                        _teacherSubjectsPanelKey,
+                        () => _showTeacherSubjectSetupPanel = true,
+                      ),
+                      icon: const Icon(Icons.school_outlined, size: 16),
+                      label: const Text('Teacher subjects'),
+                    ),
+                    if (_showManagementInbox)
+                      TextButton(
+                        onPressed: () =>
+                            setState(() => _showManagementInbox = false),
+                        child: const Text('Close inbox'),
+                      ),
+                  ],
+                ),
+                if (_showStudentTargetsPanel)
+                  const SizedBox(height: AppSpacing.item),
+                if (_showStudentTargetsPanel)
+                  SoftPanel(
+                    key: _targetsPanelKey,
+                    solid: true,
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    colors: const [Color(0xFFF9FCFF), Color(0xFFEDF6FF)],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _ManagementExpandableHeader(
+                          title: 'Student Targets',
+                          subtitle:
+                              'Review daily target outcomes, switch the target date, and export target results for this learner.',
+                          summary: _buildStudentTargetsSummary(
+                            filteredTargets: filteredTargets,
+                            selectedDate: selectedTargetDate,
+                          ),
+                          isExpanded: _showStudentTargetsPanel,
+                          onToggle: () => setState(
+                            () => _showStudentTargetsPanel =
+                                !_showStudentTargetsPanel,
+                          ),
+                        ),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          child: !_showStudentTargetsPanel
+                              ? const SizedBox.shrink()
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: AppSpacing.compact),
+                                    LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final compact =
+                                            constraints.maxWidth < 760;
+                                        final dateFilter =
+                                            DropdownButtonFormField<String>(
+                                              initialValue: selectedTargetDate,
+                                              decoration:
+                                                  _managementFieldDecoration(
+                                                    labelText: 'Target date',
                                                   ),
+                                              items: targetDateFilters
+                                                  .map(
+                                                    (dateLabel) =>
+                                                        DropdownMenuItem<
+                                                          String
+                                                        >(
+                                                          value: dateLabel,
+                                                          child: Text(
+                                                            dateLabel,
+                                                          ),
+                                                        ),
+                                                  )
+                                                  .toList(growable: false),
+                                              onChanged: (value) {
+                                                if (value == null) {
+                                                  return;
+                                                }
+                                                setState(
+                                                  () => _selectedTargetDate =
+                                                      value,
+                                                );
+                                              },
+                                            );
+                                        final targetCount = Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppPalette.surface
+                                                .withValues(alpha: 0.96),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: AppPalette.sky.withValues(
+                                                alpha: 0.7,
+                                              ),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '${filteredTargets.length} daily target${filteredTargets.length == 1 ? '' : 's'}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: AppPalette.navy,
+                                                  fontWeight: FontWeight.w700,
                                                 ),
-                                          )
-                                          .toList(growable: false),
-                                      onChanged: (value) {
-                                        if (value == null) {
-                                          return;
+                                          ),
+                                        );
+                                        final downloadButton = FilledButton.icon(
+                                          style: _managementFilledActionStyle(
+                                            context,
+                                          ),
+                                          onPressed:
+                                              filteredTargets.isEmpty ||
+                                                  _isAnyManagementDownloadActive
+                                              ? null
+                                              : () => _downloadFilteredTargets(
+                                                  student:
+                                                      workspace.selectedStudent,
+                                                  sections:
+                                                      filteredTargetSections,
+                                                  recentResults:
+                                                      data.recentResults,
+                                                  teachers: data.teachers,
+                                                ),
+                                          icon: Icon(
+                                            _isDownloadingTargets
+                                                ? Icons.hourglass_top_rounded
+                                                : Icons.download_rounded,
+                                          ),
+                                          label: Text(
+                                            _isDownloadingTargets
+                                                ? 'Preparing target export...'
+                                                : 'Download target results',
+                                          ),
+                                        );
+
+                                        if (compact) {
+                                          return Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              dateFilter,
+                                              const SizedBox(height: 10),
+                                              targetCount,
+                                              const SizedBox(height: 10),
+                                              Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: downloadButton,
+                                              ),
+                                            ],
+                                          );
                                         }
-                                        _selectCertificationEditorSubject(
-                                          value,
-                                          data.certificationSubjects,
+
+                                        return Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Expanded(child: dateFilter),
+                                            const SizedBox(width: 12),
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 10,
+                                              ),
+                                              child: targetCount,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            downloadButton,
+                                          ],
                                         );
                                       },
                                     ),
-                                    const SizedBox(height: 12),
-                                    SwitchListTile.adaptive(
-                                      value: _certificationEnabled,
-                                      contentPadding: EdgeInsets.zero,
-                                      title: const Text('Enable certification'),
-                                      subtitle: const Text(
-                                        'Use task-focus passes to unlock a subject certificate.',
-                                      ),
-                                      onChanged: (value) => setState(
-                                        () => _certificationEnabled = value,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: _certificationLabelController,
-                                      decoration: _managementFieldDecoration(
-                                        labelText: 'Certificate label',
-                                        hintText: 'Course Certification',
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      'Required task focuses',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleSmall,
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: _certificationTaskCodeOptions
-                                          .map(
-                                            (taskCode) => _CreateRoleChip(
-                                              label: taskCode,
-                                              icon: Icons.flag_rounded,
-                                              selected:
-                                                  _selectedCertificationTaskCodes
-                                                      .contains(taskCode),
-                                              compact: true,
-                                              onTap: () =>
-                                                  _toggleCertificationTaskCode(
-                                                    taskCode,
-                                                  ),
-                                            ),
-                                          )
-                                          .toList(growable: false),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      _selectedCertificationTaskCodes.isEmpty
-                                          ? 'No task focuses selected yet.'
-                                          : 'Required: ${(_selectedCertificationTaskCodes.toList(growable: false)..sort()).join(', ')}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: AppPalette.textMuted,
-                                          ),
-                                    ),
-                                    const SizedBox(height: AppSpacing.compact),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: FilledButton.icon(
-                                        onPressed: _isSavingCertification
-                                            ? null
-                                            : _saveCertificationTemplate,
-                                        icon: const Icon(Icons.save_rounded),
-                                        label: Text(
-                                          _isSavingCertification
-                                              ? 'Saving certification...'
-                                              : 'Save Certification Setup',
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                SoftPanel(
-                  colors: const [Color(0xFFFFFCF6), Color(0xFFFFF3E4)],
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _ManagementExpandableHeader(
-                        title: _createRole == 'student'
-                            ? 'Add New Student'
-                            : 'Add New Teacher',
-                        subtitle: _createRole == 'student'
-                            ? 'Create a student account and add that learner to management immediately.'
-                            : 'Create a teacher account with a primary subject and extra teachable subjects.',
-                        summary: _buildCreateUserSummary(),
-                        isExpanded: _showCreateUserPanel,
-                        onToggle: () => setState(
-                          () => _showCreateUserPanel = !_showCreateUserPanel,
-                        ),
-                      ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        child: !_showCreateUserPanel
-                            ? const SizedBox.shrink()
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: AppSpacing.compact),
-                                  Text(
-                                    'Account type',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleSmall,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: _CreateRoleChip(
-                                          label: 'Student',
-                                          icon: Icons.school_rounded,
-                                          selected: _createRole == 'student',
-                                          onTap: () => setState(
-                                            () => _createRole = 'student',
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: _CreateRoleChip(
-                                          label: 'Teacher',
-                                          icon: Icons.menu_book_rounded,
-                                          selected: _createRole == 'teacher',
-                                          onTap: () => setState(() {
-                                            _createRole = 'teacher';
-                                            _createStudentYearGroup = '';
-                                          }),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: AppSpacing.compact),
-                                  Form(
-                                    key: _createUserFormKey,
-                                    child: Column(
-                                      children: [
-                                        TextFormField(
-                                          controller: _nameController,
-                                          decoration:
-                                              _managementFieldDecoration(
-                                                labelText: 'Full name',
-                                                hintText: 'Enter full name',
-                                              ),
-                                          validator: (value) {
-                                            if ((value ?? '').trim().isEmpty) {
-                                              return 'Enter a name.';
-                                            }
-                                            return null;
-                                          },
-                                        ),
-                                        const SizedBox(height: 12),
-                                        TextFormField(
-                                          controller: _emailController,
-                                          decoration:
-                                              _managementFieldDecoration(
-                                                labelText: 'Email',
-                                                hintText: 'name@school.org',
-                                              ),
-                                          validator: (value) {
-                                            final email = (value ?? '').trim();
-                                            if (email.isEmpty ||
-                                                !email.contains('@')) {
-                                              return 'Enter a valid email.';
-                                            }
-                                            return null;
-                                          },
-                                        ),
-                                        const SizedBox(height: 12),
-                                        TextFormField(
-                                          controller: _passwordController,
-                                          obscureText: true,
-                                          decoration:
-                                              _managementFieldDecoration(
-                                                labelText: 'Password',
-                                                hintText:
-                                                    'At least 8 characters',
-                                              ),
-                                          validator: (value) {
-                                            if ((value ?? '').length < 8) {
-                                              return 'Use at least 8 characters.';
-                                            }
-                                            return null;
-                                          },
-                                        ),
-                                        if (_createRole == 'student') ...[
-                                          const SizedBox(height: 12),
-                                          DropdownButtonFormField<String>(
-                                            initialValue:
-                                                _createStudentYearGroup,
-                                            decoration:
-                                                _managementFieldDecoration(
-                                                  labelText: 'Year group',
-                                                ),
-                                            items: <DropdownMenuItem<String>>[
-                                              const DropdownMenuItem<String>(
-                                                value: '',
-                                                child: Text('Not set yet'),
-                                              ),
-                                              ...kStudentYearGroupOptions.map(
-                                                (yearGroup) =>
-                                                    DropdownMenuItem<String>(
-                                                      value: yearGroup,
-                                                      child: Text(yearGroup),
-                                                    ),
-                                              ),
-                                            ],
-                                            onChanged: (value) {
-                                              setState(
-                                                () => _createStudentYearGroup =
-                                                    (value ?? '').trim(),
-                                              );
-                                            },
-                                          ),
-                                        ],
-                                        if (_createRole == 'teacher') ...[
-                                          const SizedBox(height: 12),
-                                          DropdownButtonFormField<String>(
-                                            initialValue:
-                                                _createTeacherPrimarySubject
-                                                    .trim()
-                                                    .isEmpty
-                                                ? null
-                                                : _createTeacherPrimarySubject,
-                                            decoration: _managementFieldDecoration(
-                                              labelText: 'Primary subject',
-                                              helperText:
-                                                  'This stays as the teacher profile display subject.',
-                                            ),
-                                            items: <DropdownMenuItem<String>>[
-                                              const DropdownMenuItem<String>(
-                                                value: '',
-                                                child: Text(
-                                                  'Choose primary subject',
-                                                ),
-                                              ),
-                                              ...data.certificationSubjects.map(
-                                                (subject) =>
-                                                    DropdownMenuItem<String>(
-                                                      value:
-                                                          subject.subjectName,
-                                                      child: Text(
-                                                        subject.subjectName,
-                                                      ),
-                                                    ),
-                                              ),
-                                            ],
-                                            validator: (value) {
-                                              if (_createRole == 'teacher' &&
-                                                  (value ?? '')
-                                                      .trim()
-                                                      .isEmpty) {
-                                                return 'Choose a primary subject.';
-                                              }
-                                              return null;
-                                            },
-                                            onChanged: (value) {
-                                              setState(() {
-                                                _createTeacherPrimarySubject =
-                                                    (value ?? '').trim();
-                                                _createTeacherAdditionalSubjects
-                                                    .remove(
-                                                      _createTeacherPrimarySubject,
-                                                    );
-                                              });
-                                            },
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: Text(
-                                              'Additional teachable subjects',
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodyMedium
-                                                  ?.copyWith(
-                                                    color: AppPalette.navy,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Wrap(
-                                            spacing: 8,
-                                            runSpacing: 8,
-                                            children: data.certificationSubjects
-                                                .map((subject) {
-                                                  final subjectName = subject
-                                                      .subjectName
-                                                      .trim();
-                                                  final isPrimary =
-                                                      subjectName ==
-                                                      _createTeacherPrimarySubject;
-                                                  final isSelected =
-                                                      isPrimary ||
-                                                      _createTeacherAdditionalSubjects
-                                                          .contains(
-                                                            subjectName,
-                                                          );
+                                    const SizedBox(height: AppSpacing.item),
+                                    ...filteredTargetSections.map((section) {
+                                      final commentResolutions =
+                                          _buildManagementTargetCommentResolutions(
+                                            targets: section.targets,
+                                            dateKey: section.dateKey,
+                                            sessionComments:
+                                                section.sessionComments,
+                                            recentResults: data.recentResults,
+                                            teachers: data.teachers,
+                                          );
+                                      final unmatchedSessionComments =
+                                          _buildUnmatchedTargetComments(
+                                            sessionComments:
+                                                section.sessionComments,
+                                            resolutions: commentResolutions,
+                                          );
 
-                                                  return FilterChip(
-                                                    label: Text(subjectName),
-                                                    selected: isSelected,
-                                                    onSelected: isPrimary
-                                                        ? null
-                                                        : (selected) {
-                                                            setState(() {
-                                                              if (selected) {
-                                                                _createTeacherAdditionalSubjects
-                                                                    .add(
-                                                                      subjectName,
-                                                                    );
-                                                              } else {
-                                                                _createTeacherAdditionalSubjects
-                                                                    .remove(
-                                                                      subjectName,
-                                                                    );
-                                                              }
-                                                            });
-                                                          },
-                                                  );
-                                                })
-                                                .toList(growable: false),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: AppSpacing.compact),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: FilledButton.icon(
-                                      onPressed: _isCreatingUser
-                                          ? null
-                                          : _createManagedUser,
-                                      icon: const Icon(
-                                        Icons.person_add_alt_1_rounded,
-                                      ),
-                                      label: Text(
-                                        _isCreatingUser
-                                            ? 'Creating account...'
-                                            : 'Create ${_createRole == 'student' ? 'Student' : 'Teacher'}',
-                                      ),
-                                    ),
-                                  ),
-                                  if (_lastCreatedUser != null) ...[
-                                    const SizedBox(height: AppSpacing.compact),
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(
-                                        AppSpacing.item,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.78,
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusMd,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        'Created: ${_lastCreatedUser!.name} · ${_lastCreatedUser!.role} · ${_lastCreatedUser!.email ?? ''}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                SoftPanel(
-                  colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _ManagementExpandableHeader(
-                        title: 'Teacher Subject Setup',
-                        subtitle:
-                            'Management owns each teacher’s primary subject and full teachable subject list.',
-                        summary: _buildTeacherSubjectSetupSummary(
-                          data.teachers,
-                        ),
-                        isExpanded: _showTeacherSubjectSetupPanel,
-                        onToggle: () => setState(
-                          () => _showTeacherSubjectSetupPanel =
-                              !_showTeacherSubjectSetupPanel,
-                        ),
-                      ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        child: !_showTeacherSubjectSetupPanel
-                            ? const SizedBox.shrink()
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: AppSpacing.compact),
-                                  if (data.certificationSubjects.isEmpty)
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(
-                                        AppSpacing.item,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.82,
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusMd,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        'Create certification subjects first so teacher subject access stays canonical.',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
-                                      ),
-                                    )
-                                  else if (data.teachers.isEmpty)
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(
-                                        AppSpacing.item,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.82,
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusMd,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        'No teacher accounts exist yet. Create one above, then manage their subjects here.',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
-                                      ),
-                                    )
-                                  else
-                                    ...data.teachers.map((teacher) {
-                                      final subjectSummary =
-                                          _teacherSubjectSummaryLabel(teacher);
                                       return Padding(
                                         padding: const EdgeInsets.only(
-                                          bottom: 10,
+                                          bottom: AppSpacing.compact,
                                         ),
                                         child: Container(
                                           width: double.infinity,
@@ -2516,116 +1957,967 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                             AppSpacing.item,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.84,
-                                            ),
+                                            color: AppPalette.surface
+                                                .withValues(alpha: 0.96),
                                             borderRadius: BorderRadius.circular(
-                                              AppSpacing.radiusMd,
+                                              AppSpacing.radiusLg,
                                             ),
                                             border: Border.all(
                                               color: AppPalette.sky.withValues(
-                                                alpha: 0.36,
+                                                alpha: 0.68,
                                               ),
                                             ),
                                           ),
-                                          child: Row(
+                                          child: Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.start,
                                             children: [
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      teacher.name,
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      section.dateKey,
                                                       style: Theme.of(
                                                         context,
                                                       ).textTheme.titleSmall,
                                                     ),
-                                                    if ((teacher.email ?? '')
-                                                        .trim()
-                                                        .isNotEmpty) ...[
-                                                      const SizedBox(height: 4),
-                                                      Text(
-                                                        teacher.email!.trim(),
-                                                        style: Theme.of(context)
-                                                            .textTheme
-                                                            .bodySmall
-                                                            ?.copyWith(
-                                                              color: AppPalette
-                                                                  .textMuted,
-                                                            ),
-                                                      ),
-                                                    ],
-                                                    const SizedBox(height: 10),
-                                                    Wrap(
-                                                      spacing: 8,
-                                                      runSpacing: 8,
-                                                      children: [
-                                                        _ManagementMiniPill(
-                                                          label:
-                                                              subjectSummary
-                                                                  .isEmpty
-                                                              ? 'No teachable subjects yet'
-                                                              : subjectSummary,
-                                                          backgroundColor:
-                                                              subjectSummary
-                                                                  .isEmpty
-                                                              ? AppPalette.sun
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.18,
-                                                                    )
-                                                              : AppPalette
-                                                                    .primaryBlue
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.12,
-                                                                    ),
+                                                  ),
+                                                  _ManagementMiniPill(
+                                                    label:
+                                                        '${section.targets.length} target${section.targets.length == 1 ? '' : 's'}',
+                                                    backgroundColor: AppPalette
+                                                        .sky
+                                                        .withValues(
+                                                          alpha: 0.16,
                                                         ),
-                                                      ],
-                                                    ),
-                                                  ],
-                                                ),
+                                                  ),
+                                                ],
                                               ),
-                                              const SizedBox(width: 12),
-                                              OutlinedButton.icon(
-                                                onPressed: () =>
-                                                    _openTeacherSubjectEditor(
-                                                      teacher: teacher,
-                                                      subjectOptions: data
-                                                          .certificationSubjects,
+                                              if (unmatchedSessionComments
+                                                  .isNotEmpty) ...[
+                                                const SizedBox(
+                                                  height: AppSpacing.compact,
+                                                ),
+                                                Text(
+                                                  'Teacher session comments',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyMedium
+                                                      ?.copyWith(
+                                                        color: AppPalette
+                                                            .textMuted,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 10),
+                                                ...unmatchedSessionComments.map(
+                                                  (comment) => Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          bottom: 10,
+                                                        ),
+                                                    child:
+                                                        _ManagementTargetSessionCommentCard(
+                                                          comment: comment,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ],
+                                              if (unmatchedSessionComments
+                                                  .isNotEmpty)
+                                                const SizedBox(
+                                                  height: AppSpacing.compact,
+                                                ),
+                                              if (section.targets.isEmpty &&
+                                                  unmatchedSessionComments
+                                                      .isEmpty)
+                                                Container(
+                                                  width: double.infinity,
+                                                  padding: const EdgeInsets.all(
+                                                    AppSpacing.item,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: AppPalette.surface
+                                                        .withValues(alpha: 0.9),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          AppSpacing.radiusMd,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: AppPalette.sky
+                                                          .withValues(
+                                                            alpha: 0.58,
+                                                          ),
                                                     ),
-                                                icon: const Icon(
-                                                  Icons.edit_rounded,
+                                                  ),
+                                                  child: Text(
+                                                    'No target result was saved for this weekday yet.',
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodyMedium
+                                                        ?.copyWith(
+                                                          color: AppPalette
+                                                              .textMuted,
+                                                        ),
+                                                  ),
+                                                )
+                                              else
+                                                ...section.targets.map(
+                                                  (target) => Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          bottom: AppSpacing
+                                                              .compact,
+                                                        ),
+                                                    child: _ManagementTargetCard(
+                                                      target: target,
+                                                      teacherComments:
+                                                          commentResolutions[_managementTargetIdentityKey(
+                                                                target,
+                                                              )]
+                                                              ?.comments ??
+                                                          const <
+                                                            _ManagementResolvedTargetComment
+                                                          >[],
+                                                      isDownloading:
+                                                          _downloadingTargetId ==
+                                                          target.id,
+                                                      onDownload:
+                                                          _isAnyManagementDownloadActive
+                                                          ? null
+                                                          : () => _downloadTargetResult(
+                                                              student: workspace
+                                                                  .selectedStudent,
+                                                              target: target,
+                                                              sections: [
+                                                                section,
+                                                              ],
+                                                              recentResults: data
+                                                                  .recentResults,
+                                                              teachers:
+                                                                  data.teachers,
+                                                            ),
+                                                    ),
+                                                  ),
                                                 ),
-                                                label: const Text(
-                                                  'Edit subjects',
-                                                ),
-                                              ),
                                             ],
                                           ),
                                         ),
                                       );
                                     }),
-                                ],
-                              ),
-                      ),
-                    ],
+                                  ],
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                NotificationPanel(
-                  title: 'Management Inbox',
-                  subtitle:
-                      'Track review-required and submitted activity before sharing outcomes.',
-                  notifications: inbox.notifications,
-                  unreadCount: inbox.unreadCount,
-                  emptyMessage:
-                      'No management notifications yet. New workflow alerts will appear here.',
-                  onTapNotification: _openNotification,
-                ),
+
+                if (_showCertificationProgressPanel)
+                  SoftPanel(
+                    key: _certificationPanelKey,
+                    solid: true,
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _ManagementExpandableHeader(
+                          title: 'Task-focus certification',
+                          subtitle:
+                              'Track which required task focuses this student has already passed for each subject.',
+                          summary: _buildCertificationProgressSummary(
+                            filteredCertifications,
+                            selectedSubject: selectedCertificationSubject,
+                          ),
+                          isExpanded: _showCertificationProgressPanel,
+                          onToggle: () => setState(
+                            () => _showCertificationProgressPanel =
+                                !_showCertificationProgressPanel,
+                          ),
+                        ),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          child: !_showCertificationProgressPanel
+                              ? const SizedBox.shrink()
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: AppSpacing.compact),
+                                    Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: certificationFilters
+                                          .map(
+                                            (subject) => _SubjectFilterChip(
+                                              label: subject,
+                                              selected:
+                                                  subject ==
+                                                  selectedCertificationSubject,
+                                              onTap: () => setState(
+                                                () =>
+                                                    _selectedCertificationSubject =
+                                                        subject,
+                                              ),
+                                            ),
+                                          )
+                                          .toList(growable: false),
+                                    ),
+                                    const SizedBox(height: AppSpacing.item),
+                                    if (filteredCertifications.isEmpty)
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(
+                                          AppSpacing.item,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.78,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            AppSpacing.radiusMd,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'No certification templates are active for this student yet.',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium,
+                                        ),
+                                      )
+                                    else
+                                      ...filteredCertifications.map(
+                                        (certification) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: AppSpacing.compact,
+                                          ),
+                                          child: _ManagementCertificationCard(
+                                            certification: certification,
+                                            missionByResultPackageId: {
+                                              for (final mission
+                                                  in data.recentResults)
+                                                mission.latestResultPackageId
+                                                        .trim():
+                                                    mission,
+                                            },
+                                            onOpenResult: (mission) =>
+                                                _openResultReport(
+                                                  mission: mission,
+                                                  student:
+                                                      workspace.selectedStudent,
+                                                ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_showCertificationSetup)
+                  const SizedBox(height: AppSpacing.item),
+                if (_showCertificationSetup)
+                  SoftPanel(
+                    key: _certificationSetupKey,
+                    solid: true,
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    colors: const [Color(0xFFFFFCF6), Color(0xFFFFF3E4)],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _ManagementExpandableHeader(
+                          title: 'Certification Setup',
+                          subtitle:
+                              'Choose which task focuses a student must pass to unlock the subject certificate. Changes are blocked after live evidence exists.',
+                          summary: _buildCertificationSetupSummary(
+                            selectedCertificationSettings,
+                          ),
+                          isExpanded: _showCertificationSetup,
+                          onToggle: () => setState(
+                            () => _showCertificationSetup =
+                                !_showCertificationSetup,
+                          ),
+                        ),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          child: !_showCertificationSetup
+                              ? const SizedBox.shrink()
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: AppSpacing.compact),
+                                    if (data.certificationSubjects.isEmpty)
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(
+                                          AppSpacing.item,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.78,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            AppSpacing.radiusMd,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'No subjects are available to configure yet.',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium,
+                                        ),
+                                      )
+                                    else ...[
+                                      DropdownButtonFormField<String>(
+                                        initialValue:
+                                            selectedCertificationSettings
+                                                ?.subjectId,
+                                        decoration: _managementFieldDecoration(
+                                          labelText: 'Subject',
+                                        ),
+                                        items: data.certificationSubjects
+                                            .map(
+                                              (subject) =>
+                                                  DropdownMenuItem<String>(
+                                                    value: subject.subjectId,
+                                                    child: Text(
+                                                      subject.subjectName,
+                                                    ),
+                                                  ),
+                                            )
+                                            .toList(growable: false),
+                                        onChanged: (value) {
+                                          if (value == null) {
+                                            return;
+                                          }
+                                          _selectCertificationEditorSubject(
+                                            value,
+                                            data.certificationSubjects,
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(height: 12),
+                                      SwitchListTile.adaptive(
+                                        value: _certificationEnabled,
+                                        contentPadding: EdgeInsets.zero,
+                                        title: const Text(
+                                          'Enable certification',
+                                        ),
+                                        subtitle: const Text(
+                                          'Use task-focus passes to unlock a subject certificate.',
+                                        ),
+                                        onChanged: (value) => setState(
+                                          () => _certificationEnabled = value,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextField(
+                                        controller:
+                                            _certificationLabelController,
+                                        decoration: _managementFieldDecoration(
+                                          labelText: 'Certificate label',
+                                          hintText: 'Course Certification',
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'Required task focuses',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleSmall,
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: _certificationTaskCodeOptions
+                                            .map(
+                                              (taskCode) => _CreateRoleChip(
+                                                label: taskCode,
+                                                icon: Icons.flag_rounded,
+                                                selected:
+                                                    _selectedCertificationTaskCodes
+                                                        .contains(taskCode),
+                                                compact: true,
+                                                onTap: () =>
+                                                    _toggleCertificationTaskCode(
+                                                      taskCode,
+                                                    ),
+                                              ),
+                                            )
+                                            .toList(growable: false),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        _selectedCertificationTaskCodes.isEmpty
+                                            ? 'No task focuses selected yet.'
+                                            : 'Required: ${(_selectedCertificationTaskCodes.toList(growable: false)..sort()).join(', ')}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: AppPalette.textMuted,
+                                            ),
+                                      ),
+                                      const SizedBox(
+                                        height: AppSpacing.compact,
+                                      ),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: FilledButton.icon(
+                                          onPressed: _isSavingCertification
+                                              ? null
+                                              : _saveCertificationTemplate,
+                                          icon: const Icon(Icons.save_rounded),
+                                          label: Text(
+                                            _isSavingCertification
+                                                ? 'Saving certification...'
+                                                : 'Save Certification Setup',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_showCreateUserPanel)
+                  const SizedBox(height: AppSpacing.item),
+                if (_showCreateUserPanel)
+                  SoftPanel(
+                    key: _createUserPanelKey,
+                    solid: true,
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    colors: const [Color(0xFFFFFCF6), Color(0xFFFFF3E4)],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _ManagementExpandableHeader(
+                          title: _createRole == 'student'
+                              ? 'Add New Student'
+                              : 'Add New Teacher',
+                          subtitle: _createRole == 'student'
+                              ? 'Create a student account and add that learner to management immediately.'
+                              : 'Create a teacher account with a primary subject and extra teachable subjects.',
+                          summary: _buildCreateUserSummary(),
+                          isExpanded: _showCreateUserPanel,
+                          onToggle: () => setState(
+                            () => _showCreateUserPanel = !_showCreateUserPanel,
+                          ),
+                        ),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          child: !_showCreateUserPanel
+                              ? const SizedBox.shrink()
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: AppSpacing.compact),
+                                    Text(
+                                      'Account type',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleSmall,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _CreateRoleChip(
+                                            label: 'Student',
+                                            icon: Icons.school_rounded,
+                                            selected: _createRole == 'student',
+                                            onTap: () => setState(
+                                              () => _createRole = 'student',
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: _CreateRoleChip(
+                                            label: 'Teacher',
+                                            icon: Icons.menu_book_rounded,
+                                            selected: _createRole == 'teacher',
+                                            onTap: () => setState(() {
+                                              _createRole = 'teacher';
+                                              _createStudentYearGroup = '';
+                                            }),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: AppSpacing.compact),
+                                    Form(
+                                      key: _createUserFormKey,
+                                      child: Column(
+                                        children: [
+                                          TextFormField(
+                                            controller: _nameController,
+                                            decoration:
+                                                _managementFieldDecoration(
+                                                  labelText: 'Full name',
+                                                  hintText: 'Enter full name',
+                                                ),
+                                            validator: (value) {
+                                              if ((value ?? '')
+                                                  .trim()
+                                                  .isEmpty) {
+                                                return 'Enter a name.';
+                                              }
+                                              return null;
+                                            },
+                                          ),
+                                          const SizedBox(height: 12),
+                                          TextFormField(
+                                            controller: _emailController,
+                                            decoration:
+                                                _managementFieldDecoration(
+                                                  labelText: 'Email',
+                                                  hintText: 'name@school.org',
+                                                ),
+                                            validator: (value) {
+                                              final email = (value ?? '')
+                                                  .trim();
+                                              if (email.isEmpty ||
+                                                  !email.contains('@')) {
+                                                return 'Enter a valid email.';
+                                              }
+                                              return null;
+                                            },
+                                          ),
+                                          const SizedBox(height: 12),
+                                          TextFormField(
+                                            controller: _passwordController,
+                                            obscureText: true,
+                                            decoration:
+                                                _managementFieldDecoration(
+                                                  labelText: 'Password',
+                                                  hintText:
+                                                      'At least 8 characters',
+                                                ),
+                                            validator: (value) {
+                                              if ((value ?? '').length < 8) {
+                                                return 'Use at least 8 characters.';
+                                              }
+                                              return null;
+                                            },
+                                          ),
+                                          if (_createRole == 'student') ...[
+                                            const SizedBox(height: 12),
+                                            DropdownButtonFormField<String>(
+                                              initialValue:
+                                                  _createStudentYearGroup,
+                                              decoration:
+                                                  _managementFieldDecoration(
+                                                    labelText: 'Year group',
+                                                  ),
+                                              items: <DropdownMenuItem<String>>[
+                                                const DropdownMenuItem<String>(
+                                                  value: '',
+                                                  child: Text('Not set yet'),
+                                                ),
+                                                ...kStudentYearGroupOptions.map(
+                                                  (yearGroup) =>
+                                                      DropdownMenuItem<String>(
+                                                        value: yearGroup,
+                                                        child: Text(yearGroup),
+                                                      ),
+                                                ),
+                                              ],
+                                              onChanged: (value) {
+                                                setState(
+                                                  () =>
+                                                      _createStudentYearGroup =
+                                                          (value ?? '').trim(),
+                                                );
+                                              },
+                                            ),
+                                          ],
+                                          if (_createRole == 'teacher') ...[
+                                            const SizedBox(height: 12),
+                                            DropdownButtonFormField<String>(
+                                              initialValue:
+                                                  _createTeacherPrimarySubject
+                                                      .trim()
+                                                      .isEmpty
+                                                  ? null
+                                                  : _createTeacherPrimarySubject,
+                                              decoration:
+                                                  _managementFieldDecoration(
+                                                    labelText:
+                                                        'Primary subject',
+                                                    helperText:
+                                                        'This stays as the teacher profile display subject.',
+                                                  ),
+                                              items: <DropdownMenuItem<String>>[
+                                                const DropdownMenuItem<String>(
+                                                  value: '',
+                                                  child: Text(
+                                                    'Choose primary subject',
+                                                  ),
+                                                ),
+                                                ...data.certificationSubjects
+                                                    .map(
+                                                      (subject) =>
+                                                          DropdownMenuItem<
+                                                            String
+                                                          >(
+                                                            value: subject
+                                                                .subjectName,
+                                                            child: Text(
+                                                              subject
+                                                                  .subjectName,
+                                                            ),
+                                                          ),
+                                                    ),
+                                              ],
+                                              validator: (value) {
+                                                if (_createRole == 'teacher' &&
+                                                    (value ?? '')
+                                                        .trim()
+                                                        .isEmpty) {
+                                                  return 'Choose a primary subject.';
+                                                }
+                                                return null;
+                                              },
+                                              onChanged: (value) {
+                                                setState(() {
+                                                  _createTeacherPrimarySubject =
+                                                      (value ?? '').trim();
+                                                  _createTeacherAdditionalSubjects
+                                                      .remove(
+                                                        _createTeacherPrimarySubject,
+                                                      );
+                                                });
+                                              },
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: Text(
+                                                'Additional teachable subjects',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.copyWith(
+                                                      color: AppPalette.navy,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children: data
+                                                  .certificationSubjects
+                                                  .map((subject) {
+                                                    final subjectName = subject
+                                                        .subjectName
+                                                        .trim();
+                                                    final isPrimary =
+                                                        subjectName ==
+                                                        _createTeacherPrimarySubject;
+                                                    final isSelected =
+                                                        isPrimary ||
+                                                        _createTeacherAdditionalSubjects
+                                                            .contains(
+                                                              subjectName,
+                                                            );
+
+                                                    return FilterChip(
+                                                      label: Text(subjectName),
+                                                      selected: isSelected,
+                                                      onSelected: isPrimary
+                                                          ? null
+                                                          : (selected) {
+                                                              setState(() {
+                                                                if (selected) {
+                                                                  _createTeacherAdditionalSubjects
+                                                                      .add(
+                                                                        subjectName,
+                                                                      );
+                                                                } else {
+                                                                  _createTeacherAdditionalSubjects
+                                                                      .remove(
+                                                                        subjectName,
+                                                                      );
+                                                                }
+                                                              });
+                                                            },
+                                                    );
+                                                  })
+                                                  .toList(growable: false),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.compact),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: FilledButton.icon(
+                                        onPressed: _isCreatingUser
+                                            ? null
+                                            : _createManagedUser,
+                                        icon: const Icon(
+                                          Icons.person_add_alt_1_rounded,
+                                        ),
+                                        label: Text(
+                                          _isCreatingUser
+                                              ? 'Creating account...'
+                                              : 'Create ${_createRole == 'student' ? 'Student' : 'Teacher'}',
+                                        ),
+                                      ),
+                                    ),
+                                    if (_lastCreatedUser != null) ...[
+                                      const SizedBox(
+                                        height: AppSpacing.compact,
+                                      ),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(
+                                          AppSpacing.item,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.78,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            AppSpacing.radiusMd,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Created: ${_lastCreatedUser!.name} · ${_lastCreatedUser!.role} · ${_lastCreatedUser!.email ?? ''}',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_showTeacherSubjectSetupPanel)
+                  const SizedBox(height: AppSpacing.item),
+                if (_showTeacherSubjectSetupPanel)
+                  SoftPanel(
+                    key: _teacherSubjectsPanelKey,
+                    solid: true,
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _ManagementExpandableHeader(
+                          title: 'Teacher Subject Setup',
+                          subtitle:
+                              'Management owns each teacher’s primary subject and full teachable subject list.',
+                          summary: _buildTeacherSubjectSetupSummary(
+                            data.teachers,
+                          ),
+                          isExpanded: _showTeacherSubjectSetupPanel,
+                          onToggle: () => setState(
+                            () => _showTeacherSubjectSetupPanel =
+                                !_showTeacherSubjectSetupPanel,
+                          ),
+                        ),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          child: !_showTeacherSubjectSetupPanel
+                              ? const SizedBox.shrink()
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: AppSpacing.compact),
+                                    if (data.certificationSubjects.isEmpty)
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(
+                                          AppSpacing.item,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.82,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            AppSpacing.radiusMd,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Create certification subjects first so teacher subject access stays canonical.',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium,
+                                        ),
+                                      )
+                                    else if (data.teachers.isEmpty)
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(
+                                          AppSpacing.item,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.82,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            AppSpacing.radiusMd,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'No teacher accounts exist yet. Create one above, then manage their subjects here.',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium,
+                                        ),
+                                      )
+                                    else
+                                      ...data.teachers.map((teacher) {
+                                        final subjectSummary =
+                                            _teacherSubjectSummaryLabel(
+                                              teacher,
+                                            );
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 10,
+                                          ),
+                                          child: Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.all(
+                                              AppSpacing.item,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.84,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                    AppSpacing.radiusMd,
+                                                  ),
+                                              border: Border.all(
+                                                color: AppPalette.sky
+                                                    .withValues(alpha: 0.36),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        teacher.name,
+                                                        style: Theme.of(
+                                                          context,
+                                                        ).textTheme.titleSmall,
+                                                      ),
+                                                      if ((teacher.email ?? '')
+                                                          .trim()
+                                                          .isNotEmpty) ...[
+                                                        const SizedBox(
+                                                          height: 4,
+                                                        ),
+                                                        Text(
+                                                          teacher.email!.trim(),
+                                                          style: Theme.of(context)
+                                                              .textTheme
+                                                              .bodySmall
+                                                              ?.copyWith(
+                                                                color: AppPalette
+                                                                    .textMuted,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                      const SizedBox(
+                                                        height: 10,
+                                                      ),
+                                                      Wrap(
+                                                        spacing: 8,
+                                                        runSpacing: 8,
+                                                        children: [
+                                                          _ManagementMiniPill(
+                                                            label:
+                                                                subjectSummary
+                                                                    .isEmpty
+                                                                ? 'No teachable subjects yet'
+                                                                : subjectSummary,
+                                                            backgroundColor:
+                                                                subjectSummary
+                                                                    .isEmpty
+                                                                ? AppPalette.sun
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.18,
+                                                                      )
+                                                                : AppPalette
+                                                                      .primaryBlue
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.12,
+                                                                      ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                OutlinedButton.icon(
+                                                  onPressed: () =>
+                                                      _openTeacherSubjectEditor(
+                                                        teacher: teacher,
+                                                        subjectOptions: data
+                                                            .certificationSubjects,
+                                                      ),
+                                                  icon: const Icon(
+                                                    Icons.edit_rounded,
+                                                  ),
+                                                  label: const Text(
+                                                    'Edit subjects',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                  ],
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_showManagementInbox)
+                  const SizedBox(height: AppSpacing.item),
+                if (_showManagementInbox)
+                  NotificationPanel(
+                    key: _inboxPanelKey,
+                    compact: true,
+                    title: 'Management Inbox',
+                    subtitle:
+                        'Track review-required and submitted activity before sharing outcomes.',
+                    notifications: inbox.notifications,
+                    unreadCount: inbox.unreadCount,
+                    emptyMessage:
+                        'No management notifications yet. New workflow alerts will appear here.',
+                    onTapNotification: _openNotification,
+                  ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
                   child: Column(
@@ -2785,243 +3077,253 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.item),
-                SoftPanel(
-                  colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _ManagementExpandableHeader(
-                        title: 'Student Results',
-                        subtitle:
-                            'Filter by subject or result date, download the selected result set, or export each mission result or paper assessment.',
-                        summary: _buildStudentResultsSummary(
-                          filteredResults: filteredResults,
-                          selectedSubject: selectedSubject,
-                          selectedDate: selectedResultDate,
+                if (_showStudentResultsPanel)
+                  const SizedBox(height: AppSpacing.item),
+                if (_showStudentResultsPanel)
+                  SoftPanel(
+                    key: _resultsPanelKey,
+                    solid: true,
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    colors: const [Color(0xFFF7FBFF), Color(0xFFEAF4FF)],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _ManagementExpandableHeader(
+                          title: 'Student Results',
+                          subtitle:
+                              'Filter by subject or result date, download the selected result set, or export each mission result or paper assessment.',
+                          summary: _buildStudentResultsSummary(
+                            filteredResults: filteredResults,
+                            selectedSubject: selectedSubject,
+                            selectedDate: selectedResultDate,
+                          ),
+                          isExpanded: _showStudentResultsPanel,
+                          onToggle: () => setState(
+                            () => _showStudentResultsPanel =
+                                !_showStudentResultsPanel,
+                          ),
                         ),
-                        isExpanded: _showStudentResultsPanel,
-                        onToggle: () => setState(
-                          () => _showStudentResultsPanel =
-                              !_showStudentResultsPanel,
-                        ),
-                      ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        child: !_showStudentResultsPanel
-                            ? const SizedBox.shrink()
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: AppSpacing.compact),
-                                  Wrap(
-                                    spacing: 10,
-                                    runSpacing: 10,
-                                    children: subjectFilters
-                                        .map(
-                                          (subject) => _SubjectFilterChip(
-                                            label: subject,
-                                            selected:
-                                                subject == selectedSubject,
-                                            onTap: () => setState(
-                                              () => _selectedSubject = subject,
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          child: !_showStudentResultsPanel
+                              ? const SizedBox.shrink()
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: AppSpacing.compact),
+                                    Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: subjectFilters
+                                          .map(
+                                            (subject) => _SubjectFilterChip(
+                                              label: subject,
+                                              selected:
+                                                  subject == selectedSubject,
+                                              onTap: () => setState(
+                                                () =>
+                                                    _selectedSubject = subject,
+                                              ),
+                                            ),
+                                          )
+                                          .toList(growable: false),
+                                    ),
+                                    const SizedBox(height: AppSpacing.compact),
+                                    LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final compact =
+                                            constraints.maxWidth < 760;
+                                        final dateFilter =
+                                            DropdownButtonFormField<String>(
+                                              initialValue: selectedResultDate,
+                                              decoration:
+                                                  _managementFieldDecoration(
+                                                    labelText: 'Result date',
+                                                  ),
+                                              items: resultDateFilters
+                                                  .map(
+                                                    (dateLabel) =>
+                                                        DropdownMenuItem<
+                                                          String
+                                                        >(
+                                                          value: dateLabel,
+                                                          child: Text(
+                                                            dateLabel,
+                                                          ),
+                                                        ),
+                                                  )
+                                                  .toList(growable: false),
+                                              onChanged: (value) {
+                                                if (value == null) {
+                                                  return;
+                                                }
+                                                setState(
+                                                  () => _selectedResultDate =
+                                                      value,
+                                                );
+                                              },
+                                            );
+                                        final downloadButton = FilledButton.icon(
+                                          style: _managementFilledActionStyle(
+                                            context,
+                                          ),
+                                          onPressed:
+                                              filteredResults.isEmpty ||
+                                                  _isAnyManagementDownloadActive
+                                              ? null
+                                              : () => _downloadFilteredResults(
+                                                  student:
+                                                      workspace.selectedStudent,
+                                                  missions: filteredResults,
+                                                ),
+                                          icon: Icon(
+                                            _isAnyManagementDownloadActive
+                                                ? Icons.hourglass_top_rounded
+                                                : Icons.download_rounded,
+                                          ),
+                                          label: Text(
+                                            _isAnyManagementDownloadActive
+                                                ? 'Preparing download...'
+                                                : 'Download filtered results',
+                                          ),
+                                        );
+                                        final resultCount = Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppPalette.surface
+                                                .withValues(alpha: 0.96),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                            border: Border.all(
+                                              color: AppPalette.sky.withValues(
+                                                alpha: 0.7,
+                                              ),
                                             ),
                                           ),
-                                        )
-                                        .toList(growable: false),
-                                  ),
-                                  const SizedBox(height: AppSpacing.compact),
-                                  LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final compact =
-                                          constraints.maxWidth < 760;
-                                      final dateFilter =
-                                          DropdownButtonFormField<String>(
-                                            initialValue: selectedResultDate,
-                                            decoration:
-                                                _managementFieldDecoration(
-                                                  labelText: 'Result date',
+                                          child: Text(
+                                            '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: AppPalette.navy,
+                                                  fontWeight: FontWeight.w700,
                                                 ),
-                                            items: resultDateFilters
-                                                .map(
-                                                  (dateLabel) =>
-                                                      DropdownMenuItem<String>(
-                                                        value: dateLabel,
-                                                        child: Text(dateLabel),
-                                                      ),
-                                                )
-                                                .toList(growable: false),
-                                            onChanged: (value) {
-                                              if (value == null) {
-                                                return;
-                                              }
-                                              setState(
-                                                () =>
-                                                    _selectedResultDate = value,
-                                              );
-                                            },
-                                          );
-                                      final downloadButton = FilledButton.icon(
-                                        style: _managementFilledActionStyle(
-                                          context,
-                                        ),
-                                        onPressed:
-                                            filteredResults.isEmpty ||
-                                                _isAnyManagementDownloadActive
-                                            ? null
-                                            : () => _downloadFilteredResults(
-                                                student:
-                                                    workspace.selectedStudent,
-                                                missions: filteredResults,
+                                          ),
+                                        );
+
+                                        if (compact) {
+                                          return Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              dateFilter,
+                                              const SizedBox(height: 10),
+                                              resultCount,
+                                              const SizedBox(height: 10),
+                                              Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: downloadButton,
                                               ),
-                                        icon: Icon(
-                                          _isAnyManagementDownloadActive
-                                              ? Icons.hourglass_top_rounded
-                                              : Icons.download_rounded,
-                                        ),
-                                        label: Text(
-                                          _isAnyManagementDownloadActive
-                                              ? 'Preparing download...'
-                                              : 'Download filtered results',
-                                        ),
-                                      );
-                                      final resultCount = Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 8,
+                                            ],
+                                          );
+                                        }
+
+                                        return Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Expanded(child: dateFilter),
+                                            const SizedBox(width: 12),
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 10,
+                                              ),
+                                              child: resultCount,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            downloadButton,
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: AppSpacing.item),
+                                    if (filteredResults.isEmpty)
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(
+                                          AppSpacing.item,
                                         ),
                                         decoration: BoxDecoration(
                                           color: AppPalette.surface.withValues(
-                                            alpha: 0.96,
+                                            alpha: 0.94,
                                           ),
                                           borderRadius: BorderRadius.circular(
-                                            999,
+                                            AppSpacing.radiusMd,
                                           ),
                                           border: Border.all(
                                             color: AppPalette.sky.withValues(
-                                              alpha: 0.7,
+                                              alpha: 0.68,
                                             ),
                                           ),
                                         ),
                                         child: Text(
-                                          '${filteredResults.length} saved result${filteredResults.length == 1 ? '' : 's'}',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall
-                                              ?.copyWith(
-                                                color: AppPalette.navy,
-                                                fontWeight: FontWeight.w700,
-                                              ),
+                                          data.recentResults.isEmpty
+                                              ? 'No saved result packages were found for this student yet.'
+                                              : 'No results match this subject filter.',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium,
                                         ),
-                                      );
-
-                                      if (compact) {
-                                        return Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            dateFilter,
-                                            const SizedBox(height: 10),
-                                            resultCount,
-                                            const SizedBox(height: 10),
-                                            Align(
-                                              alignment: Alignment.centerLeft,
-                                              child: downloadButton,
-                                            ),
-                                          ],
-                                        );
-                                      }
-
-                                      return Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.end,
-                                        children: [
-                                          Expanded(child: dateFilter),
-                                          const SizedBox(width: 12),
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 10,
-                                            ),
-                                            child: resultCount,
+                                      )
+                                    else
+                                      ...filteredResults.map(
+                                        (mission) => Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: AppSpacing.compact,
                                           ),
-                                          const SizedBox(width: 12),
-                                          downloadButton,
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(height: AppSpacing.item),
-                                  if (filteredResults.isEmpty)
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(
-                                        AppSpacing.item,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppPalette.surface.withValues(
-                                          alpha: 0.94,
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusMd,
-                                        ),
-                                        border: Border.all(
-                                          color: AppPalette.sky.withValues(
-                                            alpha: 0.68,
-                                          ),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        data.recentResults.isEmpty
-                                            ? 'No saved result packages were found for this student yet.'
-                                            : 'No results match this subject filter.',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
-                                      ),
-                                    )
-                                  else
-                                    ...filteredResults.map(
-                                      (mission) => Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: AppSpacing.compact,
-                                        ),
-                                        child: _ManagementResultCard(
-                                          mission: mission,
-                                          downloadsLocked:
-                                              _isAnyManagementDownloadActive,
-                                          isDownloading:
-                                              _downloadingResultPackageId ==
-                                              mission.latestResultPackageId
-                                                  .trim(),
-                                          isDownloadingTeacherCopy:
-                                              _downloadingTeacherCopyMissionId ==
-                                              mission.missionId.trim(),
-                                          onDownload: () =>
-                                              _downloadMissionResult(
-                                                student:
-                                                    workspace.selectedStudent,
-                                                mission: mission,
-                                              ),
-                                          onDownloadTeacherCopy: () =>
-                                              _downloadMissionTeacherCopy(
-                                                student:
-                                                    workspace.selectedStudent,
-                                                mission: mission,
-                                              ),
-                                          onView: () => _openResultReport(
+                                          child: _ManagementResultCard(
                                             mission: mission,
-                                            student: workspace.selectedStudent,
+                                            downloadsLocked:
+                                                _isAnyManagementDownloadActive,
+                                            isDownloading:
+                                                _downloadingResultPackageId ==
+                                                mission.latestResultPackageId
+                                                    .trim(),
+                                            isDownloadingTeacherCopy:
+                                                _downloadingTeacherCopyMissionId ==
+                                                mission.missionId.trim(),
+                                            onDownload: () =>
+                                                _downloadMissionResult(
+                                                  student:
+                                                      workspace.selectedStudent,
+                                                  mission: mission,
+                                                ),
+                                            onDownloadTeacherCopy: () =>
+                                                _downloadMissionTeacherCopy(
+                                                  student:
+                                                      workspace.selectedStudent,
+                                                  mission: mission,
+                                                ),
+                                            onView: () => _openResultReport(
+                                              mission: mission,
+                                              student:
+                                                  workspace.selectedStudent,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                ],
-                              ),
-                      ),
-                    ],
+                                  ],
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
                 const SizedBox(height: AppSpacing.item),
                 SoftPanel(
                   child: Column(
@@ -6120,49 +6422,162 @@ class _ManagementResultExportRow {
   final ResultPackageData resultPackage;
 }
 
-class _SelectedStudentCard extends StatelessWidget {
-  const _SelectedStudentCard({required this.student});
+class _ManagementDashboardGrid extends StatelessWidget {
+  const _ManagementDashboardGrid({required this.children});
 
-  final StudentSummary student;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // WHY: Use natural-height paired cards on desktop; stack on small screens
+        // so summaries and controls never require horizontal scrolling.
+        final width = constraints.maxWidth >= 1000
+            ? (constraints.maxWidth - AppSpacing.item) / 2
+            : constraints.maxWidth;
+        return Wrap(
+          spacing: AppSpacing.item,
+          runSpacing: AppSpacing.item,
+          children: children
+              .map((child) => SizedBox(width: width, child: child))
+              .toList(growable: false),
+        );
+      },
+    );
+  }
+}
+
+class _ManagementSummaryCard extends StatelessWidget {
+  const _ManagementSummaryCard({
+    required this.title,
+    required this.icon,
+    required this.child,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return SoftPanel(
-      child: Row(
+      solid: true,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppPalette.primaryBlue, AppPalette.aqua],
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.person_rounded, color: Colors.white),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${student.name} · ${student.xp} XP · ${student.streak} day streak',
-                  style: Theme.of(context).textTheme.titleSmall,
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: AppPalette.navy,
+                  borderRadius: BorderRadius.circular(AppSpacing.chip),
                 ),
-                if (student.yearGroup.trim().isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    student.yearGroup.trim(),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppPalette.textMuted,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+                child: Icon(icon, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: AppSpacing.compact),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _ManagementSnapshotStat extends StatelessWidget {
+  const _ManagementSnapshotStat({
+    required this.value,
+    required this.label,
+    this.divider = false,
+  });
+
+  final String value;
+  final String label;
+  final bool divider;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        border: divider
+            ? Border(
+                right: BorderSide(
+                  color: AppPalette.navy.withValues(alpha: 0.15),
+                ),
+              )
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 2),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _SelectedStudentCard extends StatelessWidget {
+  const _SelectedStudentCard({required this.student, required this.actions});
+
+  final StudentSummary student;
+  final Widget actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftPanel(
+      solid: true,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      colors: const [Color(0xFFE7EDF4), Color(0xFFE7EDF4)],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Student management',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const CircleAvatar(
+                backgroundColor: AppPalette.navy,
+                child: Icon(Icons.person_outline_rounded, color: Colors.white),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      student.name,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      '${student.yearGroup.trim().isEmpty ? 'Year group not set' : student.yearGroup.trim()} · ${student.xp} XP · ${student.streak} day streak',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          actions,
         ],
       ),
     );
