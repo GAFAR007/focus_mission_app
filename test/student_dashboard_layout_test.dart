@@ -33,6 +33,8 @@ const _session = AuthSession(
 class _StudentApi extends FocusMissionApi {
   final bool scheduled;
   bool hasMissions = false;
+  List<Map<String, dynamic>> assignments = [];
+  String? requestedMission;
   bool hasResult = false;
   bool hasPapers = false;
   String? requestedSession;
@@ -76,6 +78,7 @@ class _StudentApi extends FocusMissionApi {
         'totalXpCap': 200,
         'dailyLoginXp': 20,
       },
+      'assignedMissions': assignments,
       'recentSessions': [
         {
           'subjectName': 'Art',
@@ -167,10 +170,23 @@ class _StudentApi extends FocusMissionApi {
               'draftFormat': 'QUESTIONS',
               'sessionType': sessionType,
               'status': 'published',
+              'availableOnDate': '2026-09-27',
               'questionCount': 5,
             }),
           ]
         : [];
+  }
+
+  @override
+  Future<StartedMission> startSession({
+    required String token,
+    required String studentId,
+    required String subjectId,
+    required String sessionType,
+    String? missionId,
+  }) {
+    requestedMission = missionId;
+    return Completer<StartedMission>().future;
   }
 
   @override
@@ -259,6 +275,74 @@ void main() {
     });
   }
 
+  for (final width in [390.0, 768.0, 1440.0]) {
+    testWidgets('persistent assignments and task-focus panel at $width', (
+      tester,
+    ) async {
+      final api = _StudentApi()
+        ..assignments = [
+          for (final state in ['available', 'completed', 'redo_requested'])
+            {
+              'id': state,
+              'title': 'Business $state',
+              'subject': {'id': 'business', 'name': 'Business'},
+              'taskCodes': ['P3'],
+              'sessionType': 'afternoon',
+              'availableOnDate': '2026-09-21',
+              'availableOnDay': 'Monday',
+              'assignmentStatus': state,
+              'assignmentAttempt': state == 'redo_requested' ? 2 : 1,
+              if (state == 'completed')
+                'latestResultPackageId': 'previous-result',
+              if (state == 'redo_requested') 'redoOfMissionId': 'completed',
+            },
+        ];
+      await _pump(tester, width: width, api: api);
+      expect(find.text('Morning Mission'), findsOneWidget);
+      expect(find.text('Afternoon Mission'), findsOneWidget);
+      expect(find.text('Business completed'), findsNothing);
+      expect(find.text('Business available'), findsOneWidget);
+      expect(find.text('Business redo_requested'), findsOneWidget);
+      await tester.ensureVisible(find.widgetWithText(ActionChip, 'P3'));
+      await tester.tap(find.widgetWithText(ActionChip, 'P3'));
+      await tester.pumpAndSettle();
+      expect(find.text('Business · P3'), findsWidgets);
+      expect(find.text('Completed · Locked · Attempt 1'), findsOneWidget);
+      expect(find.text('View result'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('View result'));
+      await tester.tap(find.text('View result'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(api.requestedResult, 'previous-result');
+      expect(api.requestedMission, isNull);
+    });
+  }
+
+  testWidgets(
+    'available assignment starts its existing mission ID on a weekend',
+    (tester) async {
+      final api = _StudentApi()
+        ..assignments = [
+          {
+            'id': 'old-monday-mission',
+            'title': 'Business P3',
+            'taskCodes': ['P3'],
+            'subject': {'id': 'business', 'name': 'Business'},
+            'sessionType': 'afternoon',
+            'assignmentStatus': 'available',
+            'availableOnDate': '2026-09-21',
+          },
+        ];
+      await _pump(tester, api: api);
+      await tester.ensureVisible(find.text('Start mission'));
+      await tester.tap(find.text('Start mission'));
+      await tester.pump();
+      expect(api.requestedMission, 'old-monday-mission');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('XP, focus and certification states retain their data', (
     tester,
   ) async {
@@ -286,7 +370,9 @@ void main() {
     expect(api.requestedSubject, 'english');
     expect(api.requestedSession, 'afternoon');
     expect(
-      find.text('No missions are assigned for this subject yet.'),
+      find.text(
+        'No unfinished missions for this lesson today. Check Available Missions for earlier work.',
+      ),
       findsOneWidget,
     );
     expect(find.text('Morning Mission'), findsOneWidget);

@@ -2350,13 +2350,15 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   ) async {
     final stageLabel = mission.draftFormat == 'THEORY'
         ? 'Theory'
-        : 'Essay Builder';
+        : mission.draftFormat == 'ESSAY_BUILDER'
+        ? 'Essay Builder'
+        : 'mission';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Redo $stageLabel'),
+        title: Text('Request $stageLabel redo'),
         content: const Text(
-          "This creates a new editable attempt using the student's previous submitted answer. The current report will show Pending until the redo is submitted and marked.",
+          "This opens a new attempt for the student. The previous attempt and its result stay in history. The new attempt locks after submission.",
         ),
         actions: [
           TextButton(
@@ -2366,7 +2368,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           FilledButton(
             key: const Key('confirm_create_redo'),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Create Redo'),
+            child: const Text('Request redo'),
           ),
         ],
       ),
@@ -6496,6 +6498,7 @@ class _AssignedMissionListItem extends StatelessWidget {
         : isTheory
         ? 'Awaiting submission · $earnedXp/$rewardXp XP'
         : '$scoreCorrect/$scoreTotal · $earnedXp/$rewardXp XP';
+    final canRequestRedo = hasResultPackage && !mission.evidenceCurrentExcluded;
     final canManageSubmittedEvidence = canShowTeacherEvidenceActions(mission);
     final missionType = _assignedMissionFilterFor(mission).label;
     final taskFocus = _assignedMissionTaskGroup(mission);
@@ -6570,6 +6573,11 @@ class _AssignedMissionListItem extends StatelessWidget {
             foregroundColor: _assignedMissionAccent,
             backgroundColor: _assignedMissionAccent.withValues(alpha: 0.09),
           ),
+          const SizedBox(height: 6),
+          Text(
+            '${mission.assignmentLabel} · Attempt ${mission.assignmentAttempt}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           if (mission.teacherNote.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
@@ -6617,8 +6625,8 @@ class _AssignedMissionListItem extends StatelessWidget {
                   onSend: isSendingResult ? null : onSendResult,
                   viewLabel: 'View result',
                   onView: onViewResult,
-                  redoLabel: canManageSubmittedEvidence ? 'Redo' : null,
-                  onRedo: canManageSubmittedEvidence && !isManagingEvidence
+                  redoLabel: canRequestRedo ? 'Request redo' : null,
+                  onRedo: canRequestRedo && !isManagingEvidence
                       ? onRedoResult
                       : null,
                   moveLabel: canManageSubmittedEvidence ? 'Move' : null,

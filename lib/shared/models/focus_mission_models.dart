@@ -450,8 +450,10 @@ class StudentDashboardData {
     required this.subjectCertification,
     required this.todayStandalonePapers,
     this.today,
+    this.assignedMissions = const [],
   });
 
+  final List<MissionPayload> assignedMissions;
   final AppUser student;
   final TodaySchedule? today;
   final List<SessionSummary> recentSessions;
@@ -466,6 +468,9 @@ class StudentDashboardData {
         .toList();
 
     return StudentDashboardData(
+      assignedMissions: (json['assignedMissions'] as List<dynamic>? ?? const [])
+          .map((item) => MissionPayload.fromJson(_asMap(item)))
+          .toList(growable: false),
       student: AppUser.fromJson(_asMap(json['student'])),
       dailyXp: DailyXpSummary.fromJson(_asMap(json['dailyXp'])),
       subjectProgress: (json['subjectProgress'] as List<dynamic>? ?? const [])
@@ -1063,6 +1068,10 @@ class MissionSubject {
 class MissionPayload {
   const MissionPayload({
     required this.id,
+    this.assignmentId = '',
+    this.assignmentAttempt = 1,
+    this.assignmentStatus = 'available',
+    this.completedAt,
     required this.title,
     required this.teacherNote,
     required this.sourceUnitText,
@@ -1100,6 +1109,23 @@ class MissionPayload {
     this.subject,
   });
 
+  final String assignmentId;
+  final int assignmentAttempt;
+  final String assignmentStatus;
+  final String? completedAt;
+  bool get isAssignmentLocked =>
+      assignmentStatus == 'completed' ||
+      assignmentStatus == 'submitted' ||
+      assignmentStatus == 'locked' ||
+      latestResultPackageId.isNotEmpty;
+  bool get isRedoRequested => redoOfMissionId.isNotEmpty && !isAssignmentLocked;
+  String get assignmentLabel => isAssignmentLocked
+      ? 'Completed · Locked'
+      : assignmentStatus == 'in_progress'
+      ? 'In progress'
+      : isRedoRequested
+      ? 'Redo requested'
+      : 'Available';
   final String id;
   final String title;
   final String teacherNote;
@@ -1152,6 +1178,10 @@ class MissionPayload {
 
   MissionPayload copyWith({
     String? id,
+    String? assignmentId,
+    int? assignmentAttempt,
+    String? assignmentStatus,
+    String? completedAt,
     String? title,
     String? teacherNote,
     String? sourceUnitText,
@@ -1190,6 +1220,10 @@ class MissionPayload {
   }) {
     return MissionPayload(
       id: id ?? this.id,
+      assignmentId: assignmentId ?? this.assignmentId,
+      assignmentAttempt: assignmentAttempt ?? this.assignmentAttempt,
+      assignmentStatus: assignmentStatus ?? this.assignmentStatus,
+      completedAt: completedAt ?? this.completedAt,
       title: title ?? this.title,
       teacherNote: teacherNote ?? this.teacherNote,
       sourceUnitText: sourceUnitText ?? this.sourceUnitText,
@@ -1237,6 +1271,10 @@ class MissionPayload {
   factory MissionPayload.fromJson(Map<String, dynamic> json) {
     return MissionPayload(
       id: (json['id'] ?? json['_id'] ?? '').toString(),
+      assignmentId: (json['assignmentId'] ?? json['id'] ?? '').toString(),
+      assignmentAttempt: _asInt(json['assignmentAttempt'] ?? 1),
+      assignmentStatus: (json['assignmentStatus'] ?? 'available').toString(),
+      completedAt: json['completedAt']?.toString(),
       title: (json['title'] ?? '').toString(),
       teacherNote: (json['teacherNote'] ?? '').toString(),
       sourceUnitText: (json['sourceUnitText'] ?? '').toString(),

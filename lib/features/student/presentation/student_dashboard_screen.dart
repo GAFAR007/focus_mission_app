@@ -229,10 +229,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     KeyedSubtree(
                       key: _todaySectionKey,
                       child: _SectionLead(
-                        title: "Today's missions",
+                        title: "Today's lessons",
                         subtitle: today == null
-                            ? 'Your teacher has not assigned a mission yet.'
-                            : '${today.day} · Choose your morning or afternoon mission.',
+                            ? 'No lessons scheduled today. Your available missions stay below.'
+                            : '${today.day} · Your scheduled morning and afternoon lessons.',
                       ),
                     ),
                     const SizedBox(height: AppSpacing.item),
@@ -261,6 +261,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                               today.room,
                             ],
                             onPressed: () => _startMissionWithChoice(
+                              lessonDate: data.dashboard.dailyXp.dateKey,
                               studentId: data.dashboard.student.id,
                               subjectId: today.morningMission.id,
                               sessionType: 'morning',
@@ -294,6 +295,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                               today.room,
                             ],
                             onPressed: () => _startMissionWithChoice(
+                              lessonDate: data.dashboard.dailyXp.dateKey,
                               studentId: data.dashboard.student.id,
                               subjectId: today.afternoonMission.id,
                               sessionType: 'afternoon',
@@ -307,6 +309,34 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           ),
                       ],
                     ),
+                    const SizedBox(height: AppSpacing.section),
+                    _SectionLead(
+                      title: 'Available Missions',
+                      subtitle:
+                          '${data.dashboard.assignedMissions.where((m) => !m.isAssignmentLocked).length} remaining · Available every day until completed.',
+                    ),
+                    const SizedBox(height: AppSpacing.item),
+                    if (data.dashboard.assignedMissions.every(
+                      (m) => m.isAssignmentLocked,
+                    ))
+                      const SoftPanel(
+                        solid: true,
+                        padding: EdgeInsets.all(AppSpacing.item),
+                        child: Text(
+                          'All caught up. New assignments will appear here.',
+                        ),
+                      ),
+                    ...data.dashboard.assignedMissions
+                        .where((m) => !m.isAssignmentLocked)
+                        .map(
+                          (mission) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _AssignedWorkRow(
+                              mission: mission,
+                              onAction: () => _openAssignedMission(mission),
+                            ),
+                          ),
+                        ),
                     if (data.dashboard.todayStandalonePapers.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.section),
                       const _SectionLead(
@@ -405,6 +435,16 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                             .map(
                               (subject) => _MySubjectCard(
                                 summary: subject,
+                                missions: data.dashboard.assignedMissions
+                                    .where(
+                                      (m) => m.subject?.id == subject.subjectId,
+                                    )
+                                    .toList(),
+                                onTaskFocus: (taskCode) => _openTaskFocus(
+                                  subject,
+                                  taskCode,
+                                  data.dashboard.assignedMissions,
+                                ),
                                 onTap: () => _openSubjectReport(subject),
                                 onOpenLatestResult: () =>
                                     _openLatestSubjectResult(subject),
@@ -501,25 +541,114 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     );
   }
 
+  Future<void> _openAssignedMission(MissionPayload mission) async {
+    if (mission.isAssignmentLocked) {
+      if (mission.latestResultPackageId.isEmpty) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => StudentResultReportScreen(
+            session: _session,
+            resultPackageId: mission.latestResultPackageId,
+            api: _api,
+          ),
+        ),
+      );
+      return;
+    }
+    await _startDailyMission(
+      studentId: _session.user.id,
+      subjectId: mission.subject!.id,
+      sessionType: mission.sessionType,
+      subjectName: mission.subject!.name,
+      missionId: mission.id,
+    );
+  }
+
+  Future<void> _openTaskFocus(
+    StudentSubjectReportSummary subject,
+    String? taskCode,
+    List<MissionPayload> assignments,
+  ) async {
+    final missions = assignments
+        .where(
+          (m) =>
+              m.subject?.id == subject.subjectId &&
+              (taskCode == null || m.taskCodes.contains(taskCode)),
+        )
+        .toList();
+    final chosen = await showModalBottomSheet<MissionPayload>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      constraints: const BoxConstraints(maxWidth: 720),
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.8,
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.item),
+          children: [
+            Text(
+              '${subject.subjectName} · ${taskCode ?? 'All task focuses'}',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            for (final locked in [false, true]) ...[
+              if (missions.any((m) => m.isAssignmentLocked == locked)) ...[
+                Text(
+                  locked ? 'Completed' : 'Available',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                ...missions
+                    .where((m) => m.isAssignmentLocked == locked)
+                    .map(
+                      (mission) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _AssignedWorkRow(
+                          mission: mission,
+                          onAction: () =>
+                              Navigator.of(sheetContext).pop(mission),
+                        ),
+                      ),
+                    ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+    if (chosen != null && mounted) await _openAssignedMission(chosen);
+  }
+
   Future<void> _startMissionWithChoice({
     required String studentId,
     required String subjectId,
     required String sessionType,
     required String subjectName,
+    required String lessonDate,
   }) async {
-    final assignedMissions = await _api.fetchStudentAssignedMissions(
+    final allMissions = await _api.fetchStudentAssignedMissions(
       token: _session.token,
       studentId: studentId,
       subjectId: subjectId,
       sessionType: sessionType,
     );
+    final assignedMissions = allMissions
+        .where(
+          (mission) =>
+              !mission.isAssignmentLocked &&
+              mission.availableOnDate == lessonDate,
+        )
+        .toList();
     if (!mounted) {
       return;
     }
     if (assignedMissions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No missions are assigned for this subject yet.'),
+          content: Text(
+            'No unfinished missions for this lesson today. Check Available Missions for earlier work.',
+          ),
         ),
       );
       return;
@@ -609,6 +738,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         return;
       }
 
+      _refreshData();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$subjectName $sessionType mission opened.')),
       );
@@ -804,6 +934,19 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 
       if (fromTimetable) {
         timetableOrder.putIfAbsent(id, () => nextTimetableOrder++);
+      }
+    }
+
+    // A timetable change must not hide an older, unfinished assignment.
+    for (final mission in data.dashboard.assignedMissions) {
+      final subject = mission.subject;
+      if (subject != null) {
+        mergeSubject(
+          subjectId: subject.id,
+          subjectName: subject.name,
+          subjectIcon: subject.icon,
+          subjectColor: subject.color,
+        );
       }
     }
 
@@ -2206,14 +2349,19 @@ class _MySubjectCard extends StatelessWidget {
     required this.summary,
     required this.onTap,
     required this.onOpenLatestResult,
+    required this.missions,
+    required this.onTaskFocus,
   });
 
+  final List<MissionPayload> missions;
+  final ValueChanged<String?> onTaskFocus;
   final StudentSubjectReportSummary summary;
   final VoidCallback onTap;
   final VoidCallback onOpenLatestResult;
 
   @override
   Widget build(BuildContext context) {
+    final taskCodes = missions.expand((m) => m.taskCodes).toSet().toList();
     final subjectColor = _mySubjectColor(summary.subjectColor);
     final remainingLabel = summary.remainingTaskCodes.isEmpty
         ? summary.certificateUnlocked
@@ -2282,6 +2430,32 @@ class _MySubjectCard extends StatelessWidget {
               Text(
                 remainingLabel,
                 style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            if (missions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final code in taskCodes.take(6))
+                    _TaskFocusChip(
+                      code: code,
+                      missions: missions
+                          .where((m) => m.taskCodes.contains(code))
+                          .toList(),
+                      onTap: () => onTaskFocus(code),
+                    ),
+                  if (taskCodes.length > 6 || taskCodes.isEmpty)
+                    ActionChip(
+                      label: Text(
+                        taskCodes.isEmpty
+                            ? 'Assigned work'
+                            : '+${taskCodes.length - 6} more',
+                      ),
+                      onPressed: () => onTaskFocus(null),
+                    ),
+                ],
               ),
             ],
             const SizedBox(height: 12),
@@ -2475,4 +2649,117 @@ class _DashboardSubjectSeed {
   final String subjectName;
   String subjectIcon;
   String subjectColor;
+}
+
+// Both dashboard surfaces reference the same mission IDs and result links.
+class _TaskFocusChip extends StatelessWidget {
+  const _TaskFocusChip({
+    required this.code,
+    required this.missions,
+    required this.onTap,
+  });
+  final String code;
+  final List<MissionPayload> missions;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    final redo = missions.any((m) => m.isRedoRequested);
+    final available = missions.any((m) => !m.isAssignmentLocked);
+    final label = redo
+        ? 'Redo requested'
+        : available
+        ? 'Available'
+        : 'Completed and locked';
+    final color = redo
+        ? const Color(0xFF9A6415)
+        : available
+        ? AppPalette.primaryBlue
+        : const Color(0xFF227A68);
+    return Tooltip(
+      message: '$code · $label',
+      child: ActionChip(
+        avatar: Icon(
+          redo
+              ? Icons.replay_rounded
+              : available
+              ? Icons.circle
+              : Icons.lock_outline,
+          size: 16,
+          color: color,
+        ),
+        label: Text(code),
+        onPressed: onTap,
+        backgroundColor: color.withValues(alpha: 0.08),
+      ),
+    );
+  }
+}
+
+class _AssignedWorkRow extends StatelessWidget {
+  const _AssignedWorkRow({required this.mission, required this.onAction});
+  final MissionPayload mission;
+  final VoidCallback onAction;
+  @override
+  Widget build(BuildContext context) {
+    final locked = mission.isAssignmentLocked;
+    final action = locked
+        ? 'View result'
+        : mission.assignmentStatus == 'in_progress'
+        ? 'Continue'
+        : mission.isRedoRequested
+        ? 'Start again'
+        : 'Start mission';
+    return SoftPanel(
+      solid: true,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${mission.subject?.name ?? 'Subject'}${mission.taskCodes.isEmpty ? '' : ' · ${mission.taskCodes.join(', ')}'}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 4),
+          Text(mission.title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            '${mission.assignmentLabel} · Attempt ${mission.assignmentAttempt}',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          Text(
+            'Assigned ${mission.availableOnDate ?? ''} · Original lesson: ${mission.availableOnDay ?? ''} ${mission.sessionType}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (mission.teacherNote.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              mission.teacherNote,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          if (locked && mission.completedAt != null)
+            Text(
+              'Completed ${mission.completedAt!.split('T').first}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: locked && mission.latestResultPackageId.isEmpty
+                ? null
+                : onAction,
+            icon: Icon(
+              locked
+                  ? Icons.lock_outline
+                  : mission.isRedoRequested
+                  ? Icons.replay_rounded
+                  : Icons.play_arrow_rounded,
+              size: 18,
+            ),
+            label: Text(action),
+          ),
+        ],
+      ),
+    );
+  }
 }
