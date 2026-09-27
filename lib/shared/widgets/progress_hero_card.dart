@@ -6,8 +6,8 @@
  * Students need one high-signal summary area that shows momentum without
  * forcing them to scan multiple widgets.
  * HOW:
- * Compose a SoftPanel with the avatar, streak text, XP labels, optional badge
- * row, and an animated progress bar.
+ * Compose a compact solid navy SoftPanel with the avatar, streak text, XP
+ * labels, optional badge row, and the existing animated progress calculation.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -47,86 +47,71 @@ class ProgressHeroCard extends StatelessWidget {
     final progress = goalXp == 0 ? 0.0 : (currentXp / goalXp).clamp(0.0, 1.0);
 
     return SoftPanel(
-      colors: const [Color(0xFFEAF8FF), Color(0xFFFFFBF2)],
+      solid: true,
+      padding: const EdgeInsets.all(AppSpacing.item),
+      colors: const [AppPalette.navy],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if ((titleBadge ?? '').trim().isNotEmpty) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.88),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                titleBadge!,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppPalette.navy,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.item),
-          ],
           Row(
             children: [
               AvatarBadge(
                 imageUrl: avatarUrl,
-                colors: AppPalette.heroGradient,
-                size: 64,
+                colors: const [Color(0xFF52719B), Color(0xFF52719B)],
+                size: 48,
               ),
-              const SizedBox(width: AppSpacing.item),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(name, style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.local_fire_department_rounded,
-                          size: 16,
-                          color: AppPalette.orange,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          streakLabel,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: AppPalette.navy),
-                        ),
-                      ],
+                    Text(
+                      name,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleLarge?.copyWith(color: Colors.white),
                     ),
-                    if ((highlightMessage ?? '').trim().isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        highlightMessage!,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppPalette.textMuted,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    const SizedBox(height: 4),
+                    Text(
+                      streakLabel,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: const Color(0xFFD8E5F5),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFFFFFF), Color(0xFFE8F2FF)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(trailingIcon, color: AppPalette.primaryBlue),
-              ),
+              const SizedBox(width: 8),
+              Icon(trailingIcon, color: AppPalette.sun, size: 28),
             ],
           ),
+          if ((titleBadge ?? '').trim().isNotEmpty ||
+              (highlightMessage ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 6,
+              children: [
+                if ((titleBadge ?? '').trim().isNotEmpty)
+                  Text(
+                    titleBadge!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.sun,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                if ((highlightMessage ?? '').trim().isNotEmpty)
+                  Text(
+                    highlightMessage!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFFD8E5F5),
+                    ),
+                  ),
+              ],
+            ),
+          ],
           if (statBadges.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.item),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -135,16 +120,16 @@ class ProgressHeroCard extends StatelessWidget {
                     (badge) => Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
-                        vertical: 8,
+                        vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.82),
-                        borderRadius: BorderRadius.circular(999),
+                        color: Colors.white.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         badge,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppPalette.navy,
+                          color: Colors.white,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -153,47 +138,28 @@ class ProgressHeroCard extends StatelessWidget {
                   .toList(growable: false),
             ),
           ],
-          const SizedBox(height: AppSpacing.item),
+          const SizedBox(height: 12),
           Text(
             'XP: $currentXp / $goalXp',
             style: Theme.of(
               context,
-            ).textTheme.bodyLarge?.copyWith(color: AppPalette.navy),
+            ).textTheme.bodyMedium?.copyWith(color: Colors.white),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           TweenAnimationBuilder<double>(
             tween: Tween<double>(begin: 0, end: progress),
             duration: const Duration(milliseconds: 500),
             curve: Curves.easeOutCubic,
-            builder: (context, animatedProgress, child) {
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return Stack(
-                      children: [
-                        Container(
-                          height: 14,
-                          width: double.infinity,
-                          color: Colors.white.withValues(alpha: 0.75),
-                        ),
-                        Container(
-                          height: 14,
-                          width: constraints.maxWidth * animatedProgress,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: AppPalette.progressGradient,
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+            builder: (context, animatedProgress, child) =>
+                LinearProgressIndicator(
+                  value: animatedProgress,
+                  minHeight: 8,
+                  borderRadius: BorderRadius.circular(20),
+                  backgroundColor: Colors.white.withValues(alpha: 0.16),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Color(0xFF77CFB2),
+                  ),
                 ),
-              );
-            },
           ),
         ],
       ),

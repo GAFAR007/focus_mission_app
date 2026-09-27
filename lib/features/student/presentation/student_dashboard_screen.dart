@@ -8,9 +8,9 @@
  * criterion flows that are no longer the main progress story, while still
  * feeling playful and supportive.
  * HOW:
- * Load dashboard data plus timetable context, render more rewarding student
- * cards, and layer guided helper and encouragement popups on top of the
- * existing student-only API data.
+ * Load existing dashboard and timetable data, render compact progress and
+ * responsive subject cards, and keep both session containers visible even
+ * without a schedule. Existing actions, helper and encouragement flows remain.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -28,7 +28,6 @@ import '../../../shared/widgets/profile_avatar_button.dart';
 import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/progress_hero_card.dart';
 import '../../../shared/widgets/soft_panel.dart';
-import '../../../shared/widgets/stat_chip.dart';
 import '../../auth/presentation/role_selection_screen.dart';
 import 'flexible_learning_helper_sheet.dart';
 import 'mission_play_screen.dart';
@@ -37,9 +36,10 @@ import 'student_result_report_screen.dart';
 import 'student_subject_report_screen.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
-  const StudentDashboardScreen({super.key, required this.session});
+  const StudentDashboardScreen({super.key, required this.session, this.api});
 
   final AuthSession session;
+  final FocusMissionApi? api;
 
   @override
   State<StudentDashboardScreen> createState() => _StudentDashboardScreenState();
@@ -60,7 +60,7 @@ enum _StudentMissionType {
 }
 
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
-  final FocusMissionApi _api = FocusMissionApi();
+  late final FocusMissionApi _api;
   final AuthSessionStore _sessionStore = AuthSessionStore();
   static const String _shownSubjectBonusStorageKey =
       'shown_subject_bonus_keys_v1';
@@ -85,6 +85,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? FocusMissionApi();
     _session = widget.session;
     _persistSessionSnapshot();
     _future = _loadData();
@@ -228,68 +229,84 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     KeyedSubtree(
                       key: _todaySectionKey,
                       child: _SectionLead(
-                        title: 'Today: ${today?.day ?? 'No schedule yet'}',
-                        subtitle:
-                            'Pick one mission, keep it simple, and let the helper do the cheering.',
+                        title: "Today's missions",
+                        subtitle: today == null
+                            ? 'Your teacher has not assigned a mission yet.'
+                            : '${today.day} · Choose your morning or afternoon mission.',
                       ),
                     ),
                     const SizedBox(height: AppSpacing.item),
-                    if (today != null) ...[
-                      MissionCard(
-                        title: 'Morning Mission',
-                        subtitle: _missionSubtitle(
-                          today.morningMission.name,
-                          today.room,
-                          today.morningTeacher?.name,
-                        ),
-                        actionLabel: 'Start Mission',
-                        icon: Icons.computer_rounded,
-                        colors: AppPalette.studentGradient,
-                        eyebrow: 'Warm-up mode',
-                        toneMessage:
-                            'Start light, build rhythm, keep your brain comfy.',
-                        featurePills: <String>[
-                          today.morningMission.name,
-                          today.room,
-                        ],
-                        onPressed: () => _startMissionWithChoice(
-                          studentId: data.dashboard.student.id,
-                          subjectId: today.morningMission.id,
-                          sessionType: 'morning',
-                          subjectName: today.morningMission.name,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.item),
-                      MissionCard(
-                        title: 'Afternoon Mission',
-                        subtitle: _missionSubtitle(
-                          today.afternoonMission.name,
-                          today.room,
-                          today.afternoonTeacher?.name,
-                        ),
-                        actionLabel: 'Start Mission',
-                        icon: Icons.account_balance_rounded,
-                        colors: const [AppPalette.primaryBlue, AppPalette.sun],
-                        eyebrow: 'Round two',
-                        toneMessage:
-                            'Steady beats speedy. One focused run is enough.',
-                        featurePills: <String>[
-                          today.afternoonMission.name,
-                          today.room,
-                        ],
-                        onPressed: () => _startMissionWithChoice(
-                          studentId: data.dashboard.student.id,
-                          subjectId: today.afternoonMission.id,
-                          sessionType: 'afternoon',
-                          subjectName: today.afternoonMission.name,
-                        ),
-                      ),
-                    ] else
-                      const SoftPanel(
-                        child: Text(
-                          'No mission is assigned for today yet. Your board will wake up as soon as one is added.',
-                        ),
-                      ),
+                    // WHY: Empty session slots are still part of the day. Keep
+                    // both visible; scheduled lessons retain their existing picker.
+                    _StudentCardGrid(
+                      maxColumns: 2,
+                      minCardWidth: 350,
+                      children: [
+                        if (today != null)
+                          MissionCard(
+                            title: 'Morning Mission',
+                            subtitle: _missionSubtitle(
+                              today.morningMission.name,
+                              today.room,
+                              today.morningTeacher?.name,
+                            ),
+                            actionLabel: 'Start Mission',
+                            icon: Icons.computer_rounded,
+                            colors: AppPalette.studentGradient,
+                            eyebrow: 'Warm-up mode',
+                            toneMessage:
+                                'Start light, build rhythm, keep your brain comfy.',
+                            featurePills: <String>[
+                              today.morningMission.name,
+                              today.room,
+                            ],
+                            onPressed: () => _startMissionWithChoice(
+                              studentId: data.dashboard.student.id,
+                              subjectId: today.morningMission.id,
+                              sessionType: 'morning',
+                              subjectName: today.morningMission.name,
+                            ),
+                          )
+                        else
+                          const _EmptySessionCard(
+                            title: 'Morning Mission',
+                            icon: Icons.wb_sunny_outlined,
+                          ),
+                        if (today != null)
+                          MissionCard(
+                            title: 'Afternoon Mission',
+                            subtitle: _missionSubtitle(
+                              today.afternoonMission.name,
+                              today.room,
+                              today.afternoonTeacher?.name,
+                            ),
+                            actionLabel: 'Start Mission',
+                            icon: Icons.account_balance_rounded,
+                            colors: const [
+                              AppPalette.primaryBlue,
+                              AppPalette.sun,
+                            ],
+                            eyebrow: 'Round two',
+                            toneMessage:
+                                'Steady beats speedy. One focused run is enough.',
+                            featurePills: <String>[
+                              today.afternoonMission.name,
+                              today.room,
+                            ],
+                            onPressed: () => _startMissionWithChoice(
+                              studentId: data.dashboard.student.id,
+                              subjectId: today.afternoonMission.id,
+                              sessionType: 'afternoon',
+                              subjectName: today.afternoonMission.name,
+                            ),
+                          )
+                        else
+                          const _EmptySessionCard(
+                            title: 'Afternoon Mission',
+                            icon: Icons.wb_twilight_rounded,
+                          ),
+                      ],
+                    ),
                     if (data.dashboard.todayStandalonePapers.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.section),
                       const _SectionLead(
@@ -338,37 +355,34 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     const SizedBox(height: AppSpacing.section),
                     const _SectionLead(
                       title: 'This week',
-                      subtitle:
-                          'Quick signals only. No giant dashboard maze today.',
+                      subtitle: 'Your focus, XP and recent sessions.',
                     ),
                     const SizedBox(height: AppSpacing.item),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        StatChip(
-                          value:
-                              '${_averageFocus(data.dashboard.recentSessions)}%',
-                          label: 'Focus score',
-                          colors: AppPalette.studentGradient,
-                        ),
-                        StatChip(
-                          value: '${data.dashboard.student.xp}',
-                          label: 'XP total',
-                          colors: const [
-                            AppPalette.primaryBlue,
-                            AppPalette.aqua,
-                          ],
-                        ),
-                        StatChip(
-                          value: '${data.dashboard.recentSessions.length}',
-                          label: 'Recent sessions',
-                          colors: const [
-                            AppPalette.sky,
-                            AppPalette.primaryBlue,
-                          ],
-                        ),
-                      ],
+                    SoftPanel(
+                      solid: true,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 4,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _WeeklyStat(
+                            value:
+                                '${_averageFocus(data.dashboard.recentSessions)}%',
+                            label: 'Focus score',
+                          ),
+                          _WeeklyStat(
+                            value: '${data.dashboard.student.xp}',
+                            label: 'XP total',
+                          ),
+                          _WeeklyStat(
+                            value: '${data.dashboard.recentSessions.length}',
+                            label: 'Recent sessions',
+                            divider: false,
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: AppSpacing.section),
                     const _SectionLead(
@@ -384,18 +398,19 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                         ),
                       )
                     else
-                      ...mySubjects.map(
-                        (subject) => Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: AppSpacing.item,
-                          ),
-                          child: _MySubjectCard(
-                            summary: subject,
-                            onTap: () => _openSubjectReport(subject),
-                            onOpenLatestResult: () =>
-                                _openLatestSubjectResult(subject),
-                          ),
-                        ),
+                      _StudentCardGrid(
+                        maxColumns: 3,
+                        minCardWidth: 330,
+                        children: mySubjects
+                            .map(
+                              (subject) => _MySubjectCard(
+                                summary: subject,
+                                onTap: () => _openSubjectReport(subject),
+                                onOpenLatestResult: () =>
+                                    _openLatestSubjectResult(subject),
+                              ),
+                            )
+                            .toList(growable: false),
                       ),
                     const SizedBox(height: AppSpacing.section),
                     const _SectionLead(
@@ -406,6 +421,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     const SizedBox(height: AppSpacing.item),
                     if (data.dashboard.recentSessions.isEmpty)
                       const SoftPanel(
+                        solid: true,
+                        padding: EdgeInsets.all(AppSpacing.item),
                         child: Text(
                           'No completed sessions yet. Start the next mission and the board will start telling your story.',
                         ),
@@ -417,6 +434,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                             bottom: AppSpacing.item,
                           ),
                           child: SoftPanel(
+                            solid: true,
+                            padding: const EdgeInsets.all(AppSpacing.item),
                             colors: [
                               Colors.white.withValues(alpha: 0.92),
                               AppPalette.teacherGradient.last.withValues(
@@ -426,12 +445,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                             child: Row(
                               children: [
                                 Container(
-                                  width: 48,
-                                  height: 48,
+                                  width: 36,
+                                  height: 36,
                                   decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: AppPalette.teacherGradient,
-                                    ),
+                                    color: const Color(0xFF218579),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                   child: const Icon(
@@ -1954,6 +1971,121 @@ class _RoundIconButton extends StatelessWidget {
   }
 }
 
+class _StudentCardGrid extends StatelessWidget {
+  const _StudentCardGrid({
+    required this.children,
+    required this.maxColumns,
+    required this.minCardWidth,
+  });
+  final List<Widget> children;
+  final int maxColumns;
+  final double minCardWidth;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      // WHY: Keep mobile single-column and let longer copy grow naturally instead
+      // of imposing tile heights that could hide buttons or certification states.
+      final columns =
+          ((constraints.maxWidth + AppSpacing.item) /
+                  (minCardWidth + AppSpacing.item))
+              .floor()
+              .clamp(1, maxColumns);
+      final width =
+          (constraints.maxWidth - AppSpacing.item * (columns - 1)) / columns;
+      return Wrap(
+        spacing: AppSpacing.item,
+        runSpacing: AppSpacing.item,
+        children: [
+          for (final child in children) SizedBox(width: width, child: child),
+        ],
+      );
+    },
+  );
+}
+
+class _EmptySessionCard extends StatelessWidget {
+  const _EmptySessionCard({required this.title, required this.icon});
+  final String title;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => SoftPanel(
+    solid: true,
+    padding: const EdgeInsets.all(AppSpacing.item),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppPalette.navy,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'No mission assigned yet',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Waiting for your teacher',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    ),
+  );
+}
+
+class _WeeklyStat extends StatelessWidget {
+  const _WeeklyStat({
+    required this.value,
+    required this.label,
+    this.divider = true,
+  });
+  final String value;
+  final String label;
+  final bool divider;
+
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        border: divider
+            ? Border(
+                right: BorderSide(
+                  color: AppPalette.navy.withValues(alpha: 0.14),
+                ),
+              )
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 4),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    ),
+  );
+}
+
 class _DailyXpPanel extends StatelessWidget {
   const _DailyXpPanel({required this.summary});
 
@@ -1962,7 +2094,8 @@ class _DailyXpPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SoftPanel(
-      colors: const [Color(0xFFFFFCFF), Color(0xFFEAF9FF)],
+      solid: true,
+      padding: const EdgeInsets.all(AppSpacing.item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1970,36 +2103,25 @@ class _DailyXpPanel extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Daily XP rocket',
+                  'Daily XP',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              const _MiniPill(label: 'Keep it light'),
+              Text(
+                '${summary.totalXp} / ${summary.totalXpCap} XP',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Every little point counts. You do not need a perfect day to make progress.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-          ),
           const SizedBox(height: 10),
-          Text(
-            '${summary.totalXp} / ${summary.totalXpCap} XP',
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-          const SizedBox(height: 8),
           LinearProgressIndicator(
-            minHeight: 10,
+            minHeight: 8,
             value: summary.totalXpCap == 0
                 ? 0
                 : (summary.totalXp / summary.totalXpCap).clamp(0, 1),
             borderRadius: BorderRadius.circular(999),
-            backgroundColor: Colors.white.withValues(alpha: 0.66),
-            valueColor: const AlwaysStoppedAnimation<Color>(
-              AppPalette.primaryBlue,
-            ),
+            backgroundColor: AppPalette.navy.withValues(alpha: 0.08),
+            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF218579)),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -2064,9 +2186,9 @@ class _MiniPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.68),
+        color: AppPalette.navy.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -2103,88 +2225,107 @@ class _MySubjectCard extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       child: SoftPanel(
-        colors: [
-          subjectColor.withValues(alpha: 0.16),
-          Colors.white.withValues(alpha: 0.84),
-        ],
-        child: Row(
+        solid: true,
+        padding: const EdgeInsets.all(AppSpacing.item),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: subjectColor,
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Icon(
-                _mySubjectIcon(summary.subjectName, summary.subjectIcon),
-                color: Colors.white,
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: subjectColor,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    _mySubjectIcon(summary.subjectName, summary.subjectIcon),
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    summary.subjectName,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Assessment ${summary.assessmentCompletionPercentage}% · ${summary.assessmentAverageScore}% average',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            Text('Certification', style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 4),
+            Text(
+              summary.certificationEnabled
+                  ? '${summary.passedTaskFocusCount}/${summary.requiredTaskFocusCount} task focuses passed'
+                  : 'Not active',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppPalette.navy,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(width: AppSpacing.item),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          summary.subjectName,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      if (summary.certificateUnlocked)
-                        const _MiniPill(label: 'Certificate unlocked'),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Assessment ${summary.assessmentCompletionPercentage}% · ${summary.assessmentAverageScore}% average',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppPalette.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    summary.certificationEnabled
-                        ? '${summary.passedTaskFocusCount}/${summary.requiredTaskFocusCount} task focuses passed'
-                        : 'No active certification template',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppPalette.navy,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    remainingLabel,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppPalette.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.item),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      FilledButton.tonalIcon(
-                        onPressed: onTap,
-                        icon: const Icon(Icons.visibility_rounded),
-                        label: const Text('View subject report'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: onOpenLatestResult,
-                        icon: const Icon(Icons.article_rounded),
-                        label: const Text('Open latest result'),
-                      ),
-                    ],
-                  ),
-                ],
+            // WHY: Suppress only the duplicate inactive explanation. Unlocked,
+            // pending-review and outstanding task-code states remain distinct.
+            if (summary.certificationEnabled ||
+                summary.certificateUnlocked ||
+                summary.remainingTaskCodes.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                remainingLabel,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFEAF0F8),
+                    foregroundColor: AppPalette.navy,
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: onTap,
+                  icon: const Icon(Icons.visibility_rounded, size: 18),
+                  label: const Text('View subject report'),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppPalette.navy,
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    side: BorderSide(
+                      color: AppPalette.navy.withValues(alpha: 0.25),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: onOpenLatestResult,
+                  icon: const Icon(Icons.article_rounded, size: 18),
+                  label: const Text('Open latest result'),
+                ),
+              ],
             ),
           ],
         ),
@@ -2200,28 +2341,21 @@ class _HelperBubbleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCompact = MediaQuery.sizeOf(context).width < 760;
-
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(20),
         child: Ink(
-          padding: EdgeInsets.symmetric(
-            horizontal: isCompact ? 16 : 18,
-            vertical: isCompact ? 16 : 14,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppPalette.aqua, AppPalette.primaryBlue],
-            ),
-            borderRadius: BorderRadius.circular(999),
+            color: const Color(0xFF187F79),
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
                 color: AppPalette.primaryBlue.withValues(alpha: 0.28),
-                blurRadius: 24,
-                offset: const Offset(0, 12),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -2233,7 +2367,7 @@ class _HelperBubbleButton extends StatelessWidget {
                 color: Colors.white,
                 size: 22,
               ),
-              if (!isCompact) ...[
+              ...[
                 const SizedBox(width: 10),
                 Text(
                   'Helper',
