@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:focus_mission_app/shared/widgets/release_history_button.dart';
+import 'package:focus_mission_app/core/theme/app_theme.dart';
 
 void main() {
   final history = <String, dynamic>{
@@ -41,6 +42,7 @@ void main() {
   ) async {
     SharedPreferences.setMockInitialValues({});
     Widget app(String user) => MaterialApp(
+      theme: AppTheme.lightTheme,
       home: Scaffold(
         body: ReleaseHistoryButton(
           key: ValueKey(user),
@@ -60,6 +62,15 @@ void main() {
     expect(find.text('New'), findsOneWidget);
     expect(find.text('Fixed'), findsOneWidget);
     expect(find.text('Improved'), findsOneWidget); // Previous release only.
+    final heading = tester.widget<Text>(find.text('New'));
+    final theme = Theme.of(tester.element(find.text('New')));
+    final foreground = heading.style!.color!.computeLuminance();
+    final background = theme.colorScheme.surfaceContainerHigh
+        .computeLuminance();
+    expect(
+      (background + 0.05) / (foreground + 0.05),
+      greaterThanOrEqualTo(4.5),
+    );
     await tester.tap(find.byTooltip('Close release history'));
     await tester.pumpAndSettle();
     expect(find.text('v2.1.0 • New'), findsNothing);
@@ -84,6 +95,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
+        theme: AppTheme.lightTheme,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,

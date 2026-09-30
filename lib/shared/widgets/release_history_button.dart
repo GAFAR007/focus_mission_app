@@ -187,7 +187,11 @@ class _ReleaseEntry extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               '${category[0].toUpperCase()}${category.substring(1)}',
-              style: Theme.of(context).textTheme.labelLarge,
+              // The shared label style is white for buttons. These headings
+              // sit on a light dialog surface and need its foreground color.
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
             for (final note in changes[category] as List)
               Padding(
