@@ -1,6 +1,26 @@
 {
-  "version": "2.3.0",
+  "version": "2.3.1",
   "releases": [
+    {
+      "version": "2.3.1",
+      "previousVersion": "2.3.0",
+      "releasedAt": "2026-09-30T19:06:37.400Z",
+      "title": "Pong pacing, collisions, and online responsiveness",
+      "changes": {
+        "new": [],
+        "improved": [
+          "Pong starts faster and ramps through the 15 levels; rallies and moving-paddle strikes add controlled pace within the server speed cap.",
+          "Local paddle and Forward Rush motion respond immediately while authoritative multiplayer frames render with eased interpolation and correction."
+        ],
+        "fixed": [
+          "Swept paddle contacts and stable obstacle normals reduce high-speed misses, sticking, and repeated contact."
+        ]
+      },
+      "source": {
+        "frontend": "208061b3d1fcac1d7b76b601d9d11d849bbdd21d",
+        "backend": "a5ab911010f707c2cc71b3aabcfe55d16491a20e"
+      }
+    },
     {
       "version": "2.3.0",
       "previousVersion": "2.2.0",
