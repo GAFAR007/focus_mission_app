@@ -1,6 +1,23 @@
 {
-  "version": "2.1.0",
+  "version": "2.1.1",
   "releases": [
+    {
+      "version": "2.1.1",
+      "previousVersion": "2.1.0",
+      "releasedAt": "2026-09-30T14:47:29.371Z",
+      "title": "Clearer release notes",
+      "changes": {
+        "new": [],
+        "improved": [],
+        "fixed": [
+          "Made release-note headings easier to read."
+        ]
+      },
+      "source": {
+        "frontend": "a5ee91fc18ed0c60c472d5b15b26d239b3107af1",
+        "backend": "a13d4131c0196f22edc75b046399c9c60d864083"
+      }
+    },
     {
       "version": "2.1.0",
       "previousVersion": "2.0.0",
