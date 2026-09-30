@@ -63,7 +63,9 @@ const String _noTeacherStudentsMessage =
     'No students are assigned to this teacher yet.';
 
 bool canShowTeacherEvidenceActions(MissionPayload mission) {
-  final format = mission.draftFormat.trim().toUpperCase();
+  final format = (mission.namingDraftFormat ?? mission.draftFormat)
+      .trim()
+      .toUpperCase();
   return mission.latestResultPackageId.trim().isNotEmpty &&
       mission.evidenceCurrentExcluded == false &&
       (format == 'THEORY' || format == 'ESSAY_BUILDER');
@@ -2141,8 +2143,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       SnackBar(
         content: Text(
           mission.isPublished
-              ? '${mission.title} is now live for ${workspace.selectedStudent.name}.'
-              : '${mission.title} was saved as a draft.',
+              ? '${mission.displayTitle} is now live for ${workspace.selectedStudent.name}.'
+              : '${mission.displayTitle} was saved as a draft.',
         ),
       ),
     );
@@ -2272,7 +2274,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${updatedMission.title} moved back to drafts.'),
+          content: Text('${updatedMission.displayTitle} moved back to drafts.'),
         ),
       );
     } catch (error) {
@@ -2658,7 +2660,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Result sent for "${mission.title}".')),
+        SnackBar(content: Text('Result sent for "${mission.displayTitle}".')),
       );
     } catch (error) {
       if (!mounted) {
@@ -3201,8 +3203,10 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
 
   bool _isAssessmentDraft(MissionPayload mission) {
     return mission.isDraft &&
-        mission.draftFormat != 'ESSAY_BUILDER' &&
-        (mission.questionCount == 10 || mission.questions.length == 10);
+        mission.draftFormat == 'QUESTIONS' &&
+        mission.assessmentSequenceByTaskCode.values.any(
+          (value) => value == 'A' || value == 'B',
+        );
   }
 
   Future<void> _openCriterionReview(
@@ -3518,9 +3522,9 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         return;
       }
 
-      final resultTitle = result.title.trim().isEmpty
+      final resultTitle = result.displayTitle.trim().isEmpty
           ? 'result'
-          : result.title.trim();
+          : result.displayTitle.trim();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -3578,7 +3582,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     required ResultHistoryItem result,
   }) {
     final studentSlug = _sanitizeTeacherDownloadFileName(studentName);
-    final resultSlug = _sanitizeTeacherDownloadFileName(result.title);
+    final resultSlug = _sanitizeTeacherDownloadFileName(result.displayTitle);
     final dateSlug = _sanitizeTeacherDownloadFileName(
       _studentResultDateKeyForResult(result),
     );
@@ -5658,7 +5662,7 @@ class _DraftMissionListItem extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      mission.title,
+                      mission.displayTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -5855,7 +5859,7 @@ class _MissionResultsState extends State<_MissionResults> {
       ),
     };
     if (comparison != 0) return comparison;
-    final titleComparison = left.title.compareTo(right.title);
+    final titleComparison = left.displayTitle.compareTo(right.displayTitle);
     return titleComparison != 0 ? titleComparison : left.id.compareTo(right.id);
   }
 
@@ -5869,7 +5873,7 @@ class _MissionResultsState extends State<_MissionResults> {
               ? mission.isAssignmentLocked
               : !mission.isAssignmentLocked);
       final searchable =
-          '${mission.title} ${mission.subject?.name ?? ''} '
+          '${mission.displayTitle} ${mission.title} ${mission.subject?.name ?? ''} ${mission.displayType} '
                   '${mission.taskCodes.join(' ')} ${_assignedMissionFilterFor(mission).label}'
               .toLowerCase();
       return matchesStatus && searchable.contains(query);
@@ -6270,7 +6274,8 @@ enum _AssignedMissionFilter {
   theory('Theory'),
   essay('Essay'),
   assessmentA('Assessment A'),
-  assessmentB('Assessment B');
+  assessmentB('Assessment B'),
+  unknown('Type unavailable');
 
   const _AssignedMissionFilter(this.label);
 
@@ -6282,6 +6287,11 @@ List<_AssignedMissionFilter> _missionTypeFilters(
 ) {
   return <_AssignedMissionFilter>[
     _AssignedMissionFilter.all,
+    if (missions.any(
+      (mission) =>
+          _assignedMissionFilterFor(mission) == _AssignedMissionFilter.unknown,
+    ))
+      _AssignedMissionFilter.unknown,
     _AssignedMissionFilter.objective,
     _AssignedMissionFilter.theory,
     _AssignedMissionFilter.essay,
@@ -6311,13 +6321,14 @@ _AssignedMissionFilter _assignedMissionFilterFor(MissionPayload mission) {
   if (assessmentSequences.contains('B') && !assessmentSequences.contains('A')) {
     return _AssignedMissionFilter.assessmentB;
   }
-  if (assessmentSequences.contains('A') || mission.questionCount == 10) {
-    // WHY: Current assessment missions persist A/B explicitly. A legacy
-    // unsequenced 10-question mission is still shown with the required first
-    // assessment instead of being mixed into day-to-day Objective work.
+  if (assessmentSequences.contains('A')) {
+    // WHY: Assessment classification comes from stored sequence metadata,
+    // never from question count.
     return _AssignedMissionFilter.assessmentA;
   }
-  return _AssignedMissionFilter.objective;
+  return format == 'QUESTIONS'
+      ? _AssignedMissionFilter.objective
+      : _AssignedMissionFilter.unknown;
 }
 
 String _assignedMissionTaskGroup(MissionPayload mission) {
@@ -6782,7 +6793,7 @@ class _AssignedMissionListItem extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      mission.title,
+                      mission.displayTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -7385,10 +7396,8 @@ class _TeacherStudentResultCard extends StatelessWidget {
     final formatLabel = result.isPaperAssessment
         ? 'Paper assessment'
         : result.draftFormat == 'ESSAY_BUILDER'
-        ? 'Essay Builder'
-        : result.draftFormat == 'THEORY'
-        ? 'Theory'
-        : '${result.questionCount} questions';
+        ? 'Essay'
+        : '${result.displayType} · Q${result.questionCount}';
 
     return Container(
       width: double.infinity,
@@ -7404,7 +7413,7 @@ class _TeacherStudentResultCard extends StatelessWidget {
           LayoutBuilder(
             builder: (context, constraints) {
               final title = Text(
-                result.title,
+                result.displayTitle,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   color: ResultReportVisualTokens.navy,
                   fontWeight: FontWeight.w800,
@@ -8841,7 +8850,7 @@ class _MissionCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          mission.title,
+                          mission.displayTitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleSmall,

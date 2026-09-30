@@ -12,6 +12,7 @@
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
 import 'xp_journey.dart';
+import 'mission_display_name.dart';
 
 class AppUser {
   const AppUser({
@@ -1086,6 +1087,7 @@ class MissionPayload {
     required this.sourceFileName,
     required this.sourceFileType,
     required this.draftFormat,
+    this.namingDraftFormat,
     required this.essayMode,
     required this.draftJson,
     required this.source,
@@ -1141,6 +1143,20 @@ class MissionPayload {
   final String sourceFileName;
   final String sourceFileType;
   final String draftFormat;
+  // Missing legacy type remains unknown for naming, without changing playback defaults.
+  final String? namingDraftFormat;
+  String get displayType {
+    final label = missionTypeLabel(namingDraftFormat ?? draftFormat);
+    return label.isEmpty ? 'Type unavailable' : label;
+  }
+
+  String get displayTitle => missionDisplayName(
+    title: title,
+    type: namingDraftFormat ?? draftFormat,
+    taskCodes: taskCodes,
+    questionCount: questionCount,
+    subject: subject?.name ?? '',
+  );
   final String essayMode;
   final Map<String, dynamic>? draftJson;
   final String source;
@@ -1238,6 +1254,7 @@ class MissionPayload {
       sourceFileName: sourceFileName ?? this.sourceFileName,
       sourceFileType: sourceFileType ?? this.sourceFileType,
       draftFormat: draftFormat ?? this.draftFormat,
+      namingDraftFormat: draftFormat ?? namingDraftFormat,
       essayMode: essayMode ?? this.essayMode,
       draftJson: draftJson ?? this.draftJson,
       source: source ?? this.source,
@@ -1289,6 +1306,8 @@ class MissionPayload {
       sourceFileName: (json['sourceFileName'] ?? '').toString(),
       sourceFileType: (json['sourceFileType'] ?? '').toString(),
       draftFormat: (json['draftFormat'] ?? 'QUESTIONS').toString(),
+      namingDraftFormat:
+          (json['namingDraftFormat'] ?? json['draftFormat'] ?? '').toString(),
       essayMode: (json['essayMode'] ?? '').toString(),
       draftJson: _asNullableMap(json['draftJson']),
       source: (json['source'] ?? '').toString(),
@@ -1344,6 +1363,7 @@ class ResultHistoryItem {
     required this.sourceFileName,
     required this.sourceFileType,
     required this.draftFormat,
+    this.namingDraftFormat,
     required this.essayMode,
     required this.draftJson,
     required this.source,
@@ -1379,6 +1399,22 @@ class ResultHistoryItem {
   final String sourceFileName;
   final String sourceFileType;
   final String draftFormat;
+  // Missing legacy type remains unknown for naming, without changing playback defaults.
+  final String? namingDraftFormat;
+  String get displayType {
+    final label = missionTypeLabel(namingDraftFormat ?? draftFormat);
+    return label.isEmpty ? 'Type unavailable' : label;
+  }
+
+  String get displayTitle => isPaperAssessment
+      ? title
+      : missionDisplayName(
+          title: title,
+          type: namingDraftFormat ?? draftFormat,
+          taskCodes: taskCodes,
+          questionCount: questionCount,
+          subject: subject?.name ?? '',
+        );
   final String essayMode;
   final Map<String, dynamic>? draftJson;
   final String source;
@@ -1426,6 +1462,7 @@ class ResultHistoryItem {
       sourceFileName: sourceFileName,
       sourceFileType: sourceFileType,
       draftFormat: draftFormat,
+      namingDraftFormat: namingDraftFormat,
       essayMode: essayMode,
       draftJson: draftJson,
       source: source,
@@ -1481,6 +1518,8 @@ class ResultHistoryItem {
       sourceFileName: (json['sourceFileName'] ?? '').toString(),
       sourceFileType: (json['sourceFileType'] ?? '').toString(),
       draftFormat: (json['draftFormat'] ?? 'QUESTIONS').toString(),
+      namingDraftFormat:
+          (json['namingDraftFormat'] ?? json['draftFormat'] ?? '').toString(),
       essayMode: (json['essayMode'] ?? '').toString(),
       draftJson: _asNullableMap(json['draftJson']),
       source: (json['source'] ?? '').toString(),
@@ -2445,6 +2484,16 @@ class ResultPackageData {
   final String? updatedAt;
   final MissionCertificationSummary? certification;
   final List<ResultSendLog> sendLogs;
+
+  String get displayTitle => resultKind == 'paper_assessment'
+      ? meta.missionTitle
+      : missionDisplayName(
+          title: meta.missionTitle,
+          type: missionType,
+          taskCodes: meta.taskCodes,
+          subject: meta.subject,
+          questionCount: (evidence['questions'] as List<dynamic>?)?.length,
+        );
 
   factory ResultPackageData.fromJson(Map<String, dynamic> json) {
     return ResultPackageData(

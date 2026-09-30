@@ -4455,9 +4455,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         return;
       }
 
-      final missionTitle = mission.title.trim().isEmpty
+      final missionTitle = mission.displayTitle.trim().isEmpty
           ? 'mission'
-          : mission.title.trim();
+          : mission.displayTitle.trim();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -4510,9 +4510,9 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         return;
       }
 
-      final missionTitle = mission.title.trim().isEmpty
+      final missionTitle = mission.displayTitle.trim().isEmpty
           ? 'mission'
-          : mission.title.trim();
+          : mission.displayTitle.trim();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -4590,7 +4590,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     required ResultHistoryItem mission,
   }) {
     final studentSlug = _sanitizeManagementFileName(student.name);
-    final missionSlug = _sanitizeManagementFileName(mission.title);
+    final missionSlug = _sanitizeManagementFileName(mission.displayTitle);
     final dateSlug = _sanitizeManagementFileName(
       _resultDateKeyForMission(mission),
     );
@@ -4602,7 +4602,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     required ResultHistoryItem mission,
   }) {
     final studentSlug = _sanitizeManagementFileName(student.name);
-    final missionSlug = _sanitizeManagementFileName(mission.title);
+    final missionSlug = _sanitizeManagementFileName(mission.displayTitle);
     final subjectSlug = _sanitizeManagementFileName(
       (mission.subject?.name ?? 'subject').trim(),
     );
@@ -4885,8 +4885,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         if (subjectCompare != 0) {
           return subjectCompare;
         }
-        return left.resultPackage.meta.missionTitle.compareTo(
-          right.resultPackage.meta.missionTitle,
+        return left.resultPackage.displayTitle.compareTo(
+          right.resultPackage.displayTitle,
         );
       });
 
@@ -4917,7 +4917,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                 : _selectedSubject,
           ].join(' · ');
     final heroTitle = rows.length == 1
-        ? '${rows.first.resultPackage.meta.missionTitle} Result Export'
+        ? '${rows.first.resultPackage.displayTitle} Result Export'
         : '${student.name} Result Export';
     final heroSummary = rows.length == 1
         ? rows.first.mission.isPaperAssessment
@@ -5010,7 +5010,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
         '<meta name="viewport" content="width=device-width, initial-scale=1" />',
       )
       ..writeln(
-        '<title>${_escapeManagementHtml('${mission.title} · Teacher Copy')}</title>',
+        '<title>${_escapeManagementHtml('${mission.displayTitle} · Teacher Copy')}</title>',
       )
       ..writeln('<style>${_buildManagementTeacherCopyStyles()}</style>')
       ..writeln('</head>')
@@ -5019,7 +5019,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       ..writeln('<section class="hero">')
       ..writeln('<div class="hero-copy">')
       ..writeln('<span class="copy-chip">Teacher Copy</span>')
-      ..writeln('<h1>${_escapeManagementHtml(mission.title)}</h1>')
+      ..writeln('<h1>${_escapeManagementHtml(mission.displayTitle)}</h1>')
       ..writeln(
         '<p class="hero-summary">Teacher-ready mission copy with full question content, all options, answer keys, and guidance.</p>',
       )
@@ -5315,7 +5315,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       ..writeln('<article class="result-card">')
       ..writeln('<div class="result-header">')
       ..writeln('<div>')
-      ..writeln('<h4>${_escapeManagementHtml(meta.missionTitle)}</h4>')
+      ..writeln('<h4>${_escapeManagementHtml(resultPackage.displayTitle)}</h4>')
       ..writeln(
         '<p class="result-subtitle">${_escapeManagementHtml(_managementFormatLabel(mission))} · ${_escapeManagementHtml(mission.sessionType.toUpperCase())}</p>',
       )
@@ -5634,7 +5634,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
     if (mission.draftFormat == 'ESSAY_BUILDER') {
       return 'Essay Builder';
     }
-    return mission.questionCount >= 10 ? 'Assessment' : 'Objective Mission';
+    return mission.displayType;
   }
 
   String _buildManagementMetaCardHtml({
@@ -8349,10 +8349,8 @@ class _ManagementResultCard extends StatelessWidget {
     final formatLabel = mission.isPaperAssessment
         ? 'Paper assessment'
         : mission.draftFormat == 'ESSAY_BUILDER'
-        ? 'Essay Builder'
-        : mission.draftFormat == 'THEORY'
-        ? 'Theory'
-        : '${mission.questionCount} questions';
+        ? 'Essay'
+        : '${mission.displayType} · Q${mission.questionCount}';
 
     return Container(
       width: double.infinity,
@@ -8368,7 +8366,7 @@ class _ManagementResultCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  mission.title,
+                  mission.displayTitle,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),

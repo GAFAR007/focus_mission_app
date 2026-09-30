@@ -24,6 +24,7 @@ import '../../../core/utils/download_text_file.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../core/utils/youtube_video.dart';
 import '../../../shared/models/focus_mission_models.dart';
+import '../../../shared/models/mission_display_name.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/learning_video_card.dart';
 import '../../../shared/widgets/question_evidence_panel.dart';
@@ -208,11 +209,12 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     super.initState();
     _selectedSessionType = widget.sessionType;
     _selectedTargetDate = _dateOnly(widget.targetDate);
-    final slotLabel = _selectedSessionType == 'morning'
-        ? 'Morning'
-        : 'Afternoon';
     _titleController = TextEditingController(
-      text: '${widget.subject.name} $slotLabel Mission',
+      text: missionDisplayName(
+        title: '',
+        type: _draftFormat,
+        questionCount: _questionCount,
+      ),
     );
 
     if (widget.initialDraft != null) {
@@ -606,7 +608,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         TextFormField(
           controller: _titleController,
           decoration: const InputDecoration(
-            hintText: 'English Reading Mission',
+            hintText: 'P1 Objective Q5 or a custom title',
           ),
           validator: (value) {
             if ((value ?? '').trim().isEmpty) {
@@ -761,6 +763,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                             : canEditQuestionCount
                             ? () => setState(() {
                                 _questionCount = option.$1;
+                                _syncGeneratedTitle();
                                 _applyAssessmentModeDefaultsIfNeeded();
                               })
                             : null,
@@ -824,6 +827,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                             // WHY: Theory mode is intentionally capped at a
                             // short 2 to 5 question range for fast focus.
                             _questionCount = value.round();
+                            _syncGeneratedTitle();
                           })
                         : null,
                   ),
@@ -3131,6 +3135,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         _EditableQuestionController.emptyTheory(),
       ];
       _questionCount = _questionEditors.length;
+      _syncGeneratedTitle();
     });
   }
 
@@ -3146,6 +3151,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     setState(() {
       _questionEditors = nextEditors;
       _questionCount = _questionEditors.length;
+      _syncGeneratedTitle();
     });
   }
 
@@ -3762,12 +3768,13 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           // WHY: The upload flow should save the teacher time by prefilling the
           // draft suggestion fields before any mission is generated.
           if (!_hasDraft && mode == _SourceUploadMode.aiDraft) {
-            _titleController.text = extracted.unitPlan.suggestedMissionTitle;
+            // Keep a teacher title; generated names follow the selected fields.
             _teacherNoteController.text =
                 extracted.unitPlan.suggestedTeacherNote;
             _questionCount = _normalizedQuestionCountForDraftFormat(
               extracted.unitPlan.suggestedQuestionCount,
             );
+            _syncGeneratedTitle();
             _applyAssessmentModeDefaultsIfNeeded();
           }
         }
@@ -3876,7 +3883,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     if (parsedAvailableDate != null) {
       _selectedTargetDate = _dateOnly(parsedAvailableDate);
     }
-    _titleController.text = mission.title;
+    _titleController.text = mission.displayTitle;
     _teacherNoteController.text = mission.teacherNote;
     _unitTextController.text = mission.sourceUnitText;
     _rawUploadedSourceText = mission.sourceRawText.trim();
@@ -3910,6 +3917,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     _questionEditors = mission.questions
         .map(_EditableQuestionController.fromMissionQuestion)
         .toList(growable: false);
+    _syncGeneratedTitle();
     _captureEditorBaseline();
   }
 
@@ -3956,15 +3964,28 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         : _objectiveXpReward;
   }
 
+  void _syncGeneratedTitle() {
+    // Only recognized generated titles follow edits; teacher wording is retained.
+    _titleController.text = missionDisplayName(
+      title: _titleController.text,
+      type: _draftFormat,
+      taskCodes: _selectedTaskCodes,
+      questionCount: _questionCount,
+      subject: widget.subject.name,
+    );
+  }
+
   void _setDraftFormat(String draftFormat) {
     final normalized = draftFormat.trim().toUpperCase();
 
     setState(() {
       _draftFormat = normalized;
+      _syncGeneratedTitle();
       _questionCount = _normalizedQuestionCountForDraftFormat(
         _questionCount,
         draftFormat: normalized,
       );
+      _syncGeneratedTitle();
       _applyAssessmentModeDefaultsIfNeeded();
     });
   }
@@ -3982,6 +4003,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     // remain consistent across teacher drafts and publishing.
     _difficulty = 'hard';
     _draftFormat = 'QUESTIONS';
+    _syncGeneratedTitle();
   }
 
   String _buildEditorSignature() {
@@ -4326,6 +4348,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
     setState(() {
       _selectedTaskCodes = updated;
+      _syncGeneratedTitle();
       _errorMessage = null;
     });
 
@@ -4436,6 +4459,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         _selectedTargetDate = _dateOnly(result.targetDate);
         _difficulty = 'hard';
         _selectedTaskCodes = result.taskCodes;
+        _syncGeneratedTitle();
         _uploadedSource = null;
         _sourceUploadReadiness = null;
         _activeSourceUploadMode = _SourceUploadMode.populateDraft;
@@ -4448,10 +4472,12 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
     setState(() {
       _questionCount = _assessmentQuestionCount;
+      _syncGeneratedTitle();
       _selectedSessionType = result.sessionType;
       _selectedTargetDate = _dateOnly(result.targetDate);
       _difficulty = 'hard';
       _selectedTaskCodes = result.taskCodes;
+      _syncGeneratedTitle();
       _errorMessage = null;
       if (result.sourceRawText.trim().isNotEmpty) {
         _uploadedSource = null;

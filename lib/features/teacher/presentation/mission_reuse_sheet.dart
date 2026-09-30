@@ -307,7 +307,7 @@ class _MissionReuseSheetState extends State<_MissionReuseSheet> {
               ),
               const SizedBox(height: 6),
               Text(
-                'A new draft will be created. ${widget.sourceMission.title} stays unchanged.',
+                'A new draft will be created. ${widget.sourceMission.displayTitle} stays unchanged.',
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
@@ -511,7 +511,7 @@ class _MissionReuseSheetState extends State<_MissionReuseSheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              '${mission.title} was created for ${selectedStudent?.name ?? 'the selected student'} on ${mission.availableOnDate ?? 'their lesson date'}.',
+              '${mission.displayTitle} was created for ${selectedStudent?.name ?? 'the selected student'} on ${mission.availableOnDate ?? 'their lesson date'}.',
             ),
             const SizedBox(height: AppSpacing.section),
             SizedBox(

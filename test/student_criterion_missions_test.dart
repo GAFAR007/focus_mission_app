@@ -76,6 +76,7 @@ void main() {
       missions: [
         mission(
           id: 'assessment',
+          assessmentSequence: {'P1': 'A'},
           format: 'QUESTIONS',
           questionCount: 10,
           taskCodes: ['P1'],
@@ -110,8 +111,8 @@ void main() {
 
     expect(groups, hasLength(1));
     expect(groups.single.entries.map((entry) => entry.stageLabel), [
-      'Q5',
-      'Q8',
+      'Objective Q5',
+      'Objective Q8',
       'Essay',
       'Theory',
       'Assessment A',

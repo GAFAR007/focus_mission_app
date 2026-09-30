@@ -250,15 +250,15 @@ void main() {
     ) async {
       await _pump(tester, width: width);
       expect(tester.takeException(), isNull);
-      expect(find.text('Morning Mission'), findsOneWidget);
-      expect(find.text('Afternoon Mission'), findsOneWidget);
+      expect(find.text('Morning session'), findsOneWidget);
+      expect(find.text('Afternoon session'), findsOneWidget);
       expect(find.text('No mission assigned yet'), findsNWidgets(2));
       expect(find.text('Start Mission'), findsNothing);
       expect(find.text('View subject report'), findsNWidgets(3));
       expect(find.text('Open latest result'), findsNWidgets(3));
       expect(find.text('Helper'), findsOneWidget);
-      final morning = tester.getTopLeft(find.text('Morning Mission'));
-      final afternoon = tester.getTopLeft(find.text('Afternoon Mission'));
+      final morning = tester.getTopLeft(find.text('Morning session'));
+      final afternoon = tester.getTopLeft(find.text('Afternoon session'));
       if (width >= 768) {
         expect(afternoon.dy, morning.dy);
         expect(afternoon.dx, greaterThan(morning.dx));
@@ -300,8 +300,8 @@ void main() {
             },
         ];
       await _pump(tester, width: width, api: api);
-      expect(find.text('Morning Mission'), findsOneWidget);
-      expect(find.text('Afternoon Mission'), findsOneWidget);
+      expect(find.text('Morning session'), findsOneWidget);
+      expect(find.text('Afternoon session'), findsOneWidget);
       expect(find.text('Business completed'), findsNothing);
       expect(find.text('Business available'), findsNothing);
       expect(find.text('Business redo_requested'), findsNothing);
@@ -503,8 +503,8 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Morning Mission'), findsOneWidget);
-    expect(find.text('Afternoon Mission'), findsOneWidget);
+    expect(find.text('Morning session'), findsOneWidget);
+    expect(find.text('Afternoon session'), findsOneWidget);
   });
 
   testWidgets('mission action opens existing assigned mission picker', (

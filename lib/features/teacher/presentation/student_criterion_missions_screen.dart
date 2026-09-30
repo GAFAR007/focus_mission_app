@@ -43,9 +43,9 @@ class MissionPathwayEntry {
   String get stageLabel {
     switch (stage) {
       case MissionPathwayStage.q5:
-        return 'Q5';
+        return 'Objective Q${mission.questionCount}';
       case MissionPathwayStage.q8:
-        return 'Q8';
+        return 'Objective Q${mission.questionCount}';
       case MissionPathwayStage.essay:
         return 'Essay';
       case MissionPathwayStage.theory:
@@ -339,7 +339,9 @@ MissionPathwayStage _stageForMission(MissionPayload mission) {
     case 'THEORY':
       return MissionPathwayStage.theory;
     default:
-      if (mission.questionCount >= 10) {
+      if (mission.assessmentSequenceByTaskCode.values.any(
+        (value) => value == 'A' || value == 'B',
+      )) {
         return MissionPathwayStage.assessment;
       }
       if (mission.questionCount <= 5) {
@@ -785,7 +787,7 @@ class _MissionPathwayTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        entry.mission.title,
+                        entry.mission.displayTitle,
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
                       const SizedBox(height: 3),

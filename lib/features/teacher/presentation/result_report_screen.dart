@@ -1677,7 +1677,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              '${resultPackage.meta.missionTitle} · ${resultStudentName(resultPackage.meta.studentName, fallback: widget.student.name)}',
+                              '${resultPackage.displayTitle} · ${resultStudentName(resultPackage.meta.studentName, fallback: widget.student.name)}',
                               style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(
                                     color: ResultReportVisualTokens.navy,
@@ -2291,7 +2291,7 @@ class _MetaPanel extends StatelessWidget {
               _MetaRow(label: 'Student', value: meta.studentName),
               _MetaRow(
                 label: isPaperAssessment ? 'Assessment' : 'Mission',
-                value: meta.missionTitle,
+                value: resultPackage.displayTitle,
               ),
               _MetaRow(label: 'Subject', value: meta.subject),
               _MetaRow(

@@ -688,7 +688,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                   const SizedBox(width: 14),
                   Expanded(
                     child: Text(
-                      _mission.title,
+                      _mission.displayTitle,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
@@ -1000,7 +1000,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                   const SizedBox(width: 14),
                   Expanded(
                     child: Text(
-                      _mission.title,
+                      _mission.displayTitle,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
@@ -1493,7 +1493,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                   const SizedBox(width: 14),
                   Expanded(
                     child: Text(
-                      _mission.title,
+                      _mission.displayTitle,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
@@ -1866,7 +1866,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                 ),
                 const SizedBox(height: AppSpacing.item),
                 Text(
-                  _mission.title,
+                  _mission.displayTitle,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 if (theoryXpPending) ...[
@@ -1952,7 +1952,7 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                 ),
                 const SizedBox(height: AppSpacing.item),
                 Text(
-                  _mission.title,
+                  _mission.displayTitle,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: AppSpacing.item),
@@ -2973,8 +2973,8 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
         notes: isEssayBuilder
             ? _essayParagraph
             : isTheoryMission
-            ? '${_mission.title}: ${_theorySubmittedAnswers.length} of ${_mission.questions.length} theory responses submitted.'
-            : '${_mission.title}: ${_correctAnswers()} of ${_mission.questions.length} correct.',
+            ? '${_mission.displayTitle}: ${_theorySubmittedAnswers.length} of ${_mission.questions.length} theory responses submitted.'
+            : '${_mission.displayTitle}: ${_correctAnswers()} of ${_mission.questions.length} correct.',
         startTime: widget.startedMission.startedAt.trim().isEmpty
             ? null
             : widget.startedMission.startedAt,

@@ -23,6 +23,41 @@ import 'package:http/testing.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('legacy editor title is canonical on open', (tester) async {
+    await _setViewport(tester, const Size(1440, 1000));
+    await _openReviewDraft(
+      tester,
+      draft: _draft().copyWith(title: 'Business Morning Mission'),
+    );
+    expect(find.text('P1 Objective Q5'), findsOneWidget);
+  });
+
+  testWidgets('new editor title follows type and preserves custom wording', (
+    tester,
+  ) async {
+    await _setViewport(tester, const Size(1440, 1000));
+    await _openReviewDraft(tester, newDraft: true);
+    final titleField = find.byType(TextFormField).first;
+    expect(
+      tester.widget<TextFormField>(titleField).controller!.text,
+      'Objective Q5',
+    );
+    await tester.tap(find.text('Theory').first);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextFormField>(titleField).controller!.text,
+      'Theory Q5',
+    );
+    await tester.enterText(titleField, 'How local businesses grow');
+    await tester.tap(find.text('Essay (A/B/C/D)').first);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextFormField>(titleField).controller!.text,
+      'How local businesses grow',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Review Draft uses a wide desktop workspace and protects edits', (
     tester,
   ) async {
@@ -86,7 +121,11 @@ Future<void> _setViewport(WidgetTester tester, Size size) async {
   addTearDown(tester.view.resetPhysicalSize);
 }
 
-Future<void> _openReviewDraft(WidgetTester tester) async {
+Future<void> _openReviewDraft(
+  WidgetTester tester, {
+  MissionPayload? draft,
+  bool newDraft = false,
+}) async {
   final api = FocusMissionApi(
     client: MockClient(
       (_) async => http.Response(
@@ -126,7 +165,7 @@ Future<void> _openReviewDraft(WidgetTester tester) async {
                 sessionType: 'morning',
                 targetDate: DateTime.now(),
                 api: api,
-                initialDraft: _draft(),
+                initialDraft: newDraft ? null : draft ?? _draft(),
               );
             },
             child: const Text('Open review'),

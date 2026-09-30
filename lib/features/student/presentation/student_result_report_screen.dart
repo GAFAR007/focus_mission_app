@@ -219,7 +219,7 @@ class _StudentResultReportScreenState extends State<StudentResultReportScreen> {
               children: [
                 _StudentReportHeader(
                   title: 'My Result',
-                  subtitle: resultPackage.meta.missionTitle,
+                  subtitle: resultPackage.displayTitle,
                   onBack: () => Navigator.of(context).pop(),
                 ),
                 const SizedBox(height: AppSpacing.section),
@@ -247,7 +247,7 @@ class _StudentResultReportScreenState extends State<StudentResultReportScreen> {
                       ),
                       const SizedBox(height: AppSpacing.item),
                       Text(
-                        resultPackage.meta.missionTitle,
+                        resultPackage.displayTitle,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 8),

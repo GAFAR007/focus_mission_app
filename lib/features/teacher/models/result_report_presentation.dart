@@ -211,7 +211,7 @@ class TeacherResultReportHtmlBuilder {
     final sortedEntries = [...entries]
       ..sort((left, right) => _entryDate(right).compareTo(_entryDate(left)));
     final title = entries.length == 1
-        ? entries.first.resultPackage.meta.missionTitle
+        ? entries.first.resultPackage.displayTitle
         : '$resolvedStudentName Results';
     final buffer = StringBuffer()
       ..writeln('<!DOCTYPE html>')
@@ -290,7 +290,7 @@ class TeacherResultReportHtmlBuilder {
     return '''
 <article class="report-card">
   <div class="title-row">
-    <div><span class="eyebrow">${_escape(_formatLabel(entry))}</span><h2>${_escape(meta.missionTitle)}</h2></div>
+    <div><span class="eyebrow">${_escape(_formatLabel(entry))}</span><h2>${_escape(package.displayTitle)}</h2></div>
     <div class="score"><strong>${_escape(score)}</strong><span>${_escape(xpLabel)}</span></div>
   </div>
   <div class="status-grid">

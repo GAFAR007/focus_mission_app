@@ -142,8 +142,10 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
                     isSavingCover:
                         _coverActionSessionType.trim().toLowerCase() ==
                         plan.morning.sessionType.trim().toLowerCase(),
-                    onAssignCover: () =>
-                        _assignCoverForSession(plan: plan, sessionType: 'morning'),
+                    onAssignCover: () => _assignCoverForSession(
+                      plan: plan,
+                      sessionType: 'morning',
+                    ),
                     onRemoveCover: plan.morning.coverAssignment == null
                         ? null
                         : () => _removeCoverForSession(
@@ -405,9 +407,9 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
         return;
       }
 
-      final missionTitle = mission.title.trim().isEmpty
+      final missionTitle = mission.displayTitle.trim().isEmpty
           ? 'mission'
-          : mission.title.trim();
+          : mission.displayTitle.trim();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -457,9 +459,9 @@ class _ManagementDayPlanScreenState extends State<ManagementDayPlanScreen> {
         return;
       }
 
-      final missionTitle = mission.title.trim().isEmpty
+      final missionTitle = mission.displayTitle.trim().isEmpty
           ? 'mission'
-          : mission.title.trim();
+          : mission.displayTitle.trim();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -790,7 +792,8 @@ class _PlannedSessionPanel extends StatelessWidget {
               _MiniPill(label: '${plan.missions.length} planned'),
             ],
           ),
-          if (plan.coverAssignment != null || availableCoverStaff.isNotEmpty) ...[
+          if (plan.coverAssignment != null ||
+              availableCoverStaff.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.compact),
             Container(
               width: double.infinity,
@@ -809,13 +812,17 @@ class _PlannedSessionPanel extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      if (plan.coverAssignment?.plannedTeacher?.name.trim().isNotEmpty ==
+                      if (plan.coverAssignment?.plannedTeacher?.name
+                              .trim()
+                              .isNotEmpty ==
                           true)
                         _MiniPill(
                           label:
                               'Planned: ${plan.coverAssignment!.plannedTeacher!.name}',
                         ),
-                      if (plan.coverAssignment?.coverStaff?.name.trim().isNotEmpty ==
+                      if (plan.coverAssignment?.coverStaff?.name
+                              .trim()
+                              .isNotEmpty ==
                           true)
                         _MiniPill(
                           label:
@@ -823,7 +830,8 @@ class _PlannedSessionPanel extends StatelessWidget {
                         ),
                     ],
                   ),
-                  if (plan.coverAssignment?.reason.trim().isNotEmpty == true) ...[
+                  if (plan.coverAssignment?.reason.trim().isNotEmpty ==
+                      true) ...[
                     const SizedBox(height: 8),
                     Text(
                       plan.coverAssignment!.reason.trim(),
@@ -936,7 +944,9 @@ class _PlannedMissionTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            mission.title.trim().isEmpty ? 'Planned mission' : mission.title,
+            mission.displayTitle.trim().isEmpty
+                ? 'Planned mission'
+                : mission.displayTitle,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
@@ -1100,7 +1110,11 @@ class _PlannedMissionTile extends StatelessWidget {
   }
 
   String _missionTypeLabel(MissionPayload mission) {
-    return mission.questionCount >= 10 ? 'Assessment' : 'Daily';
+    return mission.assessmentSequenceByTaskCode.values.any(
+          (value) => value == 'A' || value == 'B',
+        )
+        ? 'Assessment'
+        : 'Learning';
   }
 }
 
@@ -1250,9 +1264,9 @@ class _ManagementTeacherCopySheet extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      mission.title.trim().isEmpty
+                      mission.displayTitle.trim().isEmpty
                           ? 'Teacher Copy'
-                          : mission.title.trim(),
+                          : mission.displayTitle.trim(),
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
                     const SizedBox(height: 8),
@@ -1868,7 +1882,7 @@ String _buildTeacherCopyFileName({
   final subjectSlug = _sanitizeTeacherCopyFileName(
     (mission.subject?.name ?? 'subject').trim(),
   );
-  final missionSlug = _sanitizeTeacherCopyFileName(mission.title);
+  final missionSlug = _sanitizeTeacherCopyFileName(mission.displayTitle);
   final dateSlug = _sanitizeTeacherCopyFileName(
     mission.availableOnDate?.trim().isNotEmpty == true
         ? mission.availableOnDate!.trim()
@@ -1886,7 +1900,7 @@ String _buildStudentCopyFileName({
   final subjectSlug = _sanitizeTeacherCopyFileName(
     (mission.subject?.name ?? 'subject').trim(),
   );
-  final missionSlug = _sanitizeTeacherCopyFileName(mission.title);
+  final missionSlug = _sanitizeTeacherCopyFileName(mission.displayTitle);
   final dateSlug = _sanitizeTeacherCopyFileName(
     mission.availableOnDate?.trim().isNotEmpty == true
         ? mission.availableOnDate!.trim()
@@ -1913,7 +1927,7 @@ String _buildTeacherCopyHtml({
       '<meta name="viewport" content="width=device-width, initial-scale=1" />',
     )
     ..writeln(
-      '<title>${_escapeTeacherCopyHtml('${mission.title} · Teacher Copy')}</title>',
+      '<title>${_escapeTeacherCopyHtml('${mission.displayTitle} · Teacher Copy')}</title>',
     )
     ..writeln('<style>${_buildTeacherCopyStyles()}</style>')
     ..writeln('</head>')
@@ -1921,7 +1935,7 @@ String _buildTeacherCopyHtml({
     ..writeln('<main class="page">')
     ..writeln('<section class="hero">')
     ..writeln('<span class="copy-chip">Teacher Copy</span>')
-    ..writeln('<h1>${_escapeTeacherCopyHtml(mission.title)}</h1>')
+    ..writeln('<h1>${_escapeTeacherCopyHtml(mission.displayTitle)}</h1>')
     ..writeln(
       '<p class="hero-summary">Teacher-ready mission copy with full question content, answer keys, and teaching guidance.</p>',
     )
@@ -2011,7 +2025,7 @@ String _buildStudentCopyHtml({
       '<meta name="viewport" content="width=device-width, initial-scale=1" />',
     )
     ..writeln(
-      '<title>${_escapeTeacherCopyHtml('${mission.title} · Student Copy')}</title>',
+      '<title>${_escapeTeacherCopyHtml('${mission.displayTitle} · Student Copy')}</title>',
     )
     ..writeln('<style>${_buildTeacherCopyStyles()}</style>')
     ..writeln('</head>')
@@ -2019,7 +2033,7 @@ String _buildStudentCopyHtml({
     ..writeln('<main class="page">')
     ..writeln('<section class="hero">')
     ..writeln('<span class="copy-chip">Student Copy</span>')
-    ..writeln('<h1>${_escapeTeacherCopyHtml(mission.title)}</h1>')
+    ..writeln('<h1>${_escapeTeacherCopyHtml(mission.displayTitle)}</h1>')
     ..writeln(
       '<p class="hero-summary">Student-ready mission copy without answers or teacher-only guidance.</p>',
     )

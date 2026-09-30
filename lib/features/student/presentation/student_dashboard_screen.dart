@@ -54,7 +54,8 @@ enum _StudentMissionType {
   theory('Theory'),
   essay('Essay'),
   assessmentA('Assessment A'),
-  assessmentB('Assessment B');
+  assessmentB('Assessment B'),
+  unknown('Type unavailable');
 
   const _StudentMissionType(this.label);
 
@@ -261,7 +262,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       children: [
                         if (today != null)
                           MissionCard(
-                            title: 'Morning Mission',
+                            title: 'Morning session',
                             subtitle: _missionSubtitle(
                               today.morningMission.name,
                               today.room,
@@ -287,12 +288,12 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           )
                         else
                           const _EmptySessionCard(
-                            title: 'Morning Mission',
+                            title: 'Morning session',
                             icon: Icons.wb_sunny_outlined,
                           ),
                         if (today != null)
                           MissionCard(
-                            title: 'Afternoon Mission',
+                            title: 'Afternoon session',
                             subtitle: _missionSubtitle(
                               today.afternoonMission.name,
                               today.room,
@@ -321,7 +322,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           )
                         else
                           const _EmptySessionCard(
-                            title: 'Afternoon Mission',
+                            title: 'Afternoon session',
                             icon: Icons.wb_twilight_rounded,
                           ),
                       ],
@@ -1673,7 +1674,9 @@ class _StudentMissionPickerSheetState extends State<StudentMissionPickerSheet> {
       if (typeComparison != 0) {
         return typeComparison;
       }
-      return left.title.toLowerCase().compareTo(right.title.toLowerCase());
+      return left.displayTitle.toLowerCase().compareTo(
+        right.displayTitle.toLowerCase(),
+      );
     });
     return missions;
   }
@@ -1894,7 +1897,7 @@ class _SlimMissionRow extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      mission.title,
+                      mission.displayTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -1929,7 +1932,9 @@ class _SlimMissionRow extends StatelessWidget {
 }
 
 _StudentMissionType _studentMissionType(MissionPayload mission) {
-  final format = mission.draftFormat.trim().toUpperCase();
+  final format = (mission.namingDraftFormat ?? mission.draftFormat)
+      .trim()
+      .toUpperCase();
   if (format == 'THEORY') {
     return _StudentMissionType.theory;
   }
@@ -1944,12 +1949,13 @@ _StudentMissionType _studentMissionType(MissionPayload mission) {
   if (sequences.contains('B') && !sequences.contains('A')) {
     return _StudentMissionType.assessmentB;
   }
-  if (sequences.contains('A') || mission.questionCount >= 10) {
-    // WHY: Explicit A/B data remains authoritative, while legacy ten-question
-    // missions keep their established Assessment A meaning.
+  if (sequences.contains('A')) {
+    // Classification uses stored assessment metadata, never question count.
     return _StudentMissionType.assessmentA;
   }
-  return _StudentMissionType.objective;
+  return format == 'QUESTIONS'
+      ? _StudentMissionType.objective
+      : _StudentMissionType.unknown;
 }
 
 String _primaryTaskCode(MissionPayload mission) {
@@ -1995,6 +2001,7 @@ int _compareTaskCodes(String left, String right) {
 
 IconData _studentMissionIcon(_StudentMissionType type) {
   return switch (type) {
+    _StudentMissionType.unknown => Icons.help_outline_rounded,
     _StudentMissionType.objective => Icons.bolt_rounded,
     _StudentMissionType.theory => Icons.lightbulb_rounded,
     _StudentMissionType.essay => Icons.edit_note_rounded,
@@ -2005,6 +2012,7 @@ IconData _studentMissionIcon(_StudentMissionType type) {
 
 Color _studentMissionAccent(_StudentMissionType type) {
   return switch (type) {
+    _StudentMissionType.unknown => AppPalette.textMuted,
     _StudentMissionType.objective => const Color(0xFF4AB8A8),
     _StudentMissionType.theory => const Color(0xFF6586D9),
     _StudentMissionType.essay => const Color(0xFFB678D3),
@@ -2793,7 +2801,10 @@ class _AssignedWorkRow extends StatelessWidget {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 4),
-          Text(mission.title, style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            mission.displayTitle,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 4),
           Text(
             '${mission.assignmentLabel} · Attempt ${mission.assignmentAttempt}',
