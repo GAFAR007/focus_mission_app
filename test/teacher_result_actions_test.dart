@@ -312,6 +312,85 @@ void main() {
     expect(find.byKey(const Key('result_move_theory-p1')), findsOneWidget);
   });
 
+  testWidgets('assigned results page by eight and reset on filters', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 2200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final missions = List.generate(
+      17,
+      (index) =>
+          mission(
+            id: 'page-$index',
+            title: 'Mission ${index.toString().padLeft(2, '0')}',
+            format: 'QUESTIONS',
+            questionCount: 5,
+            taskCodes: [index < 10 ? 'P1' : 'P2'],
+            resultPackageId: '',
+          ).copyWith(
+            availableOnDate:
+                '2026-09-${(index + 1).toString().padLeft(2, '0')}',
+          ),
+    );
+    await tester.pumpWidget(
+      assignedMissionsHarness(width: 1100, missions: missions),
+    );
+    expect(find.text('Showing 1–8 of 17'), findsOneWidget);
+    expect(find.text('Mission 16'), findsOneWidget);
+    expect(find.text('Mission 08'), findsNothing);
+    final first = tester.getTopLeft(
+      find.byKey(const Key('assigned_mission_page-16')),
+    );
+    final second = tester.getTopLeft(
+      find.byKey(const Key('assigned_mission_page-15')),
+    );
+    expect(first.dy, second.dy);
+    expect(second.dx, greaterThan(first.dx));
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    expect(find.text('Showing 9–16 of 17'), findsOneWidget);
+    expect(find.text('Mission 16'), findsNothing);
+    await tester.tap(find.byKey(const Key('assigned_level_filter_p1')));
+    await tester.pump();
+    expect(find.text('Showing 1–8 of 10'), findsOneWidget);
+    expect(find.text('Mission 09'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'MISSION 00');
+    await tester.pump();
+    expect(find.text('Showing 1–1 of 1'), findsOneWidget);
+    expect(find.text('Mission 00'), findsOneWidget);
+    expect(find.text('Next'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('assigned status and search only change the visible results', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final missions = assignedMissions();
+    await tester.pumpWidget(
+      assignedMissionsHarness(width: 1100, missions: missions),
+    );
+    await tester.tap(find.byKey(const Key('assigned_status_completed')));
+    await tester.pump();
+    expect(find.text('P1 Theory'), findsOneWidget);
+    expect(find.text('P1 Objective'), findsNothing);
+    await tester.tap(find.byKey(const Key('assigned_status_current')));
+    await tester.pump();
+    expect(find.text('P1 Theory'), findsNothing);
+    expect(find.text('P1 Objective'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'business');
+    await tester.pump();
+    expect(find.text('Showing 1–4 of 4'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'essay');
+    await tester.pump();
+    expect(find.text('P2 Essay'), findsOneWidget);
+    expect(find.text('Showing 1–1 of 1'), findsOneWidget);
+    expect(missions.length, 5);
+    expect(missions[1].latestResultPackageId, isNotEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   test('Move preview and confirmation use separate API requests', () async {
     final requests = <http.Request>[];
     final api = FocusMissionApi(

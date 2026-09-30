@@ -361,6 +361,77 @@ void main() {
     expect(find.text('Use for another student'), findsNWidgets(3));
   });
 
+  testWidgets(
+    'draft pagination retains selections and search clears hidden selections',
+    (tester) async {
+      tester.view.physicalSize = const Size(1100, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var archivedIds = <String>[];
+      final missions = List.generate(
+        10,
+        (index) =>
+            draftMission(
+              id: 'draft-$index',
+              title: 'Draft $index',
+              taskCode: 'P1',
+              questionCount: 5,
+            ).copyWith(
+              createdAt: '2026-09-${(index + 1).toString().padLeft(2, '0')}',
+            ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DailyDraftListScreen(
+            studentName: 'Student One',
+            missions: missions,
+            onArchive: (selected) async {
+              archivedIds = selected.map((mission) => mission.id).toList();
+              return true;
+            },
+            onDelete: (_) async => true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Showing 1–8 of 10'), findsOneWidget);
+      expect(find.text('Draft 9'), findsOneWidget);
+      expect(find.text('Draft 1'), findsNothing);
+      await tester.tap(find.text('Sort: Newest first'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sort: Oldest first').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Draft 0'), findsOneWidget);
+      expect(find.text('Draft 9'), findsNothing);
+      await tester.tap(find.byKey(const Key('select-drafts-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Draft 0'));
+      await tester.pump();
+      await tester.tap(find.text('Next'));
+      await tester.pump();
+      expect(find.text('Showing 9–10 of 10'), findsOneWidget);
+      expect(find.text('1 selected'), findsOneWidget);
+      await tester.tap(find.text('Draft 9'));
+      await tester.pump();
+      expect(find.text('2 selected'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'draft 8');
+      await tester.pump();
+      expect(find.text('Showing 1–1 of 1'), findsOneWidget);
+      expect(find.text('Selection mode active'), findsOneWidget);
+      await tester.tap(find.text('Draft 8'));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('archive-selected-button')));
+      await tester.pumpAndSettle();
+      expect(archivedIds, ['draft-8']);
+      await tester.tap(find.byTooltip('Clear search'));
+      await tester.pump();
+      expect(find.text('Showing 1–8 of 9'), findsOneWidget);
+      expect(missions, hasLength(10));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('assessment draft controls remain usable on a narrow phone', (
     tester,
   ) async {

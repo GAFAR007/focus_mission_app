@@ -696,7 +696,7 @@ void main() {
     expect(find.text('P1 Draft'), findsNothing);
     expect(find.text('P2 Draft'), findsOneWidget);
     expect(find.text('M1 Draft'), findsNothing);
-    expect(find.text('1 shown'), findsOneWidget);
+    expect(find.text('Showing 1–1 of 1'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('draft_level_filter_all')));
     await tester.tap(find.byKey(const Key('draft_filter_theory')));

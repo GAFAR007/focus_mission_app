@@ -9,7 +9,8 @@
  * HOW:
  * Load the selected student's timetable and derive the active lesson slot from
  * the selected date plus the current teacher's ownership of that slot, then
- * keep mission and paper-result actions separated inside one workspace.
+ * keep mission and paper-result actions separated inside one workspace. Mission
+ * results use local search, sorting, and eight-item pages without changing data.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -922,9 +923,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                   const SizedBox(height: AppSpacing.item),
                   _DraftMissionsPanel(
                     paperActions: paperActions,
-                    missions: dailyDraftMissions
-                        .take(5)
-                        .toList(growable: false),
+                    missions: dailyDraftMissions,
                     dailyDraftCount: dailyDraftMissions.length,
                     assessmentDraftCount: assessmentDraftMissions.length,
                     isSelectingDrafts: _isSelectingDraftMissions,
@@ -943,9 +942,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       selectedSubject: selectedSubject,
                       lessonLabel: activeLesson,
                     ),
-                    onToggleDraftSelectionMode: () => _toggleDraftSelectionMode(
-                      dailyDraftMissions.take(5).toList(growable: false),
-                    ),
+                    onToggleDraftSelectionMode: () =>
+                        _toggleDraftSelectionMode(dailyDraftMissions),
                     onCancelDraftSelection: _clearDraftSelection,
                     onToggleDraftSelection: _toggleDraftSelection,
                     onArchiveSelectedDrafts: () =>
@@ -2266,7 +2264,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
         nextDrafts.insert(0, updatedMission);
 
         // WHY: Moving a mission back must not hide older P/M/D drafts from
-        // task-focus filtering; the dashboard preview applies its own limit.
+        // task-focus filtering; the dashboard paginates the complete draft list.
         _draftMissions = nextDrafts.toList(growable: false);
         _recentMissions = nextRecent.toList(growable: false);
         _pruneSelectedDraftMissions();
@@ -5283,6 +5281,7 @@ class _DraftMissionsPanelState extends State<_DraftMissionsPanel> {
                   // WHY: This is a presentation-only filter. Draft ownership,
                   // scheduling, content, and publish state remain unchanged.
                   _selectedLevel = filter;
+                  widget.onCancelDraftSelection();
                 });
               },
             ),
@@ -5300,19 +5299,12 @@ class _DraftMissionsPanelState extends State<_DraftMissionsPanel> {
                   // WHY: Draft filtering changes only what the teacher sees;
                   // it never changes mission content, ownership, or state.
                   _selectedTypeFilter = filter;
+                  widget.onCancelDraftSelection();
                 });
               },
             ),
             const SizedBox(height: 10),
-            if (!widget.isSelectingDrafts)
-              Text(
-                '${filteredMissions.length} shown',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppPalette.textMuted,
-                  fontWeight: FontWeight.w600,
-                ),
-              )
-            else
+            if (widget.isSelectingDrafts)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(
@@ -5331,7 +5323,7 @@ class _DraftMissionsPanelState extends State<_DraftMissionsPanel> {
                     Text(
                       widget.selectedDraftMissionIds.isEmpty
                           ? 'Selection mode active'
-                          : '${widget.selectedDraftMissionIds.length} selected',
+                          : '${widget.selectedDraftMissionIds.length} selected across pages',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppPalette.navy,
                         fontWeight: FontWeight.w600,
@@ -5419,25 +5411,32 @@ class _DraftMissionsPanelState extends State<_DraftMissionsPanel> {
               ),
             )
           else
-            ...filteredMissions.map((mission) {
-              final isSelected = widget.selectedDraftMissionIds.contains(
-                mission.id,
-              );
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _DraftMissionListItem(
-                  mission: mission,
-                  dateLabel: _formatMissionDate(
-                    mission.availableOnDate ?? mission.createdAt,
+            _MissionResults(
+              key: ValueKey(
+                'draft_${selectedLevel}_${selectedTypeFilter.name}',
+              ),
+              missions: filteredMissions,
+              onSearchChanged: widget.onCancelDraftSelection,
+              itemBuilder: (mission) {
+                final isSelected = widget.selectedDraftMissionIds.contains(
+                  mission.id,
+                );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _DraftMissionListItem(
+                    mission: mission,
+                    dateLabel: _formatMissionDate(
+                      mission.availableOnDate ?? mission.createdAt,
+                    ),
+                    isSelecting: widget.isSelectingDrafts,
+                    isSelected: isSelected,
+                    onSelect: () => widget.onToggleDraftSelection(mission),
+                    onEdit: () => widget.onEdit(mission),
+                    onReuse: () => widget.onReuse(mission),
                   ),
-                  isSelecting: widget.isSelectingDrafts,
-                  isSelected: isSelected,
-                  onSelect: () => widget.onToggleDraftSelection(mission),
-                  onEdit: () => widget.onEdit(mission),
-                  onReuse: () => widget.onReuse(mission),
-                ),
-              );
-            }),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -5680,7 +5679,7 @@ class _DraftMissionListItem extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '${mission.subject?.name ?? 'Mission'} · $missionUnit · ${mission.sessionType} · $dateLabel',
+                '$taskFocus · $missionType · $dateLabel',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(
@@ -5688,16 +5687,17 @@ class _DraftMissionListItem extends StatelessWidget {
                 ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
               ),
               const SizedBox(height: 7),
-              _CompactMissionTag(
-                label: taskFocus,
-                foregroundColor: _draftMissionAccent,
-                backgroundColor: _draftMissionAccent.withValues(alpha: 0.09),
+              Text(
+                '${mission.subject?.name ?? 'Mission'} · ${mission.sessionType} · $missionUnit',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               if (mission.teacherNote.trim().isNotEmpty) ...[
                 const SizedBox(height: 7),
                 Text(
                   mission.teacherNote.trim(),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: AppPalette.navy.withValues(alpha: 0.82),
@@ -5762,6 +5762,276 @@ class _DraftSelectionControl extends StatelessWidget {
         size: 17,
       ),
       label: Text(isSelected ? 'Selected' : 'Select'),
+    );
+  }
+}
+
+const int _missionPageSize = 8;
+const double _missionColumnMinimumWidth = 360;
+const double _missionGridGap = 12;
+
+enum _MissionSort {
+  newest('Newest first'),
+  oldest('Oldest first'),
+  taskFocus('Task focus'),
+  type('Mission type'),
+  status('Status'),
+  subject('Subject');
+
+  const _MissionSort(this.label);
+  final String label;
+}
+
+// WHY: All teacher mission lists share presentation-only paging. Builders keep
+// their existing permissions and actions; the original lists are never sorted
+// or truncated in place, so counts, selection and assessment XP remain intact.
+class _MissionResults extends StatefulWidget {
+  const _MissionResults({
+    super.key,
+    required this.missions,
+    required this.itemBuilder,
+    this.showAssignmentStatus = false,
+    this.onSearchChanged,
+  });
+
+  final List<MissionPayload> missions;
+  final Widget Function(MissionPayload) itemBuilder;
+  final bool showAssignmentStatus;
+  final VoidCallback? onSearchChanged;
+
+  @override
+  State<_MissionResults> createState() => _MissionResultsState();
+}
+
+class _MissionResultsState extends State<_MissionResults> {
+  final _searchController = TextEditingController();
+  _MissionSort _sort = _MissionSort.newest;
+  String _status = 'All';
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MissionResults oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // WHY: Refreshes and removals must not strand the teacher on an empty page.
+    final oldIds = oldWidget.missions.map((mission) => mission.id).join('|');
+    final newIds = widget.missions.map((mission) => mission.id).join('|');
+    if (oldIds != newIds) _page = 0;
+  }
+
+  int _compare(MissionPayload left, MissionPayload right) {
+    int date(MissionPayload mission) =>
+        DateTime.tryParse(
+          mission.availableOnDate ??
+              mission.publishedAt ??
+              mission.createdAt ??
+              '',
+        )?.millisecondsSinceEpoch ??
+        0;
+    final comparison = switch (_sort) {
+      _MissionSort.newest => date(right).compareTo(date(left)),
+      _MissionSort.oldest => date(left).compareTo(date(right)),
+      _MissionSort.taskFocus => _compareMissionTaskCodes(
+        _assignedMissionTaskGroup(left),
+        _assignedMissionTaskGroup(right),
+      ),
+      _MissionSort.type => _assignedMissionFilterFor(
+        left,
+      ).label.compareTo(_assignedMissionFilterFor(right).label),
+      _MissionSort.status =>
+        (widget.showAssignmentStatus ? left.assignmentLabel : left.status)
+            .compareTo(
+              widget.showAssignmentStatus
+                  ? right.assignmentLabel
+                  : right.status,
+            ),
+      _MissionSort.subject => (left.subject?.name ?? '').compareTo(
+        right.subject?.name ?? '',
+      ),
+    };
+    if (comparison != 0) return comparison;
+    final titleComparison = left.title.compareTo(right.title);
+    return titleComparison != 0 ? titleComparison : left.id.compareTo(right.id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _searchController.text.trim().toLowerCase();
+    final missions = widget.missions.where((mission) {
+      final matchesStatus =
+          _status == 'All' ||
+          (_status == 'Completed'
+              ? mission.isAssignmentLocked
+              : !mission.isAssignmentLocked);
+      final searchable =
+          '${mission.title} ${mission.subject?.name ?? ''} '
+                  '${mission.taskCodes.join(' ')} ${_assignedMissionFilterFor(mission).label}'
+              .toLowerCase();
+      return matchesStatus && searchable.contains(query);
+    }).toList()..sort(_compare);
+    final pageCount = (missions.length / _missionPageSize).ceil();
+    final page = pageCount == 0 ? 0 : _page.clamp(0, pageCount - 1);
+    final start = page * _missionPageSize;
+    final visible = missions.skip(start).take(_missionPageSize).toList();
+    final summary = missions.isEmpty
+        ? '0 shown of 0'
+        : 'Showing ${start + 1}–${start + visible.length} of ${missions.length}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.showAssignmentStatus) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: ['All', 'Current', 'Completed'].map((status) {
+              final count = widget.missions
+                  .where(
+                    (mission) =>
+                        status == 'All' ||
+                        (status == 'Completed'
+                            ? mission.isAssignmentLocked
+                            : !mission.isAssignmentLocked),
+                  )
+                  .length;
+              return ChoiceChip(
+                key: Key('assigned_status_${status.toLowerCase()}'),
+                label: Text('$status $count'),
+                selected: _status == status,
+                onSelected: (_) => setState(() {
+                  _status = status;
+                  _page = 0;
+                }),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+        ],
+        TextField(
+          controller: _searchController,
+          decoration: InputDecoration(
+            hintText: 'Search missions...',
+            isDense: true,
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      setState(() {
+                        _searchController.clear();
+                        _page = 0;
+                      });
+                      widget.onSearchChanged?.call();
+                    },
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: (_) {
+            setState(() => _page = 0);
+            // WHY: Bulk draft actions must not retain hidden search selections.
+            widget.onSearchChanged?.call();
+          },
+        ),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (context, constraints) => Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(summary, style: Theme.of(context).textTheme.bodySmall),
+              SizedBox(
+                width: constraints.maxWidth < 240 ? constraints.maxWidth : 240,
+                child: DropdownButton<_MissionSort>(
+                  isExpanded: true,
+                  value: _sort,
+                  underline: const SizedBox.shrink(),
+                  items: _MissionSort.values
+                      .map(
+                        (sort) => DropdownMenuItem(
+                          value: sort,
+                          child: Text(
+                            'Sort: ${sort.label}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (sort) {
+                    if (sort == null) return;
+                    setState(() {
+                      _sort = sort;
+                      _page = 0;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (missions.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('No missions match this search or status.'),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // WHY: Natural-height cards let actions wrap without clipping.
+              // Larger text gets one column so controls remain usable.
+              final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+              final twoColumns =
+                  constraints.maxWidth >=
+                  _missionColumnMinimumWidth * 2 * textScale + _missionGridGap;
+              final width = twoColumns
+                  ? (constraints.maxWidth - _missionGridGap) / 2
+                  : constraints.maxWidth;
+              return Wrap(
+                spacing: _missionGridGap,
+                runSpacing: _missionGridGap,
+                children: visible
+                    .map(
+                      (mission) => SizedBox(
+                        width: width,
+                        child: widget.itemBuilder(mission),
+                      ),
+                    )
+                    .toList(),
+              );
+            },
+          ),
+        if (pageCount > 1) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              TextButton.icon(
+                onPressed: page == 0
+                    ? null
+                    : () => setState(() => _page = page - 1),
+                icon: const Icon(Icons.chevron_left_rounded),
+                label: const Text('Previous'),
+              ),
+              Text('Page ${page + 1} of $pageCount'),
+              TextButton.icon(
+                onPressed: page + 1 >= pageCount
+                    ? null
+                    : () => setState(() => _page = page + 1),
+                icon: const Icon(Icons.chevron_right_rounded),
+                label: const Text('Next'),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }
@@ -6065,14 +6335,6 @@ String _assignedMissionTaskGroup(MissionPayload mission) {
   return taskCodes.join(' + ');
 }
 
-int _assignedMissionTaskGroupOrder(String label) {
-  final match = RegExp(r'^P(\d+)$').firstMatch(label);
-  if (match != null) {
-    return int.tryParse(match.group(1) ?? '') ?? 999;
-  }
-  return 1000;
-}
-
 class TeacherAssignedMissionsPanel extends StatefulWidget {
   const TeacherAssignedMissionsPanel({
     super.key,
@@ -6161,27 +6423,13 @@ class _TeacherAssignedMissionsPanelState
     final selectedFilter = availableFilters.contains(_selectedFilter)
         ? _selectedFilter
         : _AssignedMissionFilter.all;
-    final filteredMissions =
-        levelFilteredMissions
-            .where(
-              (mission) =>
-                  selectedFilter == _AssignedMissionFilter.all ||
-                  _assignedMissionFilterFor(mission) == selectedFilter,
-            )
-            .toList(growable: false)
-          ..sort((left, right) {
-            final taskComparison =
-                _assignedMissionTaskGroupOrder(
-                  _assignedMissionTaskGroup(left),
-                ).compareTo(
-                  _assignedMissionTaskGroupOrder(
-                    _assignedMissionTaskGroup(right),
-                  ),
-                );
-            return taskComparison == 0
-                ? left.title.compareTo(right.title)
-                : taskComparison;
-          });
+    final filteredMissions = levelFilteredMissions
+        .where(
+          (mission) =>
+              selectedFilter == _AssignedMissionFilter.all ||
+              _assignedMissionFilterFor(mission) == selectedFilter,
+        )
+        .toList(growable: false);
 
     return SoftPanel(
       solid: true,
@@ -6253,8 +6501,13 @@ class _TeacherAssignedMissionsPanelState
                 ),
               )
             else
-              ...filteredMissions.map(
-                (mission) => _AssignedMissionListItem(
+              _MissionResults(
+                key: ValueKey(
+                  'assigned_${selectedLevel}_${selectedFilter.name}',
+                ),
+                missions: filteredMissions,
+                showAssignmentStatus: true,
+                itemBuilder: (mission) => _AssignedMissionListItem(
                   key: Key('assigned_mission_${mission.id}'),
                   mission: mission,
                   isSendingResult: sendingResultMissionIds.contains(mission.id),
@@ -6512,7 +6765,6 @@ class _AssignedMissionListItem extends StatelessWidget {
     // WHY: Assigned missions are presented as compact list rows rather than
     // separate oversized cards so teachers can scan P1 and P2 quickly.
     return Container(
-      margin: const EdgeInsets.only(top: 9),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -6540,7 +6792,7 @@ class _AssignedMissionListItem extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${mission.subject?.name ?? 'Mission'} · $missionUnit · ${mission.sessionType} · $missionDate',
+                      '$taskFocus · $missionType · $missionDate',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -6568,10 +6820,11 @@ class _AssignedMissionListItem extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 7),
-          _CompactMissionTag(
-            label: taskFocus,
-            foregroundColor: _assignedMissionAccent,
-            backgroundColor: _assignedMissionAccent.withValues(alpha: 0.09),
+          Text(
+            '${mission.subject?.name ?? 'Mission'} · ${mission.sessionType} · $missionUnit',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 6),
           Text(
@@ -7713,8 +7966,12 @@ class _DailyDraftListScreenState extends State<DailyDraftListScreen>
                         ),
                       )
                     else
-                      ..._filteredMissions.map(
-                        (mission) => Padding(
+                      _MissionResults(
+                        key: ValueKey('daily_$_selectedCriterion'),
+                        missions: _filteredMissions,
+                        onSearchChanged: () =>
+                            setState(_selectedMissionIds.clear),
+                        itemBuilder: (mission) => Padding(
                           padding: const EdgeInsets.only(
                             bottom: AppSpacing.compact,
                           ),
@@ -8019,52 +8276,57 @@ class _AssessmentDraftListScreenState extends State<AssessmentDraftListScreen>
                         ),
                       )
                     else
-                      ..._filteredMissions.asMap().entries.map((entry) {
-                        final mission = entry.value;
-                        // WHY: Filtering must not reallocate the visual XP
-                        // fill between drafts, so progress is keyed from the
-                        // original full-list order rather than filtered index.
-                        final xpProgress = missionProgress[mission.id]!;
-                        return Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: AppSpacing.compact,
-                          ),
-                          child: _MissionCard(
-                            mission: mission,
-                            badgeLabel: 'Assessment Draft',
-                            compactOnNarrow: true,
-                            dateLabel: _formatMissionDate(
-                              mission.availableOnDate ?? mission.createdAt,
+                      _MissionResults(
+                        key: ValueKey('assessment_$_selectedCriterion'),
+                        missions: _filteredMissions,
+                        onSearchChanged: () =>
+                            setState(_selectedMissionIds.clear),
+                        itemBuilder: (mission) {
+                          // WHY: Filtering must not reallocate the visual XP
+                          // fill between drafts, so progress is keyed from the
+                          // original full-list order rather than filtered index.
+                          final xpProgress = missionProgress[mission.id]!;
+                          return Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.compact,
                             ),
-                            actionLabel: _isSelecting
-                                ? (_selectedMissionIds.contains(mission.id)
-                                      ? 'Selected'
-                                      : 'Tap to select')
-                                : 'Open assessment draft',
-                            showSelectionControl: _isSelecting,
-                            isSelected: _selectedMissionIds.contains(
-                              mission.id,
+                            child: _MissionCard(
+                              mission: mission,
+                              badgeLabel: 'Assessment Draft',
+                              compactOnNarrow: true,
+                              dateLabel: _formatMissionDate(
+                                mission.availableOnDate ?? mission.createdAt,
+                              ),
+                              actionLabel: _isSelecting
+                                  ? (_selectedMissionIds.contains(mission.id)
+                                        ? 'Selected'
+                                        : 'Tap to select')
+                                  : 'Open assessment draft',
+                              showSelectionControl: _isSelecting,
+                              isSelected: _selectedMissionIds.contains(
+                                mission.id,
+                              ),
+                              onSelectionTap: () => _toggleSelection(mission),
+                              quaternaryActionLabel: _isSelecting
+                                  ? null
+                                  : 'Use for another student',
+                              onQuaternaryTap: _isSelecting
+                                  ? null
+                                  : () => Navigator.of(context).pop(
+                                      _AssessmentDraftListResult.reuse(mission),
+                                    ),
+                              topProgressRatio: xpProgress.ratio,
+                              topProgressLabel:
+                                  '${xpProgress.filledXp}/${xpProgress.totalXp} XP filled',
+                              onTap: _isSelecting
+                                  ? () => _toggleSelection(mission)
+                                  : () => Navigator.of(context).pop(
+                                      _AssessmentDraftListResult.open(mission),
+                                    ),
                             ),
-                            onSelectionTap: () => _toggleSelection(mission),
-                            quaternaryActionLabel: _isSelecting
-                                ? null
-                                : 'Use for another student',
-                            onQuaternaryTap: _isSelecting
-                                ? null
-                                : () => Navigator.of(context).pop(
-                                    _AssessmentDraftListResult.reuse(mission),
-                                  ),
-                            topProgressRatio: xpProgress.ratio,
-                            topProgressLabel:
-                                '${xpProgress.filledXp}/${xpProgress.totalXp} XP filled',
-                            onTap: _isSelecting
-                                ? () => _toggleSelection(mission)
-                                : () => Navigator.of(context).pop(
-                                    _AssessmentDraftListResult.open(mission),
-                                  ),
-                          ),
-                        );
-                      }),
+                          );
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -8495,8 +8757,8 @@ class _MissionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final handleSelectionTap = onSelectionTap ?? onTap;
-    final isCompactCard =
-        compactOnNarrow && MediaQuery.sizeOf(context).width < 430;
+    // WHY: Draft cards stay compact at every width; pagination owns columns.
+    final isCompactCard = compactOnNarrow;
 
     return Material(
       color: Colors.transparent,
@@ -8505,7 +8767,7 @@ class _MissionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         child: Ink(
           width: double.infinity,
-          padding: const EdgeInsets.all(AppSpacing.item),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.8),
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -8585,13 +8847,24 @@ class _MissionCard extends StatelessWidget {
                       children: [
                         Text(
                           mission.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${mission.subject?.name ?? 'Mission'} · ${mission.draftFormat == 'ESSAY_BUILDER' ? '${mission.questionCount} sentences' : '${mission.questionCount} questions'} · ${mission.sessionType}',
+                          '${mission.taskCodes.join(' + ')} · ${_assignedMissionFilterFor(mission).label} · $dateLabel',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(color: AppPalette.textMuted),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${mission.subject?.name ?? 'Mission'} · ${mission.sessionType} · ${mission.questionCount} ${mission.draftFormat == 'ESSAY_BUILDER' ? 'sentences' : 'questions'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                         if (mission.taskCodes.isNotEmpty) ...[
                           const SizedBox(height: 4),
@@ -8616,7 +8889,7 @@ class _MissionCard extends StatelessWidget {
                           const SizedBox(height: 6),
                           Text(
                             mission.teacherNote,
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
@@ -8636,7 +8909,7 @@ class _MissionCard extends StatelessWidget {
                           TextButton(
                             onPressed: onQuaternaryTap,
                             style: TextButton.styleFrom(
-                              minimumSize: const Size(0, 0),
+                              minimumSize: const Size(0, 40),
                               padding: EdgeInsets.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               alignment: Alignment.centerLeft,
