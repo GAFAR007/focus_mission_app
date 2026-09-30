@@ -50,6 +50,7 @@ void main() {
               'user': {
                 'id': 'student-1',
                 'name': 'Live Learner',
+                'schoolId': 'resolved-school',
                 'role': 'student',
               },
             }),
@@ -63,6 +64,24 @@ void main() {
       expect(restored, isNotNull);
       expect(restored!.user.name, 'Live Learner');
       expect(restored.user.role, 'student');
+      expect(restored.user.schoolId, 'resolved-school');
+      expect(
+        restored.user.copyWith(name: 'Updated').schoolId,
+        'resolved-school',
+      );
+      final offlineApi = FocusMissionApi(
+        client: MockClient((_) async => throw Exception('Network unavailable')),
+      );
+      final cached = await authStore.restoreSession(api: offlineApi);
+      expect(cached!.user.schoolId, 'resolved-school');
+      expect(cached.token, 'synthetic-user-token');
+      expect(
+        StudentSummary.fromJson({
+          'id': 'student-1',
+          'schoolId': 'resolved-school',
+        }).schoolId,
+        restored.user.schoolId,
+      );
     },
   );
 

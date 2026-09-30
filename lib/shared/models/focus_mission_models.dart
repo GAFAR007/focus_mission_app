@@ -17,6 +17,7 @@ import 'mission_display_name.dart';
 class AppUser {
   const AppUser({
     required this.id,
+    this.schoolId = '',
     required this.name,
     this.email,
     this.role,
@@ -40,6 +41,8 @@ class AppUser {
   });
 
   final String id;
+  // Server-resolved metadata; school authorization remains on the backend.
+  final String schoolId;
   final String name;
   final String? email;
   final String? role;
@@ -63,6 +66,7 @@ class AppUser {
 
   AppUser copyWith({
     String? id,
+    String? schoolId,
     String? name,
     String? email,
     String? role,
@@ -86,6 +90,7 @@ class AppUser {
   }) {
     return AppUser(
       id: id ?? this.id,
+      schoolId: schoolId ?? this.schoolId,
       name: name ?? this.name,
       email: email ?? this.email,
       role: role ?? this.role,
@@ -112,6 +117,7 @@ class AppUser {
   factory AppUser.fromJson(Map<String, dynamic> json) {
     return AppUser(
       id: (json['id'] ?? json['_id'] ?? '').toString(),
+      schoolId: (json['schoolId'] ?? '').toString(),
       name: (json['name'] ?? '').toString(),
       email: json['email']?.toString(),
       role: json['role']?.toString(),
@@ -928,6 +934,7 @@ class SubjectCertificationSettings {
 class StudentSummary {
   const StudentSummary({
     required this.id,
+    this.schoolId = '',
     required this.name,
     required this.xp,
     required this.streak,
@@ -937,6 +944,8 @@ class StudentSummary {
   });
 
   final String id;
+  // Server-resolved metadata; school authorization remains on the backend.
+  final String schoolId;
   final String name;
   final int xp;
   final int streak;
@@ -947,6 +956,7 @@ class StudentSummary {
   factory StudentSummary.fromJson(Map<String, dynamic> json) {
     return StudentSummary(
       id: (json['_id'] ?? json['id'] ?? '').toString(),
+      schoolId: (json['schoolId'] ?? '').toString(),
       name: (json['name'] ?? '').toString(),
       xp: _asInt(json['xp']),
       streak: _asInt(json['streak']),

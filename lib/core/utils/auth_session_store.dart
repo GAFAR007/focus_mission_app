@@ -6,7 +6,8 @@
  * small local store instead of forcing the user back through sign-in each time.
  * HOW:
  * Save the token and user JSON in shared preferences, restore via `/auth/me`
- * when possible, and clear the store on sign-out or invalid auth.
+ * before entering a workspace, retaining server-resolved school metadata in
+ * the offline cache, and clear the store on sign-out or invalid auth.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -99,6 +100,7 @@ class AuthSessionStore {
   Map<String, dynamic> _userToJson(AppUser user) {
     return {
       'id': user.id,
+      'schoolId': user.schoolId,
       'name': user.name,
       'email': user.email,
       'role': user.role,
