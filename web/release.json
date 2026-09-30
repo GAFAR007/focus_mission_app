@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "releases": [
+    {
+      "version": "2.0.0",
+      "previousVersion": null,
+      "releasedAt": null,
+      "title": "Previous production release",
+      "changes": {
+        "new": [],
+        "improved": [
+          "Learning missions, results and school progress tools."
+        ],
+        "fixed": []
+      },
+      "source": {
+        "frontend": "186de04a2f5a2835381e3ad582d565e88e7099c6",
+        "backend": "e6726e7510c79be96f52a2573305b45f694a4faa"
+      }
+    }
+  ]
+}

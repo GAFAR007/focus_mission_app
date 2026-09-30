@@ -22,6 +22,13 @@ class AuthSessionStore {
   static const String _tokenKey = 'focusMission.authToken';
   static const String _userKey = 'focusMission.authUser';
 
+  // Release-history preferences use an account-specific key without exposing
+  // the cached token or changing authentication/session restoration.
+  Future<String?> cachedUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return _cachedUserFromPrefs(prefs)?.id;
+  }
+
   Future<void> saveSession(AuthSession session) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, session.token);

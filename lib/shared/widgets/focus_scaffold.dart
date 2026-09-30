@@ -7,13 +7,14 @@
  * reimplementing the background treatment.
  * HOW:
  * Wrap the child in a scaffold, paint the shared background gradient, and add
- * soft bubble accents behind the content.
+ * soft bubble accents behind the content, with a compact release-history footer.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_palette.dart';
+import 'release_history_button.dart';
 
 class FocusScaffold extends StatelessWidget {
   const FocusScaffold({super.key, required this.child});
@@ -23,6 +24,7 @@ class FocusScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      bottomNavigationBar: const ReleaseHistoryButton(),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(

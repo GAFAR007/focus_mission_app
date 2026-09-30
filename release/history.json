@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "releases": [
+    {
+      "version": "2.0.0",
+      "previousVersion": null,
+      "releasedAt": null,
+      "title": "Previous production release",
+      "changes": {
+        "new": [],
+        "improved": ["Learning missions, results and school progress tools."],
+        "fixed": []
+      },
+      "source": {
+        "frontend": {"commit": "186de04a2f5a2835381e3ad582d565e88e7099c6"},
+        "backend": {"commit": "e6726e7510c79be96f52a2573305b45f694a4faa"}
+      },
+      "provenance": "Version confirmed by the owner. Imported from the last complete production release; the original release date was not recorded. Netlify 6abcb0a95aa76960afe38991; Render dep-daua86ivcj2c73elgou0."
+    }
+  ]
+}

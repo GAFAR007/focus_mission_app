@@ -52,3 +52,6 @@ app.*.map.json
 
 # Local Netlify folder
 .netlify
+
+# Local release review, validation receipts and provider responses
+.release-work/

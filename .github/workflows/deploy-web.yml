@@ -1,11 +1,10 @@
 # WHAT:
-# Deploy the Flutter web app to Netlify whenever code lands on `main`.
+# Guard release metadata on main and allow validated release republishing.
 # WHY:
-# The production website should update from a normal git push instead of a
-# manual local deploy step.
+# Production publication must follow the Release Agent, not an unversioned push.
 # HOW:
-# Checkout the frontend repo, install Flutter, verify the app, build `build/web`,
-# then publish that folder to Netlify using repository secrets.
+# Check the canonical release/source inventory, test and build, and publish only
+# an explicitly dispatched validated release with the matching backend live.
 
 name: Deploy Web
 
@@ -28,17 +27,41 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.38.7'
           cache: true
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+
+      - name: Guard frontend production version
+        run: node tool/release.mjs check --frontend-only
+
+      - name: Read paired release
+        id: release
+        run: echo "version=$(node -p \"require('./release/history.json').releases[0].version\")" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout paired backend release
+        uses: actions/checkout@v4
+        with:
+          repository: GAFAR007/focus_mission_backend
+          ref: v${{ steps.release.outputs.version }}
+          path: .release-work/backend
+          fetch-depth: 0
+
+      - name: Guard paired release and tested source
+        run: node tool/release.mjs check --backend .release-work/backend
+
+      - name: Test release tooling
+        run: node --test tool/release.test.mjs
 
       - name: Install Flutter dependencies
         run: flutter pub get
@@ -53,6 +76,7 @@ jobs:
         run: flutter build web --release
 
       - name: Validate Netlify secrets
+        if: github.event_name == 'workflow_dispatch'
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
@@ -63,9 +87,15 @@ jobs:
           fi
 
       - name: Install Netlify CLI
+        if: github.event_name == 'workflow_dispatch'
         run: npm install --global netlify-cli
 
+      - name: Confirm exact backend is live
+        if: github.event_name == 'workflow_dispatch'
+        run: node tool/release.mjs check-backend --backend .release-work/backend
+
       - name: Deploy to Netlify
+        if: github.event_name == 'workflow_dispatch'
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
@@ -73,4 +103,10 @@ jobs:
           netlify deploy
           --dir=build/web
           --prod
+          --no-build
+          --site "$NETLIFY_SITE_ID"
           --message "GitHub Actions deploy ${GITHUB_SHA}"
+
+      - name: Verify published version and artifacts
+        if: github.event_name == 'workflow_dispatch'
+        run: node tool/release.mjs verify-public --backend .release-work/backend
