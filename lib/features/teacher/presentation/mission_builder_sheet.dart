@@ -8,7 +8,8 @@
  * HOW:
  * Collect the lesson text, call the draft or preview APIs, let the teacher edit
  * the mission content, then save or publish through teacher endpoints. Daily
- * format presets share one responsive setup, source, and certification workspace.
+ * format presets share one responsive setup, source, and certification workspace
+ * framed by solid navy headers and white working surfaces.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -26,11 +27,17 @@ import '../../../core/utils/focus_mission_api.dart';
 import '../../../core/utils/youtube_video.dart';
 import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/models/mission_display_name.dart';
-import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/learning_video_card.dart';
 import '../../../shared/widgets/question_evidence_panel.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'assessment_mode_screen.dart';
+
+// Solid editor surfaces are local to this teacher workspace.
+const _builderNavy = Color(0xFF1F315D);
+const _builderSlate = Color(0xFF263B66);
+const _builderCanvas = Color(0xFFF7F9FC);
+const _builderBorder = Color(0xFFC7D0DE);
+const _builderMuted = Color(0xFF526079);
 
 // Entry presets share the same controllers, generation and review workflow.
 enum DailyMissionFormat {
@@ -73,18 +80,39 @@ Future<MissionPayload?> showMissionBuilderSheet(
           : viewport.width * 0.96,
       maxHeight: viewport.height,
     ),
-    builder: (_) => _MissionBuilderSheet(
-      session: session,
-      student: student,
-      subject: subject,
-      sessionType: sessionType,
-      targetDate: targetDate,
-      timetableEntries: timetableEntries,
-      assessmentDraftCounts: assessmentDraftCounts,
-      openAssessmentOnStart: openAssessmentOnStart,
-      initialFormat: initialFormat,
-      api: api ?? FocusMissionApi(),
-      initialDraft: initialDraft,
+    builder: (_) => Theme(
+      data: Theme.of(context).copyWith(
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 14,
+          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: _builderBorder),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: _builderNavy, width: 2),
+          ),
+        ),
+      ),
+      child: _MissionBuilderSheet(
+        session: session,
+        student: student,
+        subject: subject,
+        sessionType: sessionType,
+        targetDate: targetDate,
+        timetableEntries: timetableEntries,
+        assessmentDraftCounts: assessmentDraftCounts,
+        openAssessmentOnStart: openAssessmentOnStart,
+        initialFormat: initialFormat,
+        api: api ?? FocusMissionApi(),
+        initialDraft: initialDraft,
+      ),
     ),
   );
 }
@@ -275,7 +303,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         !_isPublishedMission && _isAssessmentPublishLocked;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     final isCompact = MediaQuery.sizeOf(context).width < 700;
-    final pagePadding = isCompact ? 12.0 : 20.0;
+    final pagePadding = isCompact ? 12.0 : 16.0;
 
     return PopScope(
       canPop: _allowPop,
@@ -289,124 +317,182 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           heightFactor: isCompact ? 1 : 0.96,
           widthFactor: 1,
           child: Container(
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: const Color(0xFFF5F7FB),
+              color: _builderNavy,
               borderRadius: isCompact
                   ? BorderRadius.zero
-                  : BorderRadius.circular(24),
+                  : BorderRadius.circular(20),
+              border: Border.all(color: _builderNavy),
             ),
-            child: Padding(
-              padding: EdgeInsets.all(pagePadding),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    pagePadding,
+                    10,
+                    pagePadding,
+                    14,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextButton.icon(
-                        onPressed: _requestClose,
-                        icon: const Icon(Icons.arrow_back_rounded),
-                        label: const Text('Back'),
+                      Row(
+                        children: [
+                          TextButton.icon(
+                            onPressed: _requestClose,
+                            icon: const Icon(Icons.arrow_back_rounded),
+                            label: const Text('Back'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              !_hasDraft
+                                  ? 'Build $_formatLabel Mission'
+                                  : _isPublishedMission
+                                  ? 'Edit Mission'
+                                  : 'Review Draft',
+                              style:
+                                  (isCompact
+                                          ? Theme.of(
+                                              context,
+                                            ).textTheme.titleLarge
+                                          : Theme.of(
+                                              context,
+                                            ).textTheme.headlineSmall)
+                                      ?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                            ),
+                          ),
+                          if (_hasDraft && !isCompact) ...[
+                            _InfoPill(
+                              label: _draftMission!.isDraft
+                                  ? 'Draft only'
+                                  : 'Live mission',
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          _TopButton(
+                            icon: Icons.close_rounded,
+                            onTap: _requestClose,
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          !_hasDraft
-                              ? 'Build $_formatLabel Mission'
-                              : _isPublishedMission
-                              ? 'Edit Mission'
-                              : 'Review Draft',
-                          style: isCompact
-                              ? Theme.of(context).textTheme.titleLarge
-                              : Theme.of(context).textTheme.headlineSmall,
+                      const SizedBox(height: 8),
+                      Text(
+                        !_hasDraft
+                            ? _isTheoryDraft
+                                  ? 'Prepare 2–5 short-answer questions, then review before publishing.'
+                                  : _isEssayDraft
+                                  ? 'Prepare guided A/B/C/D essay work, then review before publishing.'
+                                  : 'Prepare 5 or 8 objective questions, then review before publishing.'
+                            : _isPublishedMission
+                            ? 'This mission is already live. Update the wording, answers, learning videos, or teacher note here, then save the changes.'
+                            : 'The student cannot begin this mission until you publish it. Review the draft, tune the questions, and then publish when it is ready.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFFDCE4F2),
                         ),
                       ),
-                      if (_hasDraft && !isCompact) ...[
+                    ],
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: pagePadding,
+                    vertical: 8,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(bottom: BorderSide(color: _builderBorder)),
+                  ),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      _InfoPill(label: widget.student.name),
+                      _InfoPill(label: widget.subject.name),
+                      _InfoPill(label: _selectedSessionType.toUpperCase()),
+                      _InfoPill(label: _formatTargetDate(_resolvedTargetDate)),
+                      if (_selectedTaskCodes.isNotEmpty)
+                        _InfoPill(
+                          label: 'Task Focus: ${_selectedTaskCodes.join(', ')}',
+                        ),
+                      if (_hasDraft && isCompact)
                         _InfoPill(
                           label: _draftMission!.isDraft
                               ? 'Draft only'
                               : 'Live mission',
                         ),
-                        const SizedBox(width: 10),
-                      ],
-                      _TopButton(
-                        icon: Icons.close_rounded,
-                        onTap: _requestClose,
+                      TextButton.icon(
+                        onPressed: _isSaving || _isGenerating
+                            ? null
+                            : _openMissionDatePicker,
+                        icon: const Icon(
+                          Icons.calendar_month_rounded,
+                          size: 16,
+                        ),
+                        label: const Text('Change mission date'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: _builderNavy,
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    !_hasDraft
-                        ? _isTheoryDraft
-                              ? 'Prepare 2–5 short-answer questions, then review before publishing.'
-                              : _isEssayDraft
-                              ? 'Prepare guided A/B/C/D essay work, then review before publishing.'
-                              : 'Prepare 5 or 8 objective questions, then review before publishing.'
-                        : _isPublishedMission
-                        ? 'This mission is already live. Update the wording, answers, learning videos, or teacher note here, then save the changes.'
-                        : 'The student cannot begin this mission until you publish it. Review the draft, tune the questions, and then publish when it is ready.',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppPalette.textMuted,
+                ),
+                if (_errorMessage != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.item),
-                  _workingCard(
-                    child: Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        _InfoPill(label: widget.student.name),
-                        _InfoPill(label: widget.subject.name),
-                        _InfoPill(label: _selectedSessionType.toUpperCase()),
-                        _InfoPill(
-                          label: _formatTargetDate(_resolvedTargetDate),
-                        ),
-                        if (_selectedTaskCodes.isNotEmpty)
-                          _InfoPill(
-                            label:
-                                'Task Focus: ${_selectedTaskCodes.join(', ')}',
-                          ),
-                        if (_hasDraft && isCompact)
-                          _InfoPill(
-                            label: _draftMission!.isDraft
-                                ? 'Draft only'
-                                : 'Live mission',
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: _isSaving || _isGenerating
-                          ? null
-                          : _openMissionDatePicker,
-                      icon: const Icon(Icons.calendar_month_rounded, size: 18),
-                      label: const Text('Change mission date'),
-                    ),
-                  ),
-                  if (_errorMessage != null) ...[
-                    SoftPanel(
-                      colors: const [Color(0xFFFFF4F4), Color(0xFFFFE6E6)],
-                      child: Text(
-                        _errorMessage!,
-                        style: Theme.of(context).textTheme.bodyMedium,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFFF8F3),
+                      border: Border(
+                        left: BorderSide(color: Color(0xFF986000), width: 3),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.item),
-                  ],
-                  if (_isTargetDateInPast) ...[
-                    SoftPanel(
-                      colors: const [Color(0xFFFFF4F4), Color(0xFFFFE6E6)],
-                      child: Text(
-                        'Teachers can only prepare missions for today or an upcoming class date. Pick a future lesson date before generating or publishing.',
-                        style: Theme.of(context).textTheme.bodyMedium,
+                    child: Text(
+                      _errorMessage!,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+                if (_isTargetDateInPast) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFFF8F3),
+                      border: Border(
+                        left: BorderSide(color: Color(0xFF986000), width: 3),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.item),
-                  ],
-                  Expanded(
+                    child: Text(
+                      'Teachers can only prepare missions for today or an upcoming class date. Pick a future lesson date before generating or publishing.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+                Expanded(
+                  child: Container(
+                    color: _builderCanvas,
+                    padding: EdgeInsets.fromLTRB(
+                      pagePadding,
+                      12,
+                      pagePadding,
+                      0,
+                    ),
                     child: SingleChildScrollView(
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
@@ -480,8 +566,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -494,15 +580,15 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: const Color(0xFFDCE3ED)),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _builderBorder),
     ),
     child: child,
   );
 
   Widget _buildCreationWorkspace(BuildContext context, double width) {
     final setup = _workingCard(child: _buildSetupControls(context));
-    final summary = _workingCard(child: _buildMissionSummary(context));
+    final summary = _buildMissionSummary(context);
     // Keep both columns readable under text scaling; phones stack every control.
     final useColumns =
         width >= 850 * MediaQuery.textScalerOf(context).scale(14) / 14;
@@ -539,55 +625,85 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     children: [
       _workingCard(child: _buildSetupControls(context)),
       const SizedBox(height: 12),
-      _workingCard(child: _buildMissionSummary(context)),
+      _buildMissionSummary(context),
       const SizedBox(height: 12),
       _workingCard(child: _buildSourceControls(context)),
     ],
   );
 
-  Widget _buildMissionSummary(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text('Mission summary', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 12),
-      Text(
-        _formatLabel,
-        style: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(color: AppPalette.navy),
-      ),
-      const SizedBox(height: 6),
-      Text(
-        '${widget.subject.name} · ${_selectedSessionType == 'morning' ? 'Morning' : 'Afternoon'}',
-      ),
-      const SizedBox(height: 10),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          if (_selectedTaskCodes.isEmpty)
-            const _InfoPill(label: 'No task focus selected'),
-          for (final code in _selectedTaskCodes) _InfoPill(label: code),
-          _InfoPill(
-            label: _isEssayDraft
-                ? 'A/B/C/D · $_essayMode'
-                : '$_questionCount questions',
+  Widget _buildMissionSummary(BuildContext context) => Container(
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _builderBorder),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          color: _builderSlate,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Mission summary',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: const Color(0xFFDCE4F2),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _formatLabel,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
-          _InfoPill(label: '$_effectiveXpReward XP'),
-        ],
-      ),
-      const SizedBox(height: 8),
-      Text(
-        _xpRewardPolicySummary,
-        style: Theme.of(
-          context,
-        ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-      ),
-      if (_selectedSubjectCertification != null) ...[
-        const Divider(height: 24),
-        _buildCertificationHelperPanel(context),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${widget.subject.name} · ${_selectedSessionType == 'morning' ? 'Morning' : 'Afternoon'}',
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (_selectedTaskCodes.isEmpty)
+                    const _InfoPill(label: 'No task focus selected'),
+                  for (final code in _selectedTaskCodes) _InfoPill(label: code),
+                  _InfoPill(
+                    label: _isEssayDraft
+                        ? 'A/B/C/D · $_essayMode'
+                        : '$_questionCount questions',
+                  ),
+                  _InfoPill(label: '$_effectiveXpReward XP'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _xpRewardPolicySummary,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: _builderMuted),
+              ),
+              if (_selectedSubjectCertification != null) ...[
+                const Divider(height: 24),
+                _buildCertificationHelperPanel(context),
+              ],
+            ],
+          ),
+        ),
       ],
-    ],
+    ),
   );
 
   Widget _buildActionSection(
@@ -600,7 +716,11 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         child: FilledButton.icon(
           key: const Key('generate-daily-mission'),
           style: FilledButton.styleFrom(
-            backgroundColor: AppPalette.navy,
+            backgroundColor: _builderNavy,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
             minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           ),
@@ -618,11 +738,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     }
 
     final actionButtons = <Widget>[
-      GradientButton(
+      _BuilderActionButton(
         label: _isPublishedMission
             ? (_isSaving ? 'Saving changes...' : 'Save Changes')
             : (_isSaving ? 'Publishing...' : 'Publish Mission'),
-        colors: AppPalette.progressGradient,
         onPressed:
             _isSaving ||
                 _isTargetDateInPast ||
@@ -631,23 +750,20 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             : () => _saveDraft(true),
       ),
       if (!_isPublishedMission)
-        GradientButton(
+        _BuilderActionButton(
           label: _isSaving ? 'Saving...' : 'Save Draft',
-          colors: AppPalette.teacherGradient,
           onPressed: _isSaving || _isTargetDateInPast
               ? () {}
               : () => _saveDraft(false),
         ),
-      GradientButton(
+      _BuilderActionButton(
         label: 'Download Teacher Copy',
-        colors: const [AppPalette.primaryBlue, AppPalette.aqua],
         onPressed: _isSaving || _isGenerating
             ? () {}
             : () => _downloadDraft(audience: _DraftExportAudience.teacher),
       ),
-      GradientButton(
+      _BuilderActionButton(
         label: 'Download Student Copy',
-        colors: const [AppPalette.sun, AppPalette.orange],
         onPressed: _isSaving || _isGenerating
             ? () {}
             : () => _downloadDraft(audience: _DraftExportAudience.student),
@@ -704,7 +820,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             'Complete Task Focus to unlock publishing.',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: _builderMuted),
           ),
         ],
         if (!_isPublishedMission && _isAssessmentMode) ...[
@@ -742,7 +858,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         Text(
           'Mission setup',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: AppPalette.navy,
+            color: _builderNavy,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -752,7 +868,12 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         TextFormField(
           key: const Key('mission-title'),
           controller: _titleController,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: _builderNavy,
+            fontWeight: FontWeight.w700,
+          ),
           decoration: const InputDecoration(
+            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
             hintText: 'P1 Objective Q5 or a custom title',
           ),
           validator: (value) {
@@ -763,7 +884,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             return null;
           },
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         Text('Draft format', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 10),
         Wrap(
@@ -805,14 +926,14 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               : 'Choose the work format. You can switch before generating.',
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ).textTheme.bodySmall?.copyWith(color: _builderMuted),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         Text('Task focus', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 10),
         Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          spacing: 6,
+          runSpacing: 6,
           children: kTaskFocusCodes
               .map(
                 (taskCode) => _CountChip(
@@ -833,16 +954,16 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               : 'Groq will target ${_selectedTaskCodes.join(', ')} while generating and regenerating this draft.',
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ).textTheme.bodySmall?.copyWith(color: _builderMuted),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (_draftFormat == 'ESSAY_BUILDER') ...[
           const SizedBox(height: 12),
           Text('Essay mode', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 10),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: 6,
+            runSpacing: 6,
             children: [
               _CountChip(
                 label: 'NORMAL',
@@ -874,10 +995,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 : 'NORMAL targets around 10 sentences, STRETCH_15 around 15, and STRETCH_20 around 20.',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: _builderMuted),
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (!_isEssayDraft) ...[
           Text(
             _isTheoryDraft ? 'Theory size' : 'Objective size',
@@ -889,8 +1010,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           const _InfoPill(label: '10 questions · Assessment'),
         ] else if (_draftFormat == 'QUESTIONS') ...[
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: 6,
+            runSpacing: 6,
             children:
                 const [
                       (5, '5 questions · Daily'),
@@ -916,7 +1037,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             '5 questions for daily learning; 8 for revision.',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: _builderMuted),
           ),
           if (!canEditQuestionCount) ...[
             const SizedBox(height: 8),
@@ -924,12 +1045,13 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               'Question count is locked after generation so you can focus on editing the draft.',
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+              ).textTheme.bodySmall?.copyWith(color: _builderMuted),
             ),
           ],
         ] else if (_draftFormat == 'THEORY') ...[
           SoftPanel(
-            colors: const [Color(0xFFF8FBFF), Color(0xFFE8F4FF)],
+            solid: true,
+            colors: const [Colors.white],
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -942,14 +1064,14 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                   'Set how many quick theory-check questions Groq should draft from the uploaded or pasted unit text.',
                   style: Theme.of(
                     context,
-                  ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+                  ).textTheme.bodySmall?.copyWith(color: _builderMuted),
                 ),
                 const SizedBox(height: 12),
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: AppPalette.primaryBlue,
-                    inactiveTrackColor: Colors.white.withValues(alpha: 0.78),
-                    thumbColor: AppPalette.aqua,
+                    activeTrackColor: _builderNavy,
+                    inactiveTrackColor: _builderBorder,
+                    thumbColor: _builderNavy,
                     overlayColor: AppPalette.primaryBlue.withValues(
                       alpha: 0.12,
                     ),
@@ -977,15 +1099,15 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                   children: [
                     Text(
                       '2 questions',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: _builderMuted),
                     ),
                     Text(
                       '5 questions',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: _builderMuted),
                     ),
                   ],
                 ),
@@ -999,17 +1121,17 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 : 'Theory keeps a fixed 50 XP reward after teacher review and uses 2 to 5 fast-focus questions from the scanned unit text.',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: _builderMuted),
           ),
         ] else ...[
           Text(
             'Essay builder sentence and blank counts are dynamic and come from the generated draft targets.',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: _builderMuted),
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -1052,7 +1174,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             (_selectedTaskCodes.isNotEmpty || _showFullRawUploadText)) ...[
           const SizedBox(height: 12),
           SoftPanel(
-            colors: const [Color(0xFFF7FCFF), Color(0xFFE9F4FF)],
+            solid: true,
+            colors: const [Colors.white],
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1071,7 +1194,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                       : 'This is the full original extracted text for ${_selectedTaskCodes.join(', ')} from your uploaded file.',
                   style: Theme.of(
                     context,
-                  ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+                  ).textTheme.bodySmall?.copyWith(color: _builderMuted),
                 ),
                 const SizedBox(height: 10),
                 Container(
@@ -1086,7 +1209,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                       ? Text(
                           'No raw uploaded text is available yet for this draft. Upload the source file in this sheet to view the full scanned text.',
                           style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: AppPalette.textMuted),
+                              ?.copyWith(color: _builderMuted),
                         )
                       : SingleChildScrollView(
                           child: SelectableText(
@@ -1108,7 +1231,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           'Choose one path for this upload. You can send lesson text to Groq for drafting, or import a structured file directly into Objective, Theory, or Essay format.',
           style: Theme.of(
             context,
-          ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ).textTheme.bodyMedium?.copyWith(color: _builderMuted),
         ),
         const SizedBox(height: 12),
         LayoutBuilder(
@@ -1133,7 +1256,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                         ? 'Send lesson text to Groq for theory drafting.'
                         : 'Send lesson text to Groq for mission drafting.',
                     icon: Icons.auto_awesome_rounded,
-                    colors: AppPalette.teacherGradient,
                     active:
                         _activeSourceUploadMode == _SourceUploadMode.aiDraft,
                     onPressed: _isExtractingSource || _isTargetDateInPast
@@ -1152,7 +1274,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                       subtitle:
                           'Import structured A/B/C/D questions and unit text.',
                       icon: Icons.quiz_outlined,
-                      colors: const [AppPalette.primaryBlue, AppPalette.aqua],
                       active:
                           _activeSourceUploadMode ==
                               _SourceUploadMode.populateDraft &&
@@ -1176,7 +1297,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                       subtitle:
                           'Import short-answer theory prompts and expected answers.',
                       icon: Icons.short_text_rounded,
-                      colors: const [AppPalette.mint, AppPalette.aqua],
                       active:
                           _activeSourceUploadMode ==
                               _SourceUploadMode.populateDraft &&
@@ -1200,7 +1320,6 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                       subtitle:
                           'Import sentence previews, blanks, and correct options.',
                       icon: Icons.edit_note_rounded,
-                      colors: const [AppPalette.sun, AppPalette.orange],
                       active:
                           _activeSourceUploadMode ==
                               _SourceUploadMode.populateDraft &&
@@ -1223,15 +1342,14 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           'Objective, Theory, and Essay imports stay file-only. They do not call Groq, rewrite wording, or fill missing sections automatically.',
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ).textTheme.bodySmall?.copyWith(color: _builderMuted),
         ),
         if (_hasDraft && _rawUploadedSourceText.trim().isEmpty) ...[
           const SizedBox(height: 12),
-          GradientButton(
+          _BuilderActionButton(
             label: _isReextractingSource
                 ? 'Re-extracting source...'
                 : 'Re-extract source for this draft',
-            colors: AppPalette.mentorGradient,
             onPressed: _isReextractingSource ? () {} : _reextractSourceForDraft,
           ),
           const SizedBox(height: 8),
@@ -1239,7 +1357,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             'One-click recovery for older drafts that were saved before full raw source text was persisted.',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: _builderMuted),
           ),
         ],
         if (_hasResolvedSource || _uploadedSource != null) ...[
@@ -1284,15 +1402,22 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               : 'The selected source preview (or this text) is what Groq uses to generate the draft questions.',
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ).textTheme.bodySmall?.copyWith(color: _builderMuted),
         ),
         const SizedBox(height: 8),
         TextFormField(
           key: const Key('mission-source-text'),
           controller: _unitTextController,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyLarge?.copyWith(color: _builderNavy, height: 1.5),
           minLines: 5,
           maxLines: 10,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: _builderSlate),
+            ),
             hintText:
                 'Paste the lesson notes, reading passage, or unit content here...',
           ),
@@ -1316,14 +1441,13 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 : 'Paste fresh lesson text here or upload a new source file, then regenerate the draft with Groq.',
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodySmall?.copyWith(color: _builderMuted),
           ),
           const SizedBox(height: 12),
-          GradientButton(
+          _BuilderActionButton(
             label: _isGenerating
                 ? 'Refreshing with Groq...'
                 : 'Regenerate with Groq',
-            colors: AppPalette.teacherGradient,
             onPressed: _isGenerating || _isTargetDateInPast
                 ? () {}
                 : _regenerateDraft,
@@ -1369,18 +1493,32 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         ? '$selectedSingleTaskCode is not part of this subject certification template.'
         : 'Groq will generate this draft only for $selectedSingleTaskCode. This mission can count toward certification if the student passes it.';
 
+    final canQualify =
+        _isCertificationQualifyingFormat &&
+        _selectedTaskCodes.length == 1 &&
+        selectedTaskIsRequired;
+    final statusColor = canQualify
+        ? const Color(0xFF157347)
+        : const Color(0xFF986000);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Certification', style: Theme.of(context).textTheme.titleSmall),
+        Text(
+          'Certification',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: _builderNavy,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         const SizedBox(height: 6),
         Text(
           certification.certificationLabel,
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ).textTheme.bodySmall?.copyWith(color: _builderMuted),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -1403,21 +1541,39 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               })
               .toList(growable: false),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Text(
           certification.remainingTaskCodes.isEmpty
               ? 'All required task focuses are already passed for this subject.'
               : 'Remaining for ${widget.student.name}: ${certification.remainingTaskCodes.join(', ')}',
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ).textTheme.bodySmall?.copyWith(color: _builderMuted),
         ),
         const SizedBox(height: 8),
-        Text(
-          helperText,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: AppPalette.navy,
-            fontWeight: FontWeight.w600,
+        Container(
+          padding: const EdgeInsets.only(left: 10),
+          decoration: BoxDecoration(
+            border: Border(left: BorderSide(color: statusColor, width: 3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                canQualify ? 'Can qualify' : 'Does not qualify',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: statusColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                helperText,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: _builderNavy),
+              ),
+            ],
           ),
         ),
       ],
@@ -1429,7 +1585,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SoftPanel(
-          colors: const [Color(0xFFF6FCFF), Color(0xFFE8F4FF)],
+          solid: true,
+          colors: const [Colors.white],
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1437,9 +1594,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: AppPalette.teacherGradient,
-                  ),
+                  color: _builderNavy,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(
@@ -1459,9 +1614,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                     const SizedBox(height: 4),
                     Text(
                       'Edit the teacher note, question wording, answer options, and correct answers before you publish this mission.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: _builderMuted),
                     ),
                   ],
                 ),
@@ -1492,7 +1647,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             'This guided essay draft will be used for A/B/C/D sentence building.',
             style: Theme.of(
               context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodyMedium?.copyWith(color: _builderMuted),
           ),
           const SizedBox(height: AppSpacing.item),
           _buildEssayBuilderPreview(context),
@@ -1508,7 +1663,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 : 'Choose the right answer for each question and tighten the wording where needed.',
             style: Theme.of(
               context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+            ).textTheme.bodyMedium?.copyWith(color: _builderMuted),
           ),
           const SizedBox(height: AppSpacing.item),
           ...List.generate(
@@ -1572,9 +1727,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 Expanded(
                   child: Text(
                     'Theory drafts must stay between $_theoryQuestionCountMin and $_theoryQuestionCountMax questions.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppPalette.textMuted,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: _builderMuted),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1597,11 +1752,13 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     final draft = _draftMission?.essayBuilderDraft;
     if (draft == null) {
       return SoftPanel(
+        solid: true,
+        colors: const [Colors.white],
         child: Text(
           'No essay builder draft is available yet. Generate the draft with Groq to see the guided sentences.',
           style: Theme.of(
             context,
-          ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+          ).textTheme.bodyMedium?.copyWith(color: _builderMuted),
         ),
       );
     }
@@ -1610,7 +1767,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SoftPanel(
-          colors: const [Color(0xFFF6FCFF), Color(0xFFE8F4FF)],
+          solid: true,
+          colors: const [Colors.white],
           child: Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -1646,7 +1804,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           return Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.item),
             child: SoftPanel(
-              colors: const [Color(0xFFF7FCFF), Color(0xFFE9F4FF)],
+              solid: true,
+              colors: const [Colors.white],
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1750,8 +1909,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(
                                         color: entry.key == part.correctOption
-                                            ? AppPalette.navy
-                                            : AppPalette.textMuted,
+                                            ? _builderNavy
+                                            : _builderMuted,
                                         fontWeight:
                                             entry.key == part.correctOption
                                             ? FontWeight.w700
@@ -4245,11 +4404,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       builder: (context) => SafeArea(
         child: Container(
           decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: AppPalette.backgroundGradient,
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
+            color: _builderCanvas,
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Padding(
@@ -4267,7 +4422,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                   'Only timetable slots for ${widget.subject.name} are listed.',
                   style: Theme.of(
                     context,
-                  ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+                  ).textTheme.bodySmall?.copyWith(color: _builderMuted),
                 ),
                 const SizedBox(height: AppSpacing.item),
                 Flexible(
@@ -4299,17 +4454,14 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                                 AppSpacing.radiusMd,
                               ),
                               border: selectedNow
-                                  ? Border.all(
-                                      color: AppPalette.navy,
-                                      width: 1.3,
-                                    )
+                                  ? Border.all(color: _builderNavy, width: 1.3)
                                   : null,
                             ),
                             child: Row(
                               children: [
                                 const Icon(
                                   Icons.event_available_rounded,
-                                  color: AppPalette.navy,
+                                  color: _builderNavy,
                                 ),
                                 const SizedBox(width: 10),
                                 Expanded(
@@ -4323,7 +4475,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                                 if (selectedNow)
                                   const Icon(
                                     Icons.check_circle_rounded,
-                                    color: AppPalette.navy,
+                                    color: _builderNavy,
                                   ),
                               ],
                             ),
@@ -4896,9 +5048,8 @@ class _SourceReadinessCard extends StatelessWidget {
         sourceUploadMode == _SourceUploadMode.populateDraft;
 
     return SoftPanel(
-      colors: needsAttention
-          ? const [Color(0xFFFFF7F2), Color(0xFFFFECE1)]
-          : const [Color(0xFFF3FBFF), Color(0xFFE6F4FF)],
+      solid: true,
+      colors: const [Colors.white],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -4943,9 +5094,9 @@ class _SourceReadinessCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       readiness.summary,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: _builderMuted),
                     ),
                   ],
                 ),
@@ -5030,7 +5181,7 @@ class _SourceReadinessCard extends StatelessWidget {
                   : 'Upload a fuller PDF or add the missing detail in Unit text, then regenerate the draft.',
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+              ).textTheme.bodySmall?.copyWith(color: _builderMuted),
             ),
           ],
         ],
@@ -5060,7 +5211,8 @@ class _SourceSummaryCard extends StatelessWidget {
         sourceUploadMode == _SourceUploadMode.populateDraft;
 
     return SoftPanel(
-      colors: const [Color(0xFFF7FCFF), Color(0xFFE9F5FF)],
+      solid: true,
+      colors: const [Colors.white],
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -5068,9 +5220,7 @@ class _SourceSummaryCard extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: AppPalette.teacherGradient,
-              ),
+              color: _builderNavy,
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(Icons.description_rounded, color: Colors.white),
@@ -5093,7 +5243,7 @@ class _SourceSummaryCard extends StatelessWidget {
                       : '$sourceFileType · ${uploadedSource?.sourceKind ?? 'text extraction'}',
                   style: Theme.of(
                     context,
-                  ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
+                  ).textTheme.bodyMedium?.copyWith(color: _builderMuted),
                 ),
                 if (uploadedSource != null) ...[
                   const SizedBox(height: 10),
@@ -5135,7 +5285,8 @@ class _UnitPlanDraftCard extends StatelessWidget {
         sourceUploadMode == _SourceUploadMode.populateDraft;
 
     return SoftPanel(
-      colors: const [Color(0xFFFFFCF7), Color(0xFFFFF3E2)],
+      solid: true,
+      colors: const [Colors.white],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -5146,9 +5297,7 @@ class _UnitPlanDraftCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppPalette.sun, AppPalette.orange],
-                  ),
+                  color: _builderNavy,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(
@@ -5174,9 +5323,9 @@ class _UnitPlanDraftCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       draft.unitPlan.unitSummary,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textMuted,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: _builderMuted),
                     ),
                   ],
                 ),
@@ -5454,7 +5603,8 @@ class _QuestionEditorCard extends StatelessWidget {
     ]);
 
     return SoftPanel(
-      colors: const [Color(0xFFFFFFFF), Color(0xFFF5FAFF)],
+      solid: true,
+      colors: const [Colors.white],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -5464,9 +5614,7 @@ class _QuestionEditorCard extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: AppPalette.teacherGradient,
-                  ),
+                  color: _builderNavy,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Center(
@@ -5649,7 +5797,8 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
     ]);
 
     return SoftPanel(
-      colors: const [Color(0xFFFFFEFB), Color(0xFFFFF2D8)],
+      solid: true,
+      colors: const [Colors.white],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -5659,9 +5808,7 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppPalette.sun, AppPalette.orange],
-                  ),
+                  color: _builderNavy,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Center(
@@ -5863,7 +6010,7 @@ class _EditorSectionLabel extends StatelessWidget {
         Text(
           label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: AppPalette.navy,
+            color: _builderNavy,
             fontWeight: FontWeight.w900,
             letterSpacing: 0.5,
           ),
@@ -5918,7 +6065,7 @@ class _LearningVideoEditorState extends State<_LearningVideoEditor> {
           'Recommended: use a focused 30-second to 2-minute learning clip.',
           style: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+          ).textTheme.bodySmall?.copyWith(color: _builderMuted),
         ),
         if (editor.learningVideoUrlController.text.trim().isNotEmpty) ...[
           const SizedBox(height: AppSpacing.item),
@@ -5987,7 +6134,7 @@ class _OptionBadge extends StatelessWidget {
           label,
           style: Theme.of(
             context,
-          ).textTheme.titleSmall?.copyWith(color: AppPalette.navy),
+          ).textTheme.titleSmall?.copyWith(color: _builderNavy),
         ),
       ),
     );
@@ -6014,20 +6161,13 @@ class _CorrectOptionChip extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          gradient: selected
-              ? const LinearGradient(colors: AppPalette.progressGradient)
-              : LinearGradient(
-                  colors: [
-                    Colors.white.withValues(alpha: 0.84),
-                    Colors.white.withValues(alpha: 0.74),
-                  ],
-                ),
+          color: selected ? _builderNavy : Colors.white,
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
           label,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: selected ? Colors.white : AppPalette.navy,
+            color: selected ? Colors.white : _builderNavy,
           ),
         ),
       ),
@@ -6045,15 +6185,15 @@ class _TopButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(10),
       child: Ink(
-        width: 46,
-        height: 46,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.76),
-          borderRadius: BorderRadius.circular(18),
+          color: _builderSlate,
+          borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: AppPalette.navy),
+        child: Icon(icon, color: Colors.white),
       ),
     );
   }
@@ -6067,17 +6207,17 @@ class _InfoPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F7FB),
-        border: Border.all(color: const Color(0xFFDCE3ED)),
+        color: Colors.white,
+        border: Border.all(color: _builderBorder),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
         style: Theme.of(
           context,
-        ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+        ).textTheme.bodySmall?.copyWith(color: _builderNavy),
       ),
     );
   }
@@ -6099,24 +6239,20 @@ class _CountChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         constraints: const BoxConstraints(minHeight: 44),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: selected
-              ? AppPalette.navy
-              : Colors.white.withValues(alpha: 0.78),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? AppPalette.navy : const Color(0xFFDCE3ED),
-          ),
+          color: selected ? _builderNavy : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: selected ? _builderNavy : _builderBorder),
         ),
         child: Text(
           label,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: selected ? Colors.white : AppPalette.navy,
+            color: selected ? Colors.white : _builderNavy,
           ),
         ),
       ),
@@ -6129,7 +6265,6 @@ class _SourceActionButton extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.colors,
     required this.active,
     required this.onPressed,
   });
@@ -6137,7 +6272,6 @@ class _SourceActionButton extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
-  final List<Color> colors;
   final bool active;
   final VoidCallback? onPressed;
 
@@ -6149,43 +6283,15 @@ class _SourceActionButton extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          constraints: const BoxConstraints(minHeight: 92),
-          padding: const EdgeInsets.all(14),
+          constraints: const BoxConstraints(minHeight: 76),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            gradient: enabled
-                ? LinearGradient(
-                    colors: active
-                        ? colors
-                        : [
-                            Colors.white.withValues(alpha: 0.88),
-                            Colors.white.withValues(alpha: 0.74),
-                          ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  )
-                : LinearGradient(
-                    colors: [
-                      AppPalette.sky.withValues(alpha: 0.28),
-                      Colors.white.withValues(alpha: 0.68),
-                    ],
-                  ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: active
-                  ? colors.first.withValues(alpha: 0.44)
-                  : AppPalette.sky.withValues(alpha: 0.32),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: (active ? colors.first : AppPalette.primaryBlue)
-                    .withValues(alpha: enabled ? 0.14 : 0.08),
-                blurRadius: 18,
-                offset: const Offset(0, 10),
-              ),
-            ],
+            color: active ? _builderNavy : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: active ? _builderNavy : _builderBorder),
           ),
           child: Row(
             children: [
@@ -6193,9 +6299,7 @@ class _SourceActionButton extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: active
-                      ? Colors.white.withValues(alpha: 0.2)
-                      : AppPalette.sky.withValues(alpha: enabled ? 0.24 : 0.16),
+                  color: active ? _builderSlate : _builderCanvas,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
@@ -6203,8 +6307,8 @@ class _SourceActionButton extends StatelessWidget {
                   color: active
                       ? Colors.white
                       : enabled
-                      ? AppPalette.navy
-                      : AppPalette.textMuted,
+                      ? _builderNavy
+                      : _builderMuted,
                 ),
               ),
               const SizedBox(width: 12),
@@ -6219,8 +6323,8 @@ class _SourceActionButton extends StatelessWidget {
                         color: active
                             ? Colors.white
                             : enabled
-                            ? AppPalette.navy
-                            : AppPalette.textMuted,
+                            ? _builderNavy
+                            : _builderMuted,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -6230,9 +6334,7 @@ class _SourceActionButton extends StatelessWidget {
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: active
-                            ? Colors.white.withValues(alpha: 0.92)
-                            : AppPalette.textMuted,
+                        color: active ? Colors.white : _builderMuted,
                         height: 1.3,
                       ),
                     ),
@@ -6268,14 +6370,15 @@ class _CertificationFocusChip extends StatelessWidget {
         textColor = const Color(0xFFAF6A00);
         break;
       default:
-        backgroundColor = Colors.white.withValues(alpha: 0.78);
-        textColor = AppPalette.navy;
+        backgroundColor = Colors.white;
+        textColor = _builderNavy;
         break;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
+        border: Border.all(color: textColor),
         color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
       ),
@@ -6288,4 +6391,27 @@ class _CertificationFocusChip extends StatelessWidget {
       ),
     );
   }
+}
+
+// Solid actions keep the existing review/publish callbacks within this editor.
+class _BuilderActionButton extends StatelessWidget {
+  const _BuilderActionButton({required this.label, required this.onPressed});
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: double.infinity,
+    child: FilledButton(
+      style: FilledButton.styleFrom(
+        backgroundColor: _builderNavy,
+        foregroundColor: Colors.white,
+        minimumSize: const Size(0, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      onPressed: onPressed,
+      child: Text(label, textAlign: TextAlign.center),
+    ),
+  );
 }
