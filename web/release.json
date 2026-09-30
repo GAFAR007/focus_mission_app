@@ -1,6 +1,27 @@
 {
-  "version": "2.2.0",
+  "version": "2.3.0",
   "releases": [
+    {
+      "version": "2.3.0",
+      "previousVersion": "2.2.0",
+      "releasedAt": "2026-09-30T17:43:42.725Z",
+      "title": "Vertical Pong and Power Battle",
+      "changes": {
+        "new": [
+          "Play Pong on a vertical court with yourself always defending from the bottom, including in student battles.",
+          "Collect seven temporary boosts, use Forward Rush, and choose Power Battle for explicitly accepted student matches."
+        ],
+        "improved": [
+          "Paddle movement and impact position now shape capped ball speed, angle and spin, with motion-aware visual effects and optional sound.",
+          "The deterministic computer opponent can collect boosts and adapt within each level's limits."
+        ],
+        "fixed": []
+      },
+      "source": {
+        "frontend": "0e6a461d491acf5c78254cfab4c619034e053f31",
+        "backend": "293af8599fff1f93b0c3b4051bd30bfa0efbd8fd"
+      }
+    },
     {
       "version": "2.2.0",
       "previousVersion": "2.1.1",
