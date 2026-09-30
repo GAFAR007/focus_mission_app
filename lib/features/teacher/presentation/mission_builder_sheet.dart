@@ -7,7 +7,8 @@
  * where generated content can be checked and adjusted before it goes live.
  * HOW:
  * Collect the lesson text, call the draft or preview APIs, let the teacher edit
- * the mission content, then save or publish through teacher endpoints.
+ * the mission content, then save or publish through teacher endpoints. Daily
+ * format presets share one responsive setup, source, and certification workspace.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -31,6 +32,16 @@ import '../../../shared/widgets/question_evidence_panel.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'assessment_mode_screen.dart';
 
+// Entry presets share the same controllers, generation and review workflow.
+enum DailyMissionFormat {
+  objective('QUESTIONS'),
+  theory('THEORY'),
+  essay('ESSAY_BUILDER');
+
+  const DailyMissionFormat(this.draftFormat);
+  final String draftFormat;
+}
+
 Future<MissionPayload?> showMissionBuilderSheet(
   BuildContext context, {
   required AuthSession session,
@@ -41,6 +52,7 @@ Future<MissionPayload?> showMissionBuilderSheet(
   List<TodaySchedule> timetableEntries = const [],
   Map<String, int> assessmentDraftCounts = const {},
   bool openAssessmentOnStart = false,
+  DailyMissionFormat initialFormat = DailyMissionFormat.objective,
   FocusMissionApi? api,
   MissionPayload? initialDraft,
 }) {
@@ -54,7 +66,11 @@ Future<MissionPayload?> showMissionBuilderSheet(
     enableDrag: false,
     backgroundColor: Colors.transparent,
     constraints: BoxConstraints(
-      maxWidth: isCompact ? viewport.width : viewport.width * 0.96,
+      maxWidth: isCompact
+          ? viewport.width
+          : initialDraft == null
+          ? (viewport.width * 0.96).clamp(0.0, 1200.0)
+          : viewport.width * 0.96,
       maxHeight: viewport.height,
     ),
     builder: (_) => _MissionBuilderSheet(
@@ -66,6 +82,7 @@ Future<MissionPayload?> showMissionBuilderSheet(
       timetableEntries: timetableEntries,
       assessmentDraftCounts: assessmentDraftCounts,
       openAssessmentOnStart: openAssessmentOnStart,
+      initialFormat: initialFormat,
       api: api ?? FocusMissionApi(),
       initialDraft: initialDraft,
     ),
@@ -86,6 +103,7 @@ class _MissionBuilderSheet extends StatefulWidget {
     required this.timetableEntries,
     required this.assessmentDraftCounts,
     required this.openAssessmentOnStart,
+    required this.initialFormat,
     required this.api,
     this.initialDraft,
   });
@@ -98,6 +116,7 @@ class _MissionBuilderSheet extends StatefulWidget {
   final List<TodaySchedule> timetableEntries;
   final Map<String, int> assessmentDraftCounts;
   final bool openAssessmentOnStart;
+  final DailyMissionFormat initialFormat;
   final FocusMissionApi api;
   final MissionPayload? initialDraft;
 
@@ -152,7 +171,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   bool get _isPublishedMission => _draftMission?.isPublished ?? false;
   bool get _isTargetDateInPast =>
       _resolvedTargetDate.isBefore(_dateOnly(DateTime.now()));
-  bool get _isAssessmentMode => _questionCount == _assessmentQuestionCount;
+  bool get _isAssessmentMode =>
+      _draftFormat == 'QUESTIONS' && _questionCount == _assessmentQuestionCount;
+  String get _formatLabel => missionTypeLabel(_draftFormat);
   bool get _isBusinessTaskFocusRequired =>
       widget.subject.name.trim().toLowerCase() == 'business';
   bool get _isAssessmentPublishLocked =>
@@ -207,6 +228,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   @override
   void initState() {
     super.initState();
+    _draftFormat = widget.initialFormat.draftFormat;
     _selectedSessionType = widget.sessionType;
     _selectedTargetDate = _dateOnly(widget.targetDate);
     _titleController = TextEditingController(
@@ -253,7 +275,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         !_isPublishedMission && _isAssessmentPublishLocked;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     final isCompact = MediaQuery.sizeOf(context).width < 700;
-    final pagePadding = isCompact ? AppSpacing.item : AppSpacing.screen;
+    final pagePadding = isCompact ? 12.0 : 20.0;
 
     return PopScope(
       canPop: _allowPop,
@@ -268,14 +290,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           widthFactor: 1,
           child: Container(
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: AppPalette.backgroundGradient,
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
+              color: const Color(0xFFF5F7FB),
               borderRadius: isCompact
                   ? BorderRadius.zero
-                  : BorderRadius.circular(32),
+                  : BorderRadius.circular(24),
             ),
             child: Padding(
               padding: EdgeInsets.all(pagePadding),
@@ -293,7 +311,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                       Expanded(
                         child: Text(
                           !_hasDraft
-                              ? 'Build Mission Draft'
+                              ? 'Build $_formatLabel Mission'
                               : _isPublishedMission
                               ? 'Edit Mission'
                               : 'Review Draft',
@@ -320,8 +338,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                   Text(
                     !_hasDraft
                         ? _isTheoryDraft
-                              ? 'Upload a doc or scan and Groq will draft a fast-focus theory check for ${widget.student.name}. You set 2 to 5 questions, then review the draft before it goes live.'
-                              : 'Paste the unit text and Groq will draft calm, SEN-friendly questions for ${widget.student.name}. You review the draft before the mission goes live.'
+                              ? 'Prepare 2–5 short-answer questions, then review before publishing.'
+                              : _isEssayDraft
+                              ? 'Prepare guided A/B/C/D essay work, then review before publishing.'
+                              : 'Prepare 5 or 8 objective questions, then review before publishing.'
                         : _isPublishedMission
                         ? 'This mission is already live. Update the wording, answers, learning videos, or teacher note here, then save the changes.'
                         : 'The student cannot begin this mission until you publish it. Review the draft, tune the questions, and then publish when it is ready.',
@@ -330,8 +350,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.item),
-                  SoftPanel(
-                    padding: const EdgeInsets.all(AppSpacing.item),
+                  _workingCard(
                     child: Wrap(
                       spacing: 10,
                       runSpacing: 10,
@@ -398,6 +417,12 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                         key: _formKey,
                         child: LayoutBuilder(
                           builder: (context, constraints) {
+                            if (!_hasDraft) {
+                              return _buildCreationWorkspace(
+                                context,
+                                constraints.maxWidth,
+                              );
+                            }
                             final useWorkspaceColumns =
                                 _hasDraft && constraints.maxWidth >= 1050;
                             if (useWorkspaceColumns) {
@@ -464,19 +489,131 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     );
   }
 
+  Widget _workingCard({required Widget child}) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: const Color(0xFFDCE3ED)),
+    ),
+    child: child,
+  );
+
+  Widget _buildCreationWorkspace(BuildContext context, double width) {
+    final setup = _workingCard(child: _buildSetupControls(context));
+    final summary = _workingCard(child: _buildMissionSummary(context));
+    // Keep both columns readable under text scaling; phones stack every control.
+    final useColumns =
+        width >= 850 * MediaQuery.textScalerOf(context).scale(14) / 14;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (useColumns)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 3, child: setup),
+              const SizedBox(width: 16),
+              Expanded(flex: 2, child: summary),
+            ],
+          )
+        else ...[
+          setup,
+          const SizedBox(height: 12),
+          summary,
+        ],
+        const SizedBox(height: 16),
+        _workingCard(child: _buildSourceControls(context)),
+        const SizedBox(height: 16),
+        _buildActionSection(
+          context,
+          isAssessmentPublishLockedForActions: _isAssessmentPublishLocked,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMissionSetup(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _workingCard(child: _buildSetupControls(context)),
+      const SizedBox(height: 12),
+      _workingCard(child: _buildMissionSummary(context)),
+      const SizedBox(height: 12),
+      _workingCard(child: _buildSourceControls(context)),
+    ],
+  );
+
+  Widget _buildMissionSummary(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text('Mission summary', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 12),
+      Text(
+        _formatLabel,
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(color: AppPalette.navy),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        '${widget.subject.name} · ${_selectedSessionType == 'morning' ? 'Morning' : 'Afternoon'}',
+      ),
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          if (_selectedTaskCodes.isEmpty)
+            const _InfoPill(label: 'No task focus selected'),
+          for (final code in _selectedTaskCodes) _InfoPill(label: code),
+          _InfoPill(
+            label: _isEssayDraft
+                ? 'A/B/C/D · $_essayMode'
+                : '$_questionCount questions',
+          ),
+          _InfoPill(label: '$_effectiveXpReward XP'),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Text(
+        _xpRewardPolicySummary,
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+      ),
+      if (_selectedSubjectCertification != null) ...[
+        const Divider(height: 24),
+        _buildCertificationHelperPanel(context),
+      ],
+    ],
+  );
+
   Widget _buildActionSection(
     BuildContext context, {
     required bool isAssessmentPublishLockedForActions,
   }) {
     if (!_hasDraft) {
-      return GradientButton(
-        label: _isGenerating
-            ? 'Generating Draft with Groq...'
-            : 'Generate Draft with Groq',
-        colors: AppPalette.teacherGradient,
-        onPressed: _isGenerating || _isTargetDateInPast
-            ? () {}
-            : _generateDraft,
+      return Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          key: const Key('generate-daily-mission'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppPalette.navy,
+            minimumSize: const Size(0, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          ),
+          icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+          label: Text(
+            _isGenerating
+                ? 'Generating $_formatLabel Draft…'
+                : 'Generate $_formatLabel Draft',
+          ),
+          onPressed: _isGenerating || _isTargetDateInPast || _isExtractingSource
+              ? null
+              : _generateDraft,
+        ),
       );
     }
 
@@ -595,17 +732,25 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     );
   }
 
-  Widget _buildMissionSetup(BuildContext context) {
+  Widget _buildSetupControls(BuildContext context) {
     final canEditQuestionCount = !_hasDraft;
-    final isAssessmentMode = _isAssessmentMode;
     final canEditDraftFormat = !_hasDraft && !_isAssessmentMode;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(
+          'Mission setup',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: AppPalette.navy,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 12),
         Text('Mission title', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         TextFormField(
+          key: const Key('mission-title'),
           controller: _titleController,
           decoration: const InputDecoration(
             hintText: 'P1 Objective Q5 or a custom title',
@@ -618,62 +763,23 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             return null;
           },
         ),
-        const SizedBox(height: AppSpacing.section),
-        Text('Difficulty', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _ChoiceChip(
-              label: 'Easy',
-              selected: _effectiveDifficulty == 'easy',
-              colors: AppPalette.studentGradient,
-              onTap: isAssessmentMode
-                  ? null
-                  : () => setState(() => _difficulty = 'easy'),
-            ),
-            _ChoiceChip(
-              label: 'Medium',
-              selected: _effectiveDifficulty == 'medium',
-              colors: const [AppPalette.primaryBlue, AppPalette.aqua],
-              onTap: isAssessmentMode
-                  ? null
-                  : () => setState(() => _difficulty = 'medium'),
-            ),
-            _ChoiceChip(
-              label: 'Hard',
-              selected: _effectiveDifficulty == 'hard',
-              colors: const [AppPalette.sun, AppPalette.orange],
-              onTap: isAssessmentMode
-                  ? null
-                  : () => setState(() => _difficulty = 'hard'),
-            ),
-          ],
-        ),
-        if (isAssessmentMode) ...[
-          const SizedBox(height: 8),
-          Text(
-            'Assessment mode locks difficulty to Hard.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-          ),
-        ],
-        const SizedBox(height: AppSpacing.section),
+        const SizedBox(height: 16),
         Text('Draft format', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 10),
         Wrap(
-          runSpacing: 10,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             _CountChip(
-              label: 'Questions',
+              key: const Key('mission-format-objective'),
+              label: 'Objective',
               selected: _draftFormat == 'QUESTIONS',
               onTap: canEditDraftFormat
                   ? () => _setDraftFormat('QUESTIONS')
                   : null,
             ),
             _CountChip(
+              key: const Key('mission-format-theory'),
               label: 'Theory',
               selected: _draftFormat == 'THEORY',
               onTap: canEditDraftFormat
@@ -681,7 +787,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                   : null,
             ),
             _CountChip(
-              label: 'Essay (A/B/C/D)',
+              key: const Key('mission-format-essay'),
+              label: 'Essay',
               selected: _draftFormat == 'ESSAY_BUILDER',
               onTap: canEditDraftFormat
                   ? () => _setDraftFormat('ESSAY_BUILDER')
@@ -695,13 +802,42 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
               ? 'Assessment mode uses questions only.'
               : _hasDraft
               ? 'Draft format locks after generation.'
-              : 'Questions create objective missions with fixed 30 XP at 5 or 8 questions and score-based 50 XP at 10 questions. Theory keeps 50 XP after teacher review. Essay (A/B/C/D) awards a fixed 20 XP on completion.',
+              : 'Choose the work format. You can switch before generating.',
           style: Theme.of(
             context,
           ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
         ),
+        const SizedBox(height: 16),
+        Text('Task focus', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: kTaskFocusCodes
+              .map(
+                (taskCode) => _CountChip(
+                  key: ValueKey('mission-task-$taskCode'),
+                  label: taskCode,
+                  selected: _selectedTaskCodes.contains(taskCode),
+                  onTap: () => _toggleTaskCode(taskCode),
+                ),
+              )
+              .toList(growable: false),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _selectedTaskCodes.isEmpty
+              ? _isBusinessTaskFocusRequired
+                    ? 'Required for Business: choose the criterion this mission supports. Task Focus does not mark the criterion as achieved.'
+                    : 'Select one or more task codes (for example P1 and P2) so Groq drafts mission questions for those tasks.'
+              : 'Groq will target ${_selectedTaskCodes.join(', ')} while generating and regenerating this draft.',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+        ),
+        const SizedBox(height: 16),
         if (_draftFormat == 'ESSAY_BUILDER') ...[
-          const SizedBox(height: AppSpacing.item),
+          const SizedBox(height: 12),
           Text('Essay mode', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 10),
           Wrap(
@@ -741,10 +877,17 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
           ),
         ],
-        const SizedBox(height: AppSpacing.section),
-        Text('Question count', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 10),
-        if (_draftFormat == 'QUESTIONS') ...[
+        const SizedBox(height: 16),
+        if (!_isEssayDraft) ...[
+          Text(
+            _isTheoryDraft ? 'Theory size' : 'Objective size',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 10),
+        ],
+        if (_isAssessmentMode) ...[
+          const _InfoPill(label: '10 questions · Assessment'),
+        ] else if (_draftFormat == 'QUESTIONS') ...[
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -752,15 +895,12 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 const [
                       (5, '5 questions · Daily'),
                       (8, '8 questions · Revision'),
-                      (10, '10 questions · Assessment mode'),
                     ]
                     .map(
                       (option) => _CountChip(
                         label: option.$2,
                         selected: _questionCount == option.$1,
-                        onTap: option.$1 == _assessmentQuestionCount
-                            ? _openAssessmentModeScreen
-                            : canEditQuestionCount
+                        onTap: canEditQuestionCount
                             ? () => setState(() {
                                 _questionCount = option.$1;
                                 _syncGeneratedTitle();
@@ -773,7 +913,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Use 5 for normal daily learning, 8 for revision, and 10 only for assessment mode.',
+            '5 questions for daily learning; 8 for revision.',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
@@ -869,39 +1009,17 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
           ),
         ],
-        const SizedBox(height: AppSpacing.section),
-        Text('Task focus', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: kTaskFocusCodes
-              .map(
-                (taskCode) => _CountChip(
-                  label: taskCode,
-                  selected: _selectedTaskCodes.contains(taskCode),
-                  onTap: () => _toggleTaskCode(taskCode),
-                ),
-              )
-              .toList(growable: false),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _selectedTaskCodes.isEmpty
-              ? _isBusinessTaskFocusRequired
-                    ? 'Required for Business: choose the criterion this mission supports. Task Focus does not mark the criterion as achieved.'
-                    : 'Select one or more task codes (for example P1 and P2) so Groq drafts mission questions for those tasks.'
-              : 'Groq will target ${_selectedTaskCodes.join(', ')} while generating and regenerating this draft.',
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-        ),
-        if (_selectedSubjectCertification != null) ...[
-          const SizedBox(height: AppSpacing.item),
-          _buildCertificationHelperPanel(context),
-        ],
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildSourceControls(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         if (_rawUploadedSourceText.trim().isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.item),
+          const SizedBox(height: 12),
           Text(
             'Source preview mode',
             style: Theme.of(context).textTheme.titleSmall,
@@ -930,8 +1048,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             ],
           ),
         ],
-        if (_selectedTaskCodes.isNotEmpty || _showFullRawUploadText) ...[
-          const SizedBox(height: AppSpacing.item),
+        if (_rawUploadedSourceText.trim().isNotEmpty &&
+            (_selectedTaskCodes.isNotEmpty || _showFullRawUploadText)) ...[
+          const SizedBox(height: 12),
           SoftPanel(
             colors: const [Color(0xFFF7FCFF), Color(0xFFE9F4FF)],
             child: Column(
@@ -982,29 +1101,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             ),
           ),
         ],
-        const SizedBox(height: AppSpacing.section),
-        Text('XP reward', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            for (final value in const [10, 15, 20, 25, 30, 35, 40, 45, 50])
-              _CountChip(
-                label: '$value XP',
-                selected: _effectiveXpReward == value,
-                onTap: null,
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _xpRewardPolicySummary,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-        ),
-        const SizedBox(height: AppSpacing.section),
+        const SizedBox(height: 16),
         Text('Source file', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
@@ -1018,9 +1115,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           builder: (context, constraints) {
             final buttonWidth = constraints.maxWidth < 560
                 ? constraints.maxWidth
-                : constraints.maxWidth < 980
-                ? (constraints.maxWidth - 12) / 2
-                : (constraints.maxWidth - 24) / 3;
+                : (constraints.maxWidth - 12) / 2;
 
             return Wrap(
               spacing: 12,
@@ -1047,75 +1142,78 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                               _pickAndExtractSource(_SourceUploadMode.aiDraft),
                   ),
                 ),
-                SizedBox(
-                  width: buttonWidth,
-                  child: _SourceActionButton(
-                    title: _isPopulatingDraftFromSource
-                        ? 'Importing...'
-                        : 'Populate objective',
-                    subtitle:
-                        'Import structured A/B/C/D questions and unit text.',
-                    icon: Icons.quiz_outlined,
-                    colors: const [AppPalette.primaryBlue, AppPalette.aqua],
-                    active:
-                        _activeSourceUploadMode ==
-                            _SourceUploadMode.populateDraft &&
-                        (_pendingPopulateDraftFormat ?? _draftFormat) ==
-                            'QUESTIONS',
-                    onPressed: _isExtractingSource || _isTargetDateInPast
-                        ? null
-                        : () => _pickAndExtractSource(
-                            _SourceUploadMode.populateDraft,
-                            draftFormatOverride: 'QUESTIONS',
-                          ),
+                if (_hasDraft || _draftFormat == 'QUESTIONS')
+                  SizedBox(
+                    width: buttonWidth,
+                    child: _SourceActionButton(
+                      title: _isPopulatingDraftFromSource
+                          ? 'Importing...'
+                          : 'Populate objective',
+                      subtitle:
+                          'Import structured A/B/C/D questions and unit text.',
+                      icon: Icons.quiz_outlined,
+                      colors: const [AppPalette.primaryBlue, AppPalette.aqua],
+                      active:
+                          _activeSourceUploadMode ==
+                              _SourceUploadMode.populateDraft &&
+                          (_pendingPopulateDraftFormat ?? _draftFormat) ==
+                              'QUESTIONS',
+                      onPressed: _isExtractingSource || _isTargetDateInPast
+                          ? null
+                          : () => _pickAndExtractSource(
+                              _SourceUploadMode.populateDraft,
+                              draftFormatOverride: 'QUESTIONS',
+                            ),
+                    ),
                   ),
-                ),
-                SizedBox(
-                  width: buttonWidth,
-                  child: _SourceActionButton(
-                    title: _isPopulatingDraftFromSource
-                        ? 'Importing...'
-                        : 'Populate theory',
-                    subtitle:
-                        'Import short-answer theory prompts and expected answers.',
-                    icon: Icons.short_text_rounded,
-                    colors: const [AppPalette.mint, AppPalette.aqua],
-                    active:
-                        _activeSourceUploadMode ==
-                            _SourceUploadMode.populateDraft &&
-                        (_pendingPopulateDraftFormat ?? _draftFormat) ==
-                            'THEORY',
-                    onPressed: _isExtractingSource || _isTargetDateInPast
-                        ? null
-                        : () => _pickAndExtractSource(
-                            _SourceUploadMode.populateDraft,
-                            draftFormatOverride: 'THEORY',
-                          ),
+                if (_hasDraft || _draftFormat == 'THEORY')
+                  SizedBox(
+                    width: buttonWidth,
+                    child: _SourceActionButton(
+                      title: _isPopulatingDraftFromSource
+                          ? 'Importing...'
+                          : 'Populate theory',
+                      subtitle:
+                          'Import short-answer theory prompts and expected answers.',
+                      icon: Icons.short_text_rounded,
+                      colors: const [AppPalette.mint, AppPalette.aqua],
+                      active:
+                          _activeSourceUploadMode ==
+                              _SourceUploadMode.populateDraft &&
+                          (_pendingPopulateDraftFormat ?? _draftFormat) ==
+                              'THEORY',
+                      onPressed: _isExtractingSource || _isTargetDateInPast
+                          ? null
+                          : () => _pickAndExtractSource(
+                              _SourceUploadMode.populateDraft,
+                              draftFormatOverride: 'THEORY',
+                            ),
+                    ),
                   ),
-                ),
-                SizedBox(
-                  width: buttonWidth,
-                  child: _SourceActionButton(
-                    title: _isPopulatingDraftFromSource
-                        ? 'Importing...'
-                        : 'Populate essay',
-                    subtitle:
-                        'Import sentence previews, blanks, and correct options.',
-                    icon: Icons.edit_note_rounded,
-                    colors: const [AppPalette.sun, AppPalette.orange],
-                    active:
-                        _activeSourceUploadMode ==
-                            _SourceUploadMode.populateDraft &&
-                        (_pendingPopulateDraftFormat ?? _draftFormat) ==
-                            'ESSAY_BUILDER',
-                    onPressed: _isExtractingSource || _isTargetDateInPast
-                        ? null
-                        : () => _pickAndExtractSource(
-                            _SourceUploadMode.populateDraft,
-                            draftFormatOverride: 'ESSAY_BUILDER',
-                          ),
+                if (_hasDraft || _draftFormat == 'ESSAY_BUILDER')
+                  SizedBox(
+                    width: buttonWidth,
+                    child: _SourceActionButton(
+                      title: _isPopulatingDraftFromSource
+                          ? 'Importing...'
+                          : 'Populate essay',
+                      subtitle:
+                          'Import sentence previews, blanks, and correct options.',
+                      icon: Icons.edit_note_rounded,
+                      colors: const [AppPalette.sun, AppPalette.orange],
+                      active:
+                          _activeSourceUploadMode ==
+                              _SourceUploadMode.populateDraft &&
+                          (_pendingPopulateDraftFormat ?? _draftFormat) ==
+                              'ESSAY_BUILDER',
+                      onPressed: _isExtractingSource || _isTargetDateInPast
+                          ? null
+                          : () => _pickAndExtractSource(
+                              _SourceUploadMode.populateDraft,
+                              draftFormatOverride: 'ESSAY_BUILDER',
+                            ),
+                    ),
                   ),
-                ),
               ],
             );
           },
@@ -1128,7 +1226,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
         ),
         if (_hasDraft && _rawUploadedSourceText.trim().isEmpty) ...[
-          const SizedBox(height: AppSpacing.item),
+          const SizedBox(height: 12),
           GradientButton(
             label: _isReextractingSource
                 ? 'Re-extracting source...'
@@ -1145,7 +1243,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           ),
         ],
         if (_hasResolvedSource || _uploadedSource != null) ...[
-          const SizedBox(height: AppSpacing.item),
+          const SizedBox(height: 12),
           _SourceSummaryCard(
             uploadedSource: _uploadedSource,
             sourceFileName: _resolvedSourceFileName,
@@ -1156,7 +1254,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           ),
         ],
         if (_sourceUploadReadiness != null) ...[
-          const SizedBox(height: AppSpacing.item),
+          const SizedBox(height: 12),
           _SourceReadinessCard(
             readiness: _sourceUploadReadiness!,
             hasPrefilledMission: _uploadedSource?.prefilledMission != null,
@@ -1165,7 +1263,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           ),
         ],
         if (_uploadedSource != null) ...[
-          const SizedBox(height: AppSpacing.item),
+          const SizedBox(height: 12),
           _UnitPlanDraftCard(
             draft: _uploadedSource!,
             appliedXpReward: _effectiveXpReward,
@@ -1173,7 +1271,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                 _activeSourceUploadMode ?? _SourceUploadMode.aiDraft,
           ),
         ],
-        const SizedBox(height: AppSpacing.section),
+        const SizedBox(height: 16),
         Text('Unit text', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
@@ -1190,9 +1288,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         ),
         const SizedBox(height: 8),
         TextFormField(
+          key: const Key('mission-source-text'),
           controller: _unitTextController,
-          minLines: 8,
-          maxLines: 12,
+          minLines: 5,
+          maxLines: 10,
           decoration: const InputDecoration(
             hintText:
                 'Paste the lesson notes, reading passage, or unit content here...',
@@ -1270,64 +1369,58 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         ? '$selectedSingleTaskCode is not part of this subject certification template.'
         : 'Groq will generate this draft only for $selectedSingleTaskCode. This mission can count toward certification if the student passes it.';
 
-    return SoftPanel(
-      colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Task-focus certification',
-            style: Theme.of(context).textTheme.titleSmall,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Certification', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 6),
+        Text(
+          certification.certificationLabel,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: certification.requiredTaskCodes
+              .map((taskCode) {
+                final isPassed = certification.passedTaskCodes.contains(
+                  taskCode,
+                );
+                final isRemaining = certification.remainingTaskCodes.contains(
+                  taskCode,
+                );
+                return _CertificationFocusChip(
+                  taskCode: taskCode,
+                  status: isPassed
+                      ? 'passed'
+                      : isRemaining
+                      ? 'remaining'
+                      : 'required',
+                );
+              })
+              .toList(growable: false),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          certification.remainingTaskCodes.isEmpty
+              ? 'All required task focuses are already passed for this subject.'
+              : 'Remaining for ${widget.student.name}: ${certification.remainingTaskCodes.join(', ')}',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          helperText,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: AppPalette.navy,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 6),
-          Text(
-            certification.certificationLabel,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: certification.requiredTaskCodes
-                .map((taskCode) {
-                  final isPassed = certification.passedTaskCodes.contains(
-                    taskCode,
-                  );
-                  final isRemaining = certification.remainingTaskCodes.contains(
-                    taskCode,
-                  );
-                  return _CertificationFocusChip(
-                    taskCode: taskCode,
-                    status: isPassed
-                        ? 'passed'
-                        : isRemaining
-                        ? 'remaining'
-                        : 'required',
-                  );
-                })
-                .toList(growable: false),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            certification.remainingTaskCodes.isEmpty
-                ? 'All required task focuses are already passed for this subject.'
-                : 'Remaining for ${widget.student.name}: ${certification.remainingTaskCodes.join(', ')}',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            helperText,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppPalette.navy,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -3771,9 +3864,16 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             // Keep a teacher title; generated names follow the selected fields.
             _teacherNoteController.text =
                 extracted.unitPlan.suggestedTeacherNote;
-            _questionCount = _normalizedQuestionCountForDraftFormat(
+            final suggestedCount = _normalizedQuestionCountForDraftFormat(
               extracted.unitPlan.suggestedQuestionCount,
             );
+            // WHY: Upload suggestions cannot promote a daily draft into an
+            // assessment. Keep its chosen size; dedicated assessments retain 10.
+            if (_draftFormat != 'QUESTIONS' ||
+                suggestedCount != _assessmentQuestionCount ||
+                _isAssessmentMode) {
+              _questionCount = suggestedCount;
+            }
             _syncGeneratedTitle();
             _applyAssessmentModeDefaultsIfNeeded();
           }
@@ -5967,9 +6067,10 @@ class _InfoPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.84),
+        color: const Color(0xFFF5F7FB),
+        border: Border.all(color: const Color(0xFFDCE3ED)),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -5982,17 +6083,16 @@ class _InfoPill extends StatelessWidget {
   }
 }
 
-class _ChoiceChip extends StatelessWidget {
-  const _ChoiceChip({
+class _CountChip extends StatelessWidget {
+  const _CountChip({
+    super.key,
     required this.label,
     required this.selected,
-    required this.colors,
     this.onTap,
   });
 
   final String label;
   final bool selected;
-  final List<Color> colors;
   final VoidCallback? onTap;
 
   @override
@@ -6002,49 +6102,16 @@ class _ChoiceChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(999),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          gradient: selected
-              ? LinearGradient(colors: colors)
-              : LinearGradient(
-                  colors: [
-                    Colors.white.withValues(alpha: 0.82),
-                    Colors.white.withValues(alpha: 0.68),
-                  ],
-                ),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: selected ? Colors.white : AppPalette.navy,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CountChip extends StatelessWidget {
-  const _CountChip({required this.label, required this.selected, this.onTap});
-
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: selected
               ? AppPalette.navy
               : Colors.white.withValues(alpha: 0.78),
           borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppPalette.navy : const Color(0xFFDCE3ED),
+          ),
         ),
         child: Text(
           label,

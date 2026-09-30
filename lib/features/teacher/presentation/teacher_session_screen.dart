@@ -564,6 +564,25 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
               ? schedule?.morningMission
               : schedule?.afternoonMission;
           final paperActions = <Widget>[
+            for (final preset in const [
+              (DailyMissionFormat.objective, 'Objective', Icons.quiz_outlined),
+              (DailyMissionFormat.theory, 'Theory', Icons.short_text_rounded),
+              (DailyMissionFormat.essay, 'Essay', Icons.edit_note_rounded),
+            ])
+              OutlinedButton.icon(
+                key: ValueKey('create-daily-${preset.$1.name}'),
+                onPressed: () => _openQuickDailyDraft(
+                  workspace: workspace,
+                  subject: selectedSubject,
+                  lessonLabel: activeLesson,
+                  format: preset.$1,
+                ),
+                style: _missionOutlinedActionStyle(
+                  foregroundColor: _draftMissionAccent,
+                ),
+                icon: Icon(preset.$3, size: 16),
+                label: Text('Create ${preset.$2}'),
+              ),
             OutlinedButton.icon(
               onPressed: () => _openStandalonePaperScreen(
                 workspace: workspace,
@@ -2091,12 +2110,39 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     });
   }
 
+  Future<void> _openQuickDailyDraft({
+    required TeacherWorkspaceData workspace,
+    required SubjectSummary? subject,
+    required String lessonLabel,
+    required DailyMissionFormat format,
+  }) async {
+    // Use the selected timetable context exactly as the existing Daily flow.
+    // The builder and API retain date, subject and teacher ownership validation.
+    if (subject == null || subject.id.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Select a timetable subject slot first, then create a daily draft.',
+          ),
+        ),
+      );
+      return;
+    }
+    await _openMissionBuilder(
+      workspace: workspace,
+      subject: subject,
+      lessonLabel: lessonLabel,
+      initialFormat: format,
+    );
+  }
+
   Future<void> _openMissionBuilder({
     required TeacherWorkspaceData workspace,
     required SubjectSummary subject,
     required String lessonLabel,
     Map<String, int> assessmentDraftCounts = const {},
     bool openAssessmentOnStart = false,
+    DailyMissionFormat initialFormat = DailyMissionFormat.objective,
     MissionPayload? initialDraft,
   }) async {
     final mission = await showMissionBuilderSheet(
@@ -2109,6 +2155,7 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
       timetableEntries: workspace.timetable,
       assessmentDraftCounts: assessmentDraftCounts,
       openAssessmentOnStart: openAssessmentOnStart,
+      initialFormat: initialFormat,
       api: _api,
       initialDraft: initialDraft,
     );

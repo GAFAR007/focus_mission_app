@@ -18,6 +18,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:focus_mission_app/core/theme/app_theme.dart';
 import 'package:focus_mission_app/core/utils/focus_mission_api.dart';
 import 'package:focus_mission_app/features/teacher/presentation/teacher_session_screen.dart';
+import 'package:focus_mission_app/features/teacher/presentation/standalone_paper_screen.dart';
+import 'package:focus_mission_app/features/teacher/models/standalone_paper_models.dart';
 import 'package:focus_mission_app/shared/models/focus_mission_models.dart';
 import 'package:focus_mission_app/shared/widgets/notification_panel.dart';
 import 'package:http/http.dart' as http;
@@ -78,6 +80,7 @@ StudentDashboardData _dashboardFor(
 TeacherWorkspaceData _essentialWorkspace(
   String requestedStudentId, {
   List<Map<String, dynamic>> certifications = const [],
+  bool scheduled = false,
 }) {
   final selected = _students.firstWhere(
     (student) => student.id == requestedStudentId,
@@ -89,7 +92,33 @@ TeacherWorkspaceData _essentialWorkspace(
     teacherSubjects: _subjects,
     selectedStudent: selected,
     selectedDashboard: _dashboardFor(selected, certifications: certifications),
-    timetable: const <TodaySchedule>[],
+    timetable: scheduled
+        ? [
+            for (final day in [
+              'Monday',
+              'Tuesday',
+              'Wednesday',
+              'Thursday',
+              'Friday',
+              'Saturday',
+              'Sunday',
+            ])
+              TodaySchedule(
+                day: day,
+                room: 'Room 1',
+                morningMission: _subjects.first,
+                afternoonMission: _subjects.first,
+                morningTeacher: const TeacherSummary(
+                  id: 'teacher-1',
+                  name: 'Synthetic Teacher',
+                ),
+                afternoonTeacher: const TeacherSummary(
+                  id: 'teacher-1',
+                  name: 'Synthetic Teacher',
+                ),
+              ),
+          ]
+        : const <TodaySchedule>[],
     criteria: const <CriterionOverview>[],
     draftMissions: const <MissionPayload>[],
     recentMissions: const <MissionPayload>[],
@@ -247,7 +276,12 @@ Map<String, dynamic> _responseForPath(String path) {
 }
 
 class _ControlledTeacherWorkspaceApi extends FocusMissionApi {
-  _ControlledTeacherWorkspaceApi({this.certifications = const []});
+  _ControlledTeacherWorkspaceApi({
+    this.certifications = const [],
+    this.scheduled = false,
+  });
+
+  final bool scheduled;
 
   final List<Map<String, dynamic>> certifications;
 
@@ -265,8 +299,22 @@ class _ControlledTeacherWorkspaceApi extends FocusMissionApi {
     return _essentialWorkspace(
       (selectedStudentId ?? '').trim(),
       certifications: certifications,
+      scheduled: scheduled,
     );
   }
+
+  @override
+  Future<List<SubjectCertificationSummary>> fetchTeacherStudentCertification({
+    required String token,
+    required String studentId,
+  }) async => [];
+
+  @override
+  Future<List<StandalonePaperDraft>> fetchStandalonePapers({
+    required String token,
+    required String studentId,
+    required String paperKind,
+  }) async => [];
 
   @override
   Future<TeacherWorkspaceSupplementalData> loadTeacherWorkspaceSupplemental({
@@ -297,6 +345,115 @@ Future<void> _pumpTeacherScreen(
 }
 
 void main() {
+  for (final label in ['Objective', 'Theory', 'Essay']) {
+    testWidgets('Create $label carries the selected lesson into its builder', (
+      tester,
+    ) async {
+      final api = _ControlledTeacherWorkspaceApi(scheduled: true);
+      await _pumpTeacherScreen(tester, api);
+      api.supplementalByStudent['student-a']!.complete(
+        _supplementalWithDraftMissions(),
+      );
+      await tester.pumpAndSettle();
+      final button = find.text('Create $label');
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.text('Build $label Mission'), findsOneWidget);
+      expect(find.text('Generate $label Draft'), findsOneWidget);
+      expect(find.text('Student Alpha'), findsWidgets);
+      expect(find.text('Business'), findsWidgets);
+      expect(find.text('Change mission date'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final kind in ['Test', 'Exam']) {
+    testWidgets('Create $kind still opens its dedicated paper workflow', (
+      tester,
+    ) async {
+      final api = _ControlledTeacherWorkspaceApi(scheduled: true);
+      await _pumpTeacherScreen(tester, api);
+      api.supplementalByStudent['student-a']!.complete(
+        _supplementalWithDraftMissions(),
+      );
+      await tester.pumpAndSettle();
+      final button = find.text('Create $kind');
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.text('Continue with 1 student'), findsOneWidget);
+      await tester.tap(find.text('Continue with 1 student'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(
+          kind == 'Test' ? StandaloneTestScreen : StandaloneExamScreen,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Build Objective Mission'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('quick-create toolbar wraps on phones and keeps Select drafts', (
+    tester,
+  ) async {
+    final api = _ControlledTeacherWorkspaceApi(scheduled: true);
+    await _pumpTeacherScreen(tester, api);
+    api.supplementalByStudent['student-a']!.complete(
+      _supplementalWithDraftMissions(),
+    );
+    await tester.pumpAndSettle();
+    for (final label in [
+      'Create Objective',
+      'Create Theory',
+      'Create Essay',
+      'Create Test',
+      'Create Exam',
+      'Select drafts',
+    ]) {
+      expect(find.text(label), findsOneWidget);
+    }
+    final select = find.text('Select drafts');
+    await tester.ensureVisible(select);
+    await tester.tap(select);
+    await tester.pumpAndSettle();
+    expect(find.text('Selecting drafts'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // Exercise the actual toolbar independently of the timetable's layout.
+    final toolbarFinder = find.byWidgetPredicate(
+      (widget) => widget.runtimeType.toString() == '_DraftMissionToolbar',
+    );
+    final toolbar = tester.widget(toolbarFinder);
+    for (final width in [320.0, 390.0, 768.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 1000));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: Padding(padding: const EdgeInsets.all(16), child: toolbar),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'Toolbar at $width px');
+      for (final label in [
+        'Create Objective',
+        'Create Theory',
+        'Create Essay',
+        'Create Test',
+        'Create Exam',
+        'Selecting drafts',
+      ]) {
+        final bounds = tester.getRect(find.text(label));
+        expect(bounds.left, greaterThanOrEqualTo(16));
+        expect(bounds.right, lessThanOrEqualTo(width - 16));
+      }
+    }
+  });
+
   test('workspace requests run in two parallel dependency waves', () async {
     final paths = <String>[];
     final api = FocusMissionApi(

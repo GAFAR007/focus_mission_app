@@ -1968,6 +1968,8 @@ class _StandalonePaperItemCard extends StatelessWidget {
                     SizedBox(
                       width: 220,
                       child: DropdownButtonFormField<String>(
+                        // Keep the selected label within the compact item card.
+                        isExpanded: true,
                         initialValue: editor.itemType,
                         items: const [
                           DropdownMenuItem(
