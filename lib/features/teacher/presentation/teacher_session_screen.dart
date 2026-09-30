@@ -17,6 +17,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../../shared/widgets/pong_access_panel.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -758,6 +759,10 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                           _supplementalWorkspaceError != null
                       ? _buildSupplementalWorkspaceStatus(workspace)
                       : null,
+                ),
+                PongAccessPanel(
+                  token: _session.token,
+                  studentId: workspace.selectedStudent.id,
                 ),
                 if (!_isLoadingSupplementalWorkspace &&
                     _supplementalWorkspaceError == null) ...[

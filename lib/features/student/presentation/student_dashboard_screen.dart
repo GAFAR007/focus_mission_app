@@ -16,6 +16,7 @@
 
 import '../../../shared/widgets/xp_leaderboard_sheet.dart';
 import 'package:flutter/material.dart';
+import 'pong_home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/app_palette.dart';
@@ -243,6 +244,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     ),
                     const SizedBox(height: AppSpacing.item),
                     _DailyXpPanel(summary: data.dashboard.dailyXp),
+                    const SizedBox(height: AppSpacing.item),
+                    PongDashboardCard(token: _session.token),
                     const SizedBox(height: AppSpacing.section),
                     KeyedSubtree(
                       key: _todaySectionKey,

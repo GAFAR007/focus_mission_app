@@ -13,6 +13,10 @@ import 'package:flutter/foundation.dart';
 
 abstract final class ApiConfig {
   static String get baseUrl {
+    // WHY: Explicit build configuration supports isolated local acceptance tests
+    // without routing synthetic students through the production database.
+    const configured = String.fromEnvironment('API_BASE_URL');
+    if (configured.isNotEmpty) return configured;
     if (kIsWeb) {
       // WHY: Netlify-hosted web builds must use the deployed backend origin.
       return 'https://focus-mission-backend.onrender.com/api';

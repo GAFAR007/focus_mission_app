@@ -17,6 +17,7 @@
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
 import 'package:flutter/material.dart';
+import '../../../shared/widgets/pong_access_panel.dart';
 
 import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -1542,6 +1543,10 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                             ),
                             isSaving: _isSavingStudentYearGroup,
                             saveLabel: 'Save',
+                          ),
+                          PongAccessPanel(
+                            token: _session.token,
+                            studentId: workspace.selectedStudent.id,
                           ),
                           const SizedBox(height: 8),
                           OutlinedButton.icon(
