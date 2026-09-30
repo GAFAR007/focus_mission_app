@@ -19,6 +19,7 @@ import 'package:focus_mission_app/shared/models/pong_models.dart';
 import 'package:focus_mission_app/shared/widgets/pong_access_panel.dart';
 import 'package:focus_mission_app/features/student/presentation/pong_home_screen.dart';
 import 'package:focus_mission_app/features/student/presentation/pong_arena_screen.dart';
+import 'package:focus_mission_app/features/student/presentation/pong_game_controller.dart';
 import 'package:focus_mission_app/features/student/presentation/pong_court_geometry.dart';
 import 'package:focus_mission_app/features/student/presentation/pong_lobby_screen.dart';
 
@@ -65,12 +66,17 @@ PongJson frame({
     'level': computer ? 1 : 0,
     'phase': status == 'complete' ? 'complete' : 'playing',
     'ball': {'x': 500, 'y': 280},
+    'ballVelocity': {'x': 220, 'y': 0},
+    'ballSpeed': 220,
+    'maxSpeed': 390,
     'paddles': [280, 280],
     'paddleHeights': [150, 132],
+    'depths': [0, 0],
     'score': status == 'complete' ? [7, 4] : [0, 0],
     'returns': 0,
     'goal': computer ? 5 : 7,
     'longestRally': 10,
+    'elapsedMs': 0,
     'barriers': [],
     'arena': 'plain',
     'completed': status == 'complete',
@@ -118,6 +124,111 @@ class FakePongApi extends PongApi {
 }
 
 void main() {
+  test(
+    'local paddle prediction moves immediately and eases small server corrections',
+    () async {
+      final data = frame();
+      data['state']['boosts'] = [
+        {'active': [], 'slot': null},
+        {'active': [], 'slot': null},
+      ];
+      final api = FakePongApi(data);
+      final game = PongGameController(api, 'g');
+      addTearDown(game.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      game.receivedAt = DateTime.now().subtract(
+        const Duration(milliseconds: 100),
+      );
+      game.move(direction: 1);
+      final predicted = game.localPaddleAt(DateTime.now());
+      expect(predicted, closeTo(345, 2));
+
+      final corrected = frame();
+      corrected['state']['paddles'][0] = 338;
+      corrected['state']['depths'] = [0, 0];
+      corrected['state']['boosts'] = data['state']['boosts'];
+      api.stream.add(PongFrame.fromJson(corrected));
+      await Future<void>.delayed(Duration.zero);
+      final reconciled = game.localPaddleAt(DateTime.now());
+      expect(reconciled, inInclusiveRange(338, 360));
+      expect(
+        game.localPaddleAt(
+          DateTime.now().add(const Duration(milliseconds: 80)),
+        ),
+        greaterThan(reconciled),
+      );
+      await api.stream.close();
+    },
+  );
+
+  test(
+    'Forward Rush depth preview follows a held input and stays bounded',
+    () async {
+      final data = frame();
+      data['state']['depths'] = [0, 0];
+      data['state']['powerPool'] = ['rush'];
+      data['state']['boosts'] = [
+        {
+          'active': [
+            {'type': 'rush', 'seconds': 4},
+          ],
+          'slot': null,
+        },
+        {'active': [], 'slot': null},
+      ];
+      final api = FakePongApi(data);
+      final game = PongGameController(api, 'g');
+      addTearDown(game.dispose);
+      await Future<void>.delayed(Duration.zero);
+      game.move(forward: 1);
+      expect(
+        game.localDepthAt(
+          DateTime.now().add(const Duration(milliseconds: 100)),
+        ),
+        closeTo(17, 2),
+      );
+      expect(
+        game.localDepthAt(DateTime.now().add(const Duration(seconds: 1))),
+        lessThanOrEqualTo(110),
+      );
+      await api.stream.close();
+    },
+  );
+
+  test(
+    'remote ball and paddle render from buffered authoritative snapshots',
+    () async {
+      final api = FakePongApi(frame());
+      final game = PongGameController(api, 'g');
+      addTearDown(game.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      final second = frame();
+      second['state']['elapsedMs'] = 50;
+      second['state']['ball']['x'] = 550;
+      second['state']['paddles'][1] = 300;
+      api.stream.add(PongFrame.fromJson(second));
+      await Future<void>.delayed(Duration.zero);
+      final third = frame();
+      third['state']['elapsedMs'] = 100;
+      third['state']['ball']['x'] = 600;
+      third['state']['paddles'][1] = 320;
+      api.stream.add(PongFrame.fromJson(third));
+      await Future<void>.delayed(Duration.zero);
+
+      final sample = game.renderSampleAt(DateTime.now())!;
+      expect(sample.previous.state['elapsedMs'], 0);
+      expect(sample.current.state['elapsedMs'], 50);
+      expect(sample.fraction, inInclusiveRange(.4, .8));
+      final beforeX = (sample.previous.state['ball']['x'] as num).toDouble();
+      final afterX = (sample.current.state['ball']['x'] as num).toDouble();
+      final ballX = beforeX + (afterX - beforeX) * sample.fraction;
+      expect(ballX, inInclusiveRange(520, 540));
+      await api.stream.close();
+    },
+  );
+
   test(
     'vertical projection and inverse touch coordinates mirror each player fairly',
     () {

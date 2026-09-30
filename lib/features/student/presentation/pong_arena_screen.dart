@@ -156,7 +156,35 @@ class _PongArenaScreenState extends State<PongArenaScreen>
     child: FocusScaffold(
       child: AnimatedBuilder(
         animation: _game,
-        builder: (context, _) {
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Pong Challenge',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            IconButton(
+              tooltip: _audio.muted ? 'Unmute game' : 'Mute game',
+              onPressed: () => setState(() => _audio.muted = !_audio.muted),
+              icon: Icon(
+                _audio.muted
+                    ? Icons.volume_off_outlined
+                    : Icons.volume_up_outlined,
+              ),
+            ),
+            IconButton(
+              tooltip: 'How to play',
+              onPressed: () => _help(_game.frame),
+              icon: const Icon(Icons.help_outline),
+            ),
+            TextButton(
+              onPressed: _leaving ? null : _leave,
+              child: const Text('Exit game'),
+            ),
+          ],
+        ),
+        builder: (context, header) {
           final frame = _game.frame;
           final courtHeight = (MediaQuery.sizeOf(context).height - 380).clamp(
             300.0,
@@ -177,35 +205,7 @@ class _PongArenaScreenState extends State<PongArenaScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Pong Challenge',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: _audio.muted ? 'Unmute game' : 'Mute game',
-                            onPressed: () =>
-                                setState(() => _audio.muted = !_audio.muted),
-                            icon: Icon(
-                              _audio.muted
-                                  ? Icons.volume_off_outlined
-                                  : Icons.volume_up_outlined,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'How to play',
-                            onPressed: () => _help(frame),
-                            icon: const Icon(Icons.help_outline),
-                          ),
-                          TextButton(
-                            onPressed: _leaving ? null : _leave,
-                            child: const Text('Exit game'),
-                          ),
-                        ],
-                      ),
+                      header!,
                       if (frame == null) ...[
                         const LinearProgressIndicator(),
                         const Text('Connecting to your game…'),
@@ -271,9 +271,8 @@ class _PongArenaScreenState extends State<PongArenaScreen>
                                           CustomPaint(
                                             key: const ValueKey('pong-court'),
                                             painter: PongArenaPainter(
-                                              frame: frame,
-                                              previous: _game.previousFrame,
-                                              receivedAt: _game.receivedAt,
+                                              game: _game,
+                                              initialFrame: frame,
                                               clock: _paintClock,
                                               reducedMotion:
                                                   MediaQuery.disableAnimationsOf(
@@ -609,18 +608,22 @@ String pongPowerDescription(dynamic type) => switch (type) {
 
 class PongArenaPainter extends CustomPainter {
   PongArenaPainter({
-    required this.frame,
-    required this.previous,
-    required this.receivedAt,
+    required this.game,
+    required this.initialFrame,
     required Listenable clock,
     required this.reducedMotion,
   }) : super(repaint: clock);
-  final PongFrame frame;
-  final PongFrame? previous;
-  final DateTime receivedAt;
+  final PongGameController game;
+  final PongFrame initialFrame;
   final bool reducedMotion;
   @override
   void paint(Canvas canvas, Size size) {
+    // WHY: The animation clock reads buffered server snapshots directly, so
+    // 50 ms game frames do not rebuild the surrounding learner screen.
+    final now = DateTime.now();
+    final sample = game.renderSampleAt(now);
+    final frame = sample?.current ?? game.frame ?? initialFrame;
+    final previous = sample?.previous ?? game.previousFrame;
     canvas.scale(size.width / PongCourt.width, size.height / PongCourt.height);
     Offset point(double x, double y) =>
         PongCourt.project(Offset(x, y), frame.side);
@@ -665,20 +668,15 @@ class PongArenaPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round,
       );
     }
-    final fraction =
-        (DateTime.now().difference(receivedAt).inMicroseconds / 50000).clamp(
-          0.0,
-          1.0,
-        );
+    final fraction = sample?.fraction ?? 1.0;
     double value(PongJson v, String key) => (v[key] as num).toDouble();
     final ball = pongMap(state['ball']),
-        before = previous == null ? ball : pongMap(previous!.state['ball']);
+        before = previous == null ? ball : pongMap(previous.state['ball']);
     final jump = (value(ball, 'x') - value(before, 'x')).abs() > 100;
     final center = point(
       lerpDouble(value(before, 'x'), value(ball, 'x'), jump ? 1 : fraction)!,
       lerpDouble(value(before, 'y'), value(ball, 'y'), jump ? 1 : fraction)!,
     );
-    final prior = point(value(before, 'x'), value(before, 'y'));
     final intensity = PongCourt.intensity(
       (state['ballSpeed'] as num? ?? 220).toDouble(),
       (state['maxSpeed'] as num? ?? 580).toDouble(),
@@ -691,8 +689,28 @@ class PongArenaPainter extends CustomPainter {
         !frame.ended;
     final hot = state['hot'] == true;
     final ballColor = hot ? const Color(0xFFFFDF99) : Colors.white;
-    if (moving && intensity > .5 && (center - prior).distance > .01) {
-      final vector = (center - prior) / (center - prior).distance;
+    final velocity = state['ballVelocity'] is Map
+        ? pongMap(state['ballVelocity'])
+        : {
+            'x': (value(ball, 'x') - value(before, 'x')) / .05,
+            'y': (value(ball, 'y') - value(before, 'y')) / .05,
+          };
+    if (moving && intensity > .5) {
+      final trailLength = 18 + 85 * intensity * intensity;
+      final speed = math.max(
+        1.0,
+        math.sqrt(
+          math.pow(value(velocity, 'x'), 2) + math.pow(value(velocity, 'y'), 2),
+        ),
+      );
+      final tail = point(
+        value(ball, 'x') - value(velocity, 'x') * trailLength / speed,
+        value(ball, 'y') - value(velocity, 'y') * trailLength / speed,
+      );
+      final trail = center - tail;
+      final vector = trail.distance > .01
+          ? trail / trail.distance
+          : Offset.zero;
       final length = 18 + 85 * intensity * intensity;
       canvas.drawLine(
         center - vector * length,
@@ -741,12 +759,17 @@ class PongArenaPainter extends CustomPainter {
           .toDouble();
       final priorDepth = ((old?['depths'] as List? ?? [0, 0])[side] as num)
           .toDouble();
-      final interpolatedDepth = lerpDouble(priorDepth, depth, fraction)!;
+      final local = side == frame.side;
+      final interpolatedDepth = local
+          ? game.localDepthAt(now)
+          : lerpDouble(priorDepth, depth, fraction)!;
+      final interpolatedY = local
+          ? game.localPaddleAt(now)
+          : lerpDouble(priorY, py, fraction)!;
       final location = point(
         side == 0 ? 28 + interpolatedDepth : 972 - interpolatedDepth,
-        lerpDouble(priorY, py, fraction)!,
+        interpolatedY,
       );
-      final local = side == frame.side;
       final color = local ? const Color(0xFF6EC5FF) : const Color(0xFFFFCE85);
       final recentHit = pongRows(state['events']).any(
         (e) =>
@@ -813,5 +836,7 @@ class PongArenaPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(PongArenaPainter oldDelegate) =>
-      oldDelegate.frame != frame || oldDelegate.reducedMotion != reducedMotion;
+      oldDelegate.game != game ||
+      oldDelegate.initialFrame != initialFrame ||
+      oldDelegate.reducedMotion != reducedMotion;
 }
