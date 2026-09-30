@@ -1,6 +1,28 @@
 {
-  "version": "2.1.1",
+  "version": "2.2.0",
   "releases": [
+    {
+      "version": "2.2.0",
+      "previousVersion": "2.1.1",
+      "releasedAt": "2026-09-30T16:37:41.380Z",
+      "title": "Pong Challenge",
+      "changes": {
+        "new": [
+          "Play Pong against the computer across 15 levels with saved progress and replay.",
+          "Invite an available student in your school to a fair first-to-seven Pong battle.",
+          "Teachers and management can enable games, computer play and student battles for each learner."
+        ],
+        "improved": [
+          "Pong supports keyboard, drag and touch controls, with calm visuals and reduced motion.",
+          "Games pause on connection loss and preserve saved progress when access changes."
+        ],
+        "fixed": []
+      },
+      "source": {
+        "frontend": "22df00c04bc3e6595c171e2d8b738ab2a20b4c22",
+        "backend": "7490e1d85feb451416642341cfaba991f7ab8141"
+      }
+    },
     {
       "version": "2.1.1",
       "previousVersion": "2.1.0",
