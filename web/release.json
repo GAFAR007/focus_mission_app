@@ -1,6 +1,29 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "releases": [
+    {
+      "version": "2.1.0",
+      "previousVersion": "2.0.0",
+      "releasedAt": "2026-09-30T14:40:46.084Z",
+      "title": "Mission creation and version history",
+      "changes": {
+        "new": [
+          "Open the version button to see what changed and browse previous releases.",
+          "A New indicator highlights updates you have not viewed yet."
+        ],
+        "improved": [
+          "Production updates now receive a consistent version and release notes before publication."
+        ],
+        "fixed": [
+          "Fixed an issue that could prevent teachers from creating missions after uploading lesson material.",
+          "Existing accounts keep their school context when signing in or restoring a session."
+        ]
+      },
+      "source": {
+        "frontend": "b470411d200efb5d88c30b385aefa9b57d562673",
+        "backend": "bf758f0dbd54678a4023d1e304e6f553516e7350"
+      }
+    },
     {
       "version": "2.0.0",
       "previousVersion": null,
