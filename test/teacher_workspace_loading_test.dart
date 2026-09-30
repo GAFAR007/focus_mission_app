@@ -662,6 +662,89 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'Student Results cards retain actions and adapt to the available width',
+    (tester) async {
+      final api = _ControlledTeacherWorkspaceApi();
+      await _pumpTeacherScreen(tester, api);
+      api.supplementalByStudent['student-a']!.complete(
+        TeacherWorkspaceSupplementalData(
+          criteria: const [],
+          draftMissions: const [],
+          recentMissions: const [],
+          studentResults: List.generate(
+            2,
+            (index) => ResultHistoryItem.fromJson({
+              'id': 'history-$index',
+              'resultPackageId': 'result-$index',
+              'missionId': 'mission-$index',
+              'title': 'Assessment ${index + 1}',
+              'draftFormat': 'QUESTIONS',
+              'status': 'submitted',
+              'sessionType': 'afternoon',
+              'questionCount': 10,
+              'scoreCorrect': 9,
+              'scoreTotal': 10,
+              'scorePercent': 90,
+              'xpReward': 50,
+              'xpEarned': 45,
+              'taskCodes': ['P1'],
+              'subject': {'id': 'business', 'name': 'Business'},
+              'availableOnDate': '2026-09-21',
+            }),
+          ),
+          notificationInbox: const NotificationInboxData(
+            unreadCount: 0,
+            notifications: [],
+          ),
+          targets: const [],
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('open_student_results')));
+      await tester.pump();
+      expect(find.text('Upload Result'), findsOneWidget);
+      expect(find.text('Download Day'), findsOneWidget);
+      expect(find.text('View Result'), findsNWidgets(2));
+      expect(find.text('Download Result'), findsNWidgets(2));
+      expect(find.text('9/10 (90%) score · 45/50 XP'), findsNWidgets(2));
+      expect(find.text('Task Focus: P1'), findsNWidgets(2));
+      expect(
+        tester.getTopLeft(find.text('Assessment 1')).dy,
+        tester.getTopLeft(find.text('Assessment 2')).dy,
+      );
+      expect(
+        tester.getTopLeft(find.text('Assessment 2')).dx,
+        greaterThan(tester.getTopLeft(find.text('Assessment 1')).dx),
+      );
+      // Exercise the result panel independently of the timetable and assigned
+      // mission headers, which have their own responsive-layout coverage.
+      final resultsPanel = tester.widget(
+        find.byKey(const Key('teacher_student_results')),
+      );
+      await tester.binding.setSurfaceSize(const Size(390, 1600));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: resultsPanel,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        tester.getTopLeft(find.text('Assessment 2')).dy,
+        greaterThan(tester.getTopLeft(find.text('Assessment 1')).dy),
+      );
+      expect(find.text('View Result'), findsNWidgets(2));
+      expect(find.text('Download Result'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('Draft Missions filters by task focus without changing data', (
     tester,
   ) async {

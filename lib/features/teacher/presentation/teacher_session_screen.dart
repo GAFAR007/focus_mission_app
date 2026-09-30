@@ -6972,6 +6972,7 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
     return SoftPanel(
       solid: true,
       padding: const EdgeInsets.all(AppSpacing.item),
+      colors: const [ResultReportVisualTokens.neutralSurface],
       key: const Key('teacher_student_results'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -7108,19 +7109,38 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
                 ),
               )
             else
-              ...filteredResults.map(
-                (result) => Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.compact),
-                  child: _TeacherStudentResultCard(
-                    result: result,
-                    onView: () => onOpenResult(result),
-                    onDownload: () => onDownloadResult(result),
-                    isDownloading:
-                        downloadingResultPackageId ==
-                        result.latestResultPackageId.trim(),
-                    downloadsLocked: downloadsLocked,
-                  ),
-                ),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  // WHY: Result cards use natural heights so long subject names
+                  // and larger text never hide metadata or download actions.
+                  final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+                  final twoColumns =
+                      constraints.maxWidth >=
+                      _missionColumnMinimumWidth * 2 * scale + _missionGridGap;
+                  final width = twoColumns
+                      ? (constraints.maxWidth - _missionGridGap) / 2
+                      : constraints.maxWidth;
+                  return Wrap(
+                    spacing: _missionGridGap,
+                    runSpacing: _missionGridGap,
+                    children: filteredResults
+                        .map(
+                          (result) => SizedBox(
+                            width: width,
+                            child: _TeacherStudentResultCard(
+                              result: result,
+                              onView: () => onOpenResult(result),
+                              onDownload: () => onDownloadResult(result),
+                              isDownloading:
+                                  downloadingResultPackageId ==
+                                  result.latestResultPackageId.trim(),
+                              downloadsLocked: downloadsLocked,
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  );
+                },
               ),
           ],
         ],
@@ -7372,46 +7392,62 @@ class _TeacherStudentResultCard extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.item),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: ResultReportVisualTokens.neutralBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  result.title,
-                  style: Theme.of(context).textTheme.titleSmall,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final title = Text(
+                result.title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: ResultReportVisualTokens.navy,
+                  fontWeight: FontWeight.w800,
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
+              );
+              final subject = Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
-                  color: AppPalette.sky.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(999),
+                  color: ResultReportVisualTokens.neutralSurface,
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   subjectName,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: AppPalette.navy),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: ResultReportVisualTokens.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-            ],
+              );
+              if (constraints.maxWidth < 320 ||
+                  MediaQuery.textScalerOf(context).scale(14) > 18) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [title, const SizedBox(height: 6), subject],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 3, child: title),
+                  const SizedBox(width: 10),
+                  Flexible(flex: 2, child: subject),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 8),
           Text(
             theorySummary,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.navy),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: ResultReportVisualTokens.accent,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -7430,76 +7466,35 @@ class _TeacherStudentResultCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: AppSpacing.compact),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final stackButtons = constraints.maxWidth < 720;
-              final viewButton = stackButtons
-                  ? SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: onView,
-                        icon: const Icon(Icons.visibility_rounded),
-                        label: const Text('View Result'),
-                      ),
-                    )
-                  : Expanded(
-                      child: FilledButton.icon(
-                        onPressed: onView,
-                        icon: const Icon(Icons.visibility_rounded),
-                        label: const Text('View Result'),
-                      ),
-                    );
-              final downloadButton = stackButtons
-                  ? SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: hasResultPackage && !downloadsLocked
-                            ? onDownload
-                            : null,
-                        icon: Icon(
-                          isDownloading
-                              ? Icons.hourglass_top_rounded
-                              : Icons.download_rounded,
-                        ),
-                        label: Text(
-                          isDownloading ? 'Preparing...' : 'Download Result',
-                        ),
-                      ),
-                    )
-                  : Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: hasResultPackage && !downloadsLocked
-                            ? onDownload
-                            : null,
-                        icon: Icon(
-                          isDownloading
-                              ? Icons.hourglass_top_rounded
-                              : Icons.download_rounded,
-                        ),
-                        label: Text(
-                          isDownloading ? 'Preparing...' : 'Download Result',
-                        ),
-                      ),
-                    );
-
-              if (stackButtons) {
-                return Column(
-                  children: [
-                    viewButton,
-                    const SizedBox(height: 10),
-                    downloadButton,
-                  ],
-                );
-              }
-
-              return Row(
-                children: [
-                  viewButton,
-                  const SizedBox(width: 12),
-                  downloadButton,
-                ],
-              );
-            },
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                onPressed: onView,
+                style: _missionOutlinedActionStyle(
+                  foregroundColor: Colors.white,
+                  backgroundColor: ResultReportVisualTokens.accent,
+                ),
+                icon: const Icon(Icons.visibility_rounded, size: 17),
+                label: const Text('View Result'),
+              ),
+              OutlinedButton.icon(
+                onPressed: hasResultPackage && !downloadsLocked
+                    ? onDownload
+                    : null,
+                style: _missionOutlinedActionStyle(
+                  foregroundColor: ResultReportVisualTokens.accent,
+                ),
+                icon: Icon(
+                  isDownloading
+                      ? Icons.hourglass_top_rounded
+                      : Icons.download_rounded,
+                  size: 17,
+                ),
+                label: Text(isDownloading ? 'Preparing...' : 'Download Result'),
+              ),
+            ],
           ),
         ],
       ),

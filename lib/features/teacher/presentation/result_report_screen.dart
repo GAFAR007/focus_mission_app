@@ -10,7 +10,8 @@
  * HOW:
  * Fetch the result package by id, render meta + evidence dynamically by source
  * and format, upload report screenshots or work files, save teacher review
- * scores, and call send endpoint with chosen channels.
+ * scores, and call send endpoint with chosen channels. Use the downloaded
+ * report visual tokens for compact white sections and responsive metadata.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -25,11 +26,9 @@ import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
-import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/question_evidence_panel.dart';
 import '../../../shared/widgets/safe_link_text.dart';
-import '../../../shared/widgets/soft_panel.dart';
 import '../models/result_report_presentation.dart';
 
 int _asIntValue(dynamic value) {
@@ -782,8 +781,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     final buttonEnabled =
         _allTheoryScoresValid(resultPackage) && !_isSavingTheoryScore;
 
-    return SoftPanel(
-      colors: const [Color(0xFFFFFBF1), Color(0xFFEAF4FF)],
+    return _ReportSection(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -885,13 +883,16 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         'Theory ${index + 1}',
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
-                      const SizedBox(width: 8),
+
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -913,7 +914,6 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                         ),
                       ),
                       if (currentScore != null) ...[
-                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,
@@ -1021,7 +1021,10 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                     initialFiles: _questionEvidenceFiles(resultPackage, index),
                   ),
                   const SizedBox(height: 10),
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         'Teacher score (/100)',
@@ -1030,7 +1033,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const Spacer(),
+
                       TextButton(
                         onPressed: currentScore == null
                             ? null
@@ -1229,8 +1232,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
         : const <String, dynamic>{};
     final savedAt = (teacherReview['scoredAt'] ?? '').toString().trim();
 
-    return SoftPanel(
-      colors: const [Color(0xFFFFFBF1), Color(0xFFEAF4FF)],
+    return _ReportSection(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1449,8 +1451,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.screen),
-        child: SoftPanel(
-          colors: const [Color(0xFFF7FBFF), Color(0xFFFFFBF3)],
+        child: _ReportSection(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1530,216 +1531,261 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return FocusScaffold(
-      child: FutureBuilder<ResultPackageData?>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return Scaffold(
+      backgroundColor: ResultReportVisualTokens.neutralSurface,
+      body: SafeArea(
+        child: FutureBuilder<ResultPackageData?>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.screen),
-                child: SoftPanel(
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.screen),
+                  child: _ReportSection(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Could not load result report',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: AppSpacing.item),
+                        Text(
+                          snapshot.error.toString(),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: AppSpacing.section),
+                        GradientButton(
+                          label: 'Back',
+                          colors: AppPalette.teacherGradient,
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            final resultPackage = snapshot.data;
+            if (resultPackage == null) {
+              return _buildNoResultState();
+            }
+            _syncTheoryReviewControllers(resultPackage);
+            _syncManualReviewState(resultPackage);
+            final latestTeacherUpload = _latestTeacherUpload(resultPackage);
+            final effectiveScreenshotUrl = _screenshotUrl.trim().isNotEmpty
+                ? _screenshotUrl.trim()
+                : ((latestTeacherUpload?['url'] ?? '')
+                          .toString()
+                          .trim()
+                          .isNotEmpty
+                      ? (latestTeacherUpload?['url'] ?? '').toString().trim()
+                      : _latestScreenshotFromLogs(resultPackage.sendLogs));
+            final effectiveUploadMimeType =
+                _uploadedWorkMimeType.trim().isNotEmpty
+                ? _uploadedWorkMimeType.trim()
+                : ((latestTeacherUpload?['mimeType'] ?? '')
+                          .toString()
+                          .trim()
+                          .isNotEmpty
+                      ? (latestTeacherUpload?['mimeType'] ?? '')
+                            .toString()
+                            .trim()
+                      : (effectiveScreenshotUrl.trim().isNotEmpty
+                            ? 'image/png'
+                            : ''));
+            final effectiveUploadFileName =
+                _uploadedWorkFileName.trim().isNotEmpty
+                ? _uploadedWorkFileName.trim()
+                : ((latestTeacherUpload?['fileName'] ?? '')
+                          .toString()
+                          .trim()
+                          .isNotEmpty
+                      ? (latestTeacherUpload?['fileName'] ?? '')
+                            .toString()
+                            .trim()
+                      : (effectiveScreenshotUrl.trim().isNotEmpty
+                            ? 'Captured report view'
+                            : ''));
+            final absoluteScreenshotUrl = widget.api.resolveApiUrl(
+              effectiveScreenshotUrl,
+            );
+            final evidenceQuestionIndexes =
+                (resultPackage.evidence['questionEvidenceFiles']
+                            as List<dynamic>? ??
+                        const [])
+                    .map((item) => _asIntValue((item as Map)['questionIndex']))
+                    .toSet()
+                    .toList()
+                  ..sort();
+
+            return SingleChildScrollView(
+              padding: EdgeInsets.all(
+                MediaQuery.sizeOf(context).width < 600 ? 12 : 24,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1020),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Could not load result report',
-                        style: Theme.of(context).textTheme.titleLarge,
+                      Row(
+                        children: [
+                          TextButton.icon(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.arrow_back_rounded),
+                            label: const Text('Back'),
+                          ),
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: _refreshResultPackage,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Refresh'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.compact),
+                      _ReportSection(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'FOCUS MISSION · RESULT REPORT',
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: ResultReportVisualTokens.accent,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              widget.readOnly
+                                  ? 'Student Result Report'
+                                  : 'Result Report',
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(
+                                    color: ResultReportVisualTokens.navy,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '${resultPackage.meta.missionTitle} · ${resultStudentName(resultPackage.meta.studentName, fallback: widget.student.name)}',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    color: ResultReportVisualTokens.navy,
+                                  ),
+                            ),
+                            const SizedBox(height: AppSpacing.item),
+                            _StatusPanel(resultPackage: resultPackage),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: AppSpacing.item),
-                      Text(
-                        snapshot.error.toString(),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
+                      RepaintBoundary(
+                        key: _reportBoundaryKey,
+                        child: Column(
+                          children: [
+                            _MetaPanel(resultPackage: resultPackage),
+                            if (resultPackage.certification != null) ...[
+                              const SizedBox(height: AppSpacing.item),
+                              _CertificationPanel(
+                                certification: resultPackage.certification!,
+                                missionType: resultPackage.missionType,
+                              ),
+                            ],
+                            const SizedBox(height: AppSpacing.item),
+                            _EvidencePanel(
+                              resultPackage: resultPackage,
+                              missionDraftJson: widget.mission.draftJson,
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: AppSpacing.section),
-                      GradientButton(
-                        label: 'Back',
-                        colors: AppPalette.teacherGradient,
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
+                      if (!widget.readOnly &&
+                          resultPackage.missionType == 'THEORY') ...[
+                        const SizedBox(height: AppSpacing.item),
+                        _buildTheoryReviewPanel(resultPackage),
+                      ],
+                      if (!widget.readOnly &&
+                          resultPackage.missionType != 'THEORY') ...[
+                        const SizedBox(height: AppSpacing.item),
+                        _buildManualReviewPanel(resultPackage),
+                      ],
+                      if (widget.readOnly)
+                        ...evidenceQuestionIndexes.map(
+                          (index) => Padding(
+                            padding: const EdgeInsets.only(
+                              top: AppSpacing.item,
+                            ),
+                            child: QuestionEvidencePanel(
+                              api: widget.api,
+                              token: widget.session.token,
+                              missionId: resultPackage.missionId,
+                              questionIndex: index,
+                              asTeacher: true,
+                              allowUpload: false,
+                              title: 'Question ${index + 1} uploaded evidence',
+                              initialFiles: _questionEvidenceFiles(
+                                resultPackage,
+                                index,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (!widget.readOnly &&
+                          resultPackage.missionType == 'QUESTIONS')
+                        ...List.generate(
+                          (resultPackage.evidence['questions']
+                                      as List<dynamic>? ??
+                                  const [])
+                              .length,
+                          (index) => Padding(
+                            padding: const EdgeInsets.only(
+                              top: AppSpacing.item,
+                            ),
+                            child: QuestionEvidencePanel(
+                              api: widget.api,
+                              token: widget.session.token,
+                              missionId: resultPackage.missionId,
+                              questionIndex: index,
+                              asTeacher: true,
+                              allowUpload: true,
+                              title: 'Question ${index + 1} uploaded evidence',
+                              initialFiles: _questionEvidenceFiles(
+                                resultPackage,
+                                index,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (!widget.readOnly) ...[
+                        const SizedBox(height: AppSpacing.item),
+                        _buildScreenshotPanel(
+                          absoluteScreenshotUrl: absoluteScreenshotUrl,
+                          hasScreenshot: effectiveScreenshotUrl
+                              .trim()
+                              .isNotEmpty,
+                          effectiveUploadMimeType: effectiveUploadMimeType,
+                          effectiveUploadFileName: effectiveUploadFileName,
+                        ),
+                        const SizedBox(height: AppSpacing.item),
+                        _buildSendPanel(resultPackage),
+                      ],
                     ],
                   ),
                 ),
               ),
             );
-          }
-
-          final resultPackage = snapshot.data;
-          if (resultPackage == null) {
-            return _buildNoResultState();
-          }
-          _syncTheoryReviewControllers(resultPackage);
-          _syncManualReviewState(resultPackage);
-          final latestTeacherUpload = _latestTeacherUpload(resultPackage);
-          final effectiveScreenshotUrl = _screenshotUrl.trim().isNotEmpty
-              ? _screenshotUrl.trim()
-              : ((latestTeacherUpload?['url'] ?? '')
-                        .toString()
-                        .trim()
-                        .isNotEmpty
-                    ? (latestTeacherUpload?['url'] ?? '').toString().trim()
-                    : _latestScreenshotFromLogs(resultPackage.sendLogs));
-          final effectiveUploadMimeType =
-              _uploadedWorkMimeType.trim().isNotEmpty
-              ? _uploadedWorkMimeType.trim()
-              : ((latestTeacherUpload?['mimeType'] ?? '')
-                        .toString()
-                        .trim()
-                        .isNotEmpty
-                    ? (latestTeacherUpload?['mimeType'] ?? '').toString().trim()
-                    : (effectiveScreenshotUrl.trim().isNotEmpty
-                          ? 'image/png'
-                          : ''));
-          final effectiveUploadFileName =
-              _uploadedWorkFileName.trim().isNotEmpty
-              ? _uploadedWorkFileName.trim()
-              : ((latestTeacherUpload?['fileName'] ?? '')
-                        .toString()
-                        .trim()
-                        .isNotEmpty
-                    ? (latestTeacherUpload?['fileName'] ?? '').toString().trim()
-                    : (effectiveScreenshotUrl.trim().isNotEmpty
-                          ? 'Captured report view'
-                          : ''));
-          final absoluteScreenshotUrl = widget.api.resolveApiUrl(
-            effectiveScreenshotUrl,
-          );
-          final evidenceQuestionIndexes =
-              (resultPackage.evidence['questionEvidenceFiles']
-                          as List<dynamic>? ??
-                      const [])
-                  .map((item) => _asIntValue((item as Map)['questionIndex']))
-                  .toSet()
-                  .toList()
-                ..sort();
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.screen),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      label: const Text('Back'),
-                    ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: _refreshResultPackage,
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Refresh'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.compact),
-                Text(
-                  widget.readOnly ? 'Student Result Report' : 'Result Report',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${resultPackage.meta.missionTitle} · ${resultPackage.meta.studentName}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
-                ),
-                const SizedBox(height: AppSpacing.item),
-                _StatusPanel(resultPackage: resultPackage),
-                if (!widget.readOnly &&
-                    resultPackage.missionType == 'THEORY') ...[
-                  const SizedBox(height: AppSpacing.item),
-                  _buildTheoryReviewPanel(resultPackage),
-                ],
-                if (!widget.readOnly &&
-                    resultPackage.missionType != 'THEORY') ...[
-                  const SizedBox(height: AppSpacing.item),
-                  _buildManualReviewPanel(resultPackage),
-                ],
-                const SizedBox(height: AppSpacing.item),
-                RepaintBoundary(
-                  key: _reportBoundaryKey,
-                  child: Column(
-                    children: [
-                      _MetaPanel(resultPackage: resultPackage),
-                      if (resultPackage.certification != null) ...[
-                        const SizedBox(height: AppSpacing.item),
-                        _CertificationPanel(
-                          certification: resultPackage.certification!,
-                          missionType: resultPackage.missionType,
-                        ),
-                      ],
-                      const SizedBox(height: AppSpacing.item),
-                      _EvidencePanel(
-                        resultPackage: resultPackage,
-                        missionDraftJson: widget.mission.draftJson,
-                      ),
-                    ],
-                  ),
-                ),
-                if (widget.readOnly)
-                  ...evidenceQuestionIndexes.map(
-                    (index) => Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.item),
-                      child: QuestionEvidencePanel(
-                        api: widget.api,
-                        token: widget.session.token,
-                        missionId: resultPackage.missionId,
-                        questionIndex: index,
-                        asTeacher: true,
-                        allowUpload: false,
-                        title: 'Question ${index + 1} uploaded evidence',
-                        initialFiles: _questionEvidenceFiles(
-                          resultPackage,
-                          index,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (!widget.readOnly &&
-                    resultPackage.missionType == 'QUESTIONS')
-                  ...List.generate(
-                    (resultPackage.evidence['questions'] as List<dynamic>? ??
-                            const [])
-                        .length,
-                    (index) => Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.item),
-                      child: QuestionEvidencePanel(
-                        api: widget.api,
-                        token: widget.session.token,
-                        missionId: resultPackage.missionId,
-                        questionIndex: index,
-                        asTeacher: true,
-                        allowUpload: true,
-                        title: 'Question ${index + 1} uploaded evidence',
-                        initialFiles: _questionEvidenceFiles(
-                          resultPackage,
-                          index,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (!widget.readOnly) ...[
-                  const SizedBox(height: AppSpacing.item),
-                  _buildScreenshotPanel(
-                    absoluteScreenshotUrl: absoluteScreenshotUrl,
-                    hasScreenshot: effectiveScreenshotUrl.trim().isNotEmpty,
-                    effectiveUploadMimeType: effectiveUploadMimeType,
-                    effectiveUploadFileName: effectiveUploadFileName,
-                  ),
-                  const SizedBox(height: AppSpacing.item),
-                  _buildSendPanel(resultPackage),
-                ],
-              ],
-            ),
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -1752,8 +1798,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
   }) {
     final isImageUpload = effectiveUploadMimeType.startsWith('image/');
 
-    return SoftPanel(
-      colors: const [Color(0xFFF7FBFF), Color(0xFFE8F2FF)],
+    return _ReportSection(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1897,8 +1942,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
   }
 
   Widget _buildSendPanel(ResultPackageData resultPackage) {
-    return SoftPanel(
-      colors: const [Color(0xFFFFFCF6), Color(0xFFFFF1DF)],
+    return _ReportSection(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2188,33 +2232,41 @@ class _StatusPanel extends StatelessWidget {
         : isManualTeacherResult && teacherReviewStatus != 'scored'
         ? 'XP: Pending'
         : 'XP: ${resultPackage.meta.xpAwarded}';
-    return SoftPanel(
-      colors: const [Color(0xFFEFFAF5), Color(0xFFE5F4FF)],
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: [
-          _Pill(
-            label: isPaperAssessment
-                ? 'Type: Paper assessment'
-                : 'Type: ${resultPackage.missionType}',
+    return _ReportFieldGrid(
+      maxColumns: 6,
+      children: [
+        _MetaRow(
+          label: 'Type',
+          value: isPaperAssessment
+              ? 'Paper assessment'
+              : resultPackage.missionType.replaceAll('_', ' '),
+        ),
+        if (isTheory)
+          _MetaRow(
+            label: 'Review',
+            value: reviewStatus == 'scored' ? 'Scored' : 'Pending review',
           ),
-          if (isTheory)
-            _Pill(
-              label:
-                  'Review: ${reviewStatus == 'scored' ? 'Scored' : 'Pending review'}',
-            ),
-          if (!isTheory && isManualTeacherResult)
-            _Pill(
-              label:
-                  'Review: ${teacherReviewStatus == 'scored' ? 'Scored' : 'Pending review'}',
-            ),
-          _Pill(label: 'Send: ${resultPackage.latestSendStatus}'),
-          _Pill(label: scoreLabel),
-          _Pill(label: 'Tries: ${triesToComplete <= 0 ? 1 : triesToComplete}'),
-          _Pill(label: xpLabel),
-        ],
-      ),
+        if (!isTheory && isManualTeacherResult)
+          _MetaRow(
+            label: 'Review',
+            value: teacherReviewStatus == 'scored'
+                ? 'Scored'
+                : 'Pending review',
+          ),
+        _MetaRow(
+          label: 'Send',
+          value: resultPackage.latestSendStatus.replaceAll('_', ' '),
+        ),
+        _MetaRow(
+          label: isTheory ? 'Average score' : 'Score',
+          value: scoreLabel.replaceFirst(RegExp(r'^(Score|Average): '), ''),
+        ),
+        _MetaRow(
+          label: 'Tries',
+          value: '${triesToComplete <= 0 ? 1 : triesToComplete}',
+        ),
+        _MetaRow(label: 'XP', value: xpLabel.replaceFirst('XP: ', '')),
+      ],
     );
   }
 }
@@ -2228,37 +2280,43 @@ class _MetaPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final meta = resultPackage.meta;
     final isPaperAssessment = resultPackage.resultKind == 'paper_assessment';
-    return SoftPanel(
+    return _ReportSection(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Meta', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppSpacing.compact),
-          _MetaRow(label: 'Student', value: meta.studentName),
-          _MetaRow(
-            label: isPaperAssessment ? 'Assessment' : 'Mission',
-            value: meta.missionTitle,
-          ),
-          _MetaRow(label: 'Subject', value: meta.subject),
-          _MetaRow(
-            label: 'Task Codes',
-            value: meta.taskCodes.isEmpty ? 'None' : meta.taskCodes.join(', '),
-          ),
-          _MetaRow(
-            label: isPaperAssessment ? 'Lesson Date' : 'Assigned Date',
-            value: meta.assignedDate,
-          ),
-          _MetaRow(
-            label: 'Started',
-            value: _formatReportDateTime(meta.startTime),
-          ),
-          _MetaRow(
-            label: 'Submitted',
-            value: _formatReportDateTime(meta.submitTime),
-          ),
-          _MetaRow(
-            label: 'Duration',
-            value: formatResultDuration(meta.durationSeconds),
+          _ReportFieldGrid(
+            children: [
+              _MetaRow(label: 'Student', value: meta.studentName),
+              _MetaRow(
+                label: isPaperAssessment ? 'Assessment' : 'Mission',
+                value: meta.missionTitle,
+              ),
+              _MetaRow(label: 'Subject', value: meta.subject),
+              _MetaRow(
+                label: 'Task focus',
+                value: meta.taskCodes.isEmpty
+                    ? 'None'
+                    : meta.taskCodes.join(', '),
+              ),
+              _MetaRow(
+                label: isPaperAssessment ? 'Lesson Date' : 'Assigned Date',
+                value: meta.assignedDate,
+              ),
+              _MetaRow(
+                label: 'Started',
+                value: _formatReportDateTime(meta.startTime),
+              ),
+              _MetaRow(
+                label: 'Submitted',
+                value: _formatReportDateTime(meta.submitTime),
+              ),
+              _MetaRow(
+                label: 'Duration',
+                value: formatResultDuration(meta.durationSeconds),
+              ),
+            ],
           ),
         ],
       ),
@@ -2278,11 +2336,11 @@ class _CertificationPanel extends StatelessWidget {
   Color get _accentColor {
     switch (certification.certificationPassStatus) {
       case 'passed':
-        return AppPalette.mint;
+        return ResultReportVisualTokens.success;
       case 'pending_review':
-        return AppPalette.sun;
+        return ResultReportVisualTokens.warning;
       case 'not_passed':
-        return const Color(0xFFFF8DA1);
+        return ResultReportVisualTokens.warning;
       default:
         return AppPalette.primaryBlue;
     }
@@ -2317,12 +2375,12 @@ class _CertificationPanel extends StatelessWidget {
         missionType == 'THEORY' &&
         certification.certificationPassStatus == 'pending_review';
 
-    return SoftPanel(
-      colors: const [Color(0xFFF7FCFF), Color(0xFFEAF4FF)],
+    return _ReportSection(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Text(
@@ -2438,7 +2496,7 @@ class _EvidencePanel extends StatelessWidget {
     final manualReason = (evidence['manualTeacherResultReason'] ?? '')
         .toString();
 
-    return SoftPanel(
+    return _ReportSection(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2545,9 +2603,7 @@ class _TheoryEvidence extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(AppSpacing.item),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFFFFBF1), Color(0xFFE9F4FF)],
-            ),
+            color: ResultReportVisualTokens.neutralSurface,
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
             border: Border.all(color: AppPalette.sky.withValues(alpha: 0.5)),
           ),
@@ -2606,9 +2662,7 @@ class _TheoryEvidence extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.item),
               decoration: BoxDecoration(
-                color: meetsMinimumWords
-                    ? const Color(0xFFF1FBF4)
-                    : const Color(0xFFFFF7EF),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                 border: Border.all(
                   color: meetsMinimumWords
@@ -2619,13 +2673,16 @@ class _TheoryEvidence extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         'Theory ${index + 1}',
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
-                      const SizedBox(width: 8),
+
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -2648,13 +2705,18 @@ class _TheoryEvidence extends StatelessWidget {
                               ),
                         ),
                       ),
-                      const Spacer(),
+
                       Text(
                         '$studentWordCount / $minimumWordCount words',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppPalette.textMuted,
                           fontWeight: FontWeight.w700,
                         ),
+                      ),
+                      _Pill(
+                        label: teacherScorePercent == null
+                            ? 'Score: Pending review'
+                            : 'Score: ${teacherScorePercent.toString()}/100',
                       ),
                     ],
                   ),
@@ -2714,41 +2776,13 @@ class _TheoryEvidence extends StatelessWidget {
                       ),
                     ),
                   ],
-                  if (teacherScorePercent != null) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppPalette.primaryBlue.withValues(
-                              alpha: 0.14,
-                            ),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            'Teacher score: ${teacherScorePercent.toString()}/100',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: AppPalette.primaryBlue,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                        ),
-                        if (scoredAt.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Scored ${_formatReportDateTime(scoredAt)}',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: AppPalette.textMuted),
-                            ),
-                          ),
-                        ],
-                      ],
+                  if (teacherScorePercent != null && scoredAt.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Scored ${_formatReportDateTime(scoredAt)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: ResultReportVisualTokens.muted,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 10),
@@ -2886,9 +2920,7 @@ class _QuestionEvidence extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(AppSpacing.item),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFEFFAF5), Color(0xFFE9F4FF)],
-            ),
+            color: ResultReportVisualTokens.neutralSurface,
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
             border: Border.all(color: AppPalette.sky.withValues(alpha: 0.5)),
           ),
@@ -2994,6 +3026,7 @@ class _QuestionEvidence extends StatelessWidget {
               itemNumber: index + 1,
               isManualTeacherResult: isManualTeacherResult,
               presentation: presentation,
+              teacherFeedback: (question['teacherFeedback'] ?? '').toString(),
             ),
           );
         }),
@@ -3007,11 +3040,13 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
     required this.itemNumber,
     required this.isManualTeacherResult,
     required this.presentation,
+    required this.teacherFeedback,
   });
 
   final int itemNumber;
   final bool isManualTeacherResult;
   final ResultObjectiveQuestionPresentation presentation;
+  final String teacherFeedback;
 
   @override
   Widget build(BuildContext context) {
@@ -3022,11 +3057,7 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.item),
       decoration: BoxDecoration(
-        color: isManualTeacherResult
-            ? const Color(0xFFF8FBFF)
-            : correctness
-            ? const Color(0xFFF1FBF4)
-            : const Color(0xFFFFF7EF),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border: Border.all(
           color: isManualTeacherResult
@@ -3039,13 +3070,16 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 'Q$itemNumber',
                 style: Theme.of(context).textTheme.titleSmall,
               ),
-              const SizedBox(width: 8),
+
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -3066,7 +3100,7 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const Spacer(),
+
               if (!isManualTeacherResult)
                 Text(
                   'Points: $pointsEarned/$maxPoints',
@@ -3166,6 +3200,15 @@ class _TeacherObjectiveEvidenceCard extends StatelessWidget {
               correctAnswer: presentation.correctAnswerValue,
               isCorrect: presentation.correctness,
             ),
+          ],
+          if (teacherFeedback.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Teacher feedback',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(teacherFeedback),
           ],
           if (presentation.legacySelectionUnavailable &&
               presentation.selectedLetter.isEmpty &&
@@ -3310,6 +3353,8 @@ class _TeacherFillGapEvidenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCorrect = question['correctness'] == true;
+    final maxPoints = _asIntValue(question['maxPoints']);
+    final pointsEarned = _asIntValue(question['pointsEarned']);
     final acceptedAnswers =
         (question['acceptedAnswers'] as List<dynamic>? ?? const <dynamic>[])
             .map((item) => item.toString())
@@ -3322,7 +3367,7 @@ class _TeacherFillGapEvidenceCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.item),
       decoration: BoxDecoration(
-        color: isCorrect ? const Color(0xFFF1FBF4) : const Color(0xFFFFF7EF),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border: Border.all(
           color: isCorrect
@@ -3333,13 +3378,16 @@ class _TeacherFillGapEvidenceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 'Item $itemNumber',
                 style: Theme.of(context).textTheme.titleSmall,
               ),
-              const SizedBox(width: 8),
+
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -3356,6 +3404,8 @@ class _TeacherFillGapEvidenceCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (maxPoints > 0)
+                _Pill(label: 'Points: $pointsEarned/$maxPoints'),
             ],
           ),
           const SizedBox(height: 8),
@@ -3405,9 +3455,7 @@ class _TeacherTheoryEvidenceCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.item),
       decoration: BoxDecoration(
-        color: teacherScorePercent == null
-            ? const Color(0xFFFFFBF3)
-            : const Color(0xFFF1FBF4),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border: Border.all(
           color: teacherScorePercent == null
@@ -3418,13 +3466,16 @@ class _TeacherTheoryEvidenceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 'Theory $itemNumber',
                 style: Theme.of(context).textTheme.titleSmall,
               ),
-              const SizedBox(width: 8),
+
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -3441,7 +3492,7 @@ class _TeacherTheoryEvidenceCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const Spacer(),
+
               if (teacherScorePercent != null)
                 Text(
                   'Score: ${_asIntValue(teacherScorePercent)}/100',
@@ -3489,6 +3540,18 @@ class _TeacherTheoryEvidenceCard extends StatelessWidget {
           Text(
             'Minimum words: ${_asIntValue(question['minimumWordCount'])} · Student words: ${_asIntValue(question['studentWordCount'])}',
           ),
+          if ((question['expectedAnswer'] ?? '')
+              .toString()
+              .trim()
+              .isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Expected answer',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(question['expectedAnswer'].toString()),
+          ],
           if (teacherFeedback.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
@@ -3537,9 +3600,7 @@ class _EssayEvidence extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(AppSpacing.item),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFEFFAF5), Color(0xFFE9F4FF)],
-            ),
+            color: ResultReportVisualTokens.neutralSurface,
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
             border: Border.all(color: AppPalette.sky.withValues(alpha: 0.5)),
           ),
@@ -3922,43 +3983,94 @@ class _EssayEvidence extends StatelessWidget {
   }
 }
 
+// WHY: Reuse the HTML report palette without changing download generation or
+// the app-wide panel widget. Every report section has the same quiet surface.
+class _ReportSection extends StatelessWidget {
+  const _ReportSection({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(AppSpacing.item),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      border: Border.all(color: ResultReportVisualTokens.neutralBorder),
+    ),
+    child: child,
+  );
+}
+
+class _ReportFieldGrid extends StatelessWidget {
+  const _ReportFieldGrid({required this.children, this.maxColumns = 4});
+  final List<Widget> children;
+  final int maxColumns;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      const gap = 8.0;
+      const minimumFieldWidth = 150.0;
+      final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+      final columns =
+          ((constraints.maxWidth + gap) / (minimumFieldWidth * scale + gap))
+              .floor()
+              .clamp(
+                1,
+                children.length < maxColumns ? children.length : maxColumns,
+              );
+      final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: children
+            .map((child) => SizedBox(width: width, child: child))
+            .toList(),
+      );
+    },
+  );
+}
+
 class _MetaRow extends StatelessWidget {
   const _MetaRow({required this.label, required this.value});
-
   final String label;
   final String value;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppPalette.textMuted),
-            ),
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(
+      color: ResultReportVisualTokens.neutralSurface,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: ResultReportVisualTokens.muted,
+            fontWeight: FontWeight.w700,
           ),
-          Expanded(
-            child: SafeLinkText(
-              value,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+        ),
+        const SizedBox(height: 4),
+        SafeLinkText(
+          value,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: ResultReportVisualTokens.navy,
+            fontWeight: FontWeight.w600,
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
 }
 
 class _Pill extends StatelessWidget {
   const _Pill({
     required this.label,
-    this.backgroundColor = Colors.white,
+    this.backgroundColor = ResultReportVisualTokens.neutralSurface,
     this.textColor = AppPalette.navy,
   });
 

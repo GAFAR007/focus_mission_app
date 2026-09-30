@@ -195,6 +195,109 @@ void main() {
     expect(find.text('Student answer'), findsNothing);
     expect(find.text('Selected:'), findsNothing);
   });
+  for (final size in [const Size(390, 1000), const Size(1100, 1400)]) {
+    testWidgets('report keeps question marks and metadata at ${size.width}px', (
+      tester,
+    ) async {
+      final json = _resultPackageJson();
+      json['certification'] = {
+        'certificationEnabled': true,
+        'certificationLabel': 'Course Certification',
+        'requiredTaskCodes': ['P1', 'P2', 'M1', 'D1'],
+        'certificationEligible': true,
+        'certificationTaskCode': 'P1',
+        'certificationCounted': true,
+        'certificationPassStatus': 'passed',
+        'scorePercent': 90,
+        'reason': 'Assessment requirement passed; Theory is also required.',
+      };
+      final questions = (json['evidence'] as Map)['questions'] as List;
+      (questions.first as Map)['teacherFeedback'] =
+          'Review the correct option.';
+      questions.add({
+        'itemType': 'FILL_GAP',
+        'questionText': 'Complete the business term.',
+        'studentAnswer': 'Profit',
+        'expectedAnswer': 'Profit',
+        'correctness': true,
+        'pointsEarned': 2,
+        'maxPoints': 2,
+      });
+      await _pumpReport(tester, json, size: size, textScale: 1.3);
+      expect(find.text('P1 Assessment A · Ahmed Stockwin'), findsOneWidget);
+      for (final text in [
+        'Student',
+        'Subject',
+        'Task focus',
+        'Assigned Date',
+        'Started',
+        'Submitted',
+        'Duration',
+        '36 min 47 sec',
+        'Counts toward certification: Yes',
+        'Score used: 90.0%',
+        'P1 · selected',
+        'Points: 0/1',
+        'Points: 2/2',
+        'Review the correct option.',
+        'Correct answer',
+      ]) {
+        expect(find.text(text), findsWidgets, reason: text);
+      }
+      expect(find.text('Upload PDF/Image'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final readOnly in [true, false]) {
+    testWidgets(
+      'theory report preserves per-question scores and review access $readOnly',
+      (tester) async {
+        final json = _resultPackageJson();
+        json['missionType'] = 'THEORY';
+        json['evidence'] = {
+          'format': 'THEORY',
+          'reviewStatus': 'scored',
+          'averageTeacherScorePercent': 75,
+          'xpAwarded': 38,
+          'xpMax': 50,
+          'triesToComplete': 2,
+          'questionsAnsweredCount': 2,
+          'completedResponsesCount': 2,
+          'questions': [
+            for (var index = 0; index < 2; index++)
+              {
+                'questionText': 'Explain objective ${index + 1}',
+                'studentAnswer': 'Student explanation ${index + 1}',
+                'expectedAnswer': 'Expected explanation ${index + 1}',
+                'learnFirst': 'Read the lesson before answering.',
+                'teacherScorePercent': index == 0 ? 60 : 90,
+                'teacherFeedback': 'Teacher feedback ${index + 1}',
+                'minimumWordCount': 10,
+                'studentWordCount': 12,
+                'meetsMinimumWords': true,
+              },
+          ],
+        };
+        await _pumpReport(tester, json, readOnly: readOnly);
+        expect(find.text('Score: 60/100'), findsOneWidget);
+        expect(find.text('Score: 90/100'), findsOneWidget);
+        expect(find.text('Student explanation 1'), findsWidgets);
+        expect(find.text('Expected explanation 2'), findsWidgets);
+        expect(find.text('Teacher feedback 2'), findsWidgets);
+        expect(find.text('75%'), findsOneWidget);
+        expect(
+          find.text('Update Theory Score'),
+          readOnly ? findsNothing : findsOneWidget,
+        );
+        expect(
+          find.text('Upload PDF/Image'),
+          readOnly ? findsNothing : findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }
 
 Map<String, dynamic> _resultPackageJson() {
@@ -240,4 +343,57 @@ Map<String, dynamic> _resultPackageJson() {
     },
     'sendLogs': [],
   };
+}
+
+Future<void> _pumpReport(
+  WidgetTester tester,
+  Map<String, dynamic> json, {
+  Size size = const Size(390, 1000),
+  bool readOnly = true,
+  double textScale = 1,
+}) async {
+  await tester.binding.setSurfaceSize(size);
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  final api = FocusMissionApi(
+    client: MockClient(
+      (request) async => http.Response(
+        jsonEncode({'resultPackage': json}),
+        200,
+        headers: const {'content-type': 'application/json'},
+      ),
+    ),
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
+      home: ResultReportScreen(
+        session: const AuthSession(
+          token: 'synthetic-token',
+          user: AppUser(id: 'teacher-1', name: 'Teacher', role: 'teacher'),
+        ),
+        mission: MissionPayload.fromJson({
+          'id': 'mission-1',
+          'title': 'P1 Assessment A',
+          'status': 'published',
+          'draftFormat': json['missionType'],
+          'subject': {'id': 'business', 'name': 'Business'},
+        }),
+        student: const StudentSummary(
+          id: 'student-1',
+          name: 'Ahmed Stockwin',
+          xp: 0,
+          streak: 0,
+        ),
+        resultPackageId: 'package-1',
+        api: api,
+        readOnly: readOnly,
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
