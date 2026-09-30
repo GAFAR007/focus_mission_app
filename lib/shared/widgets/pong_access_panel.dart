@@ -104,6 +104,7 @@ class _PongAccessPanelState extends State<PongAccessPanel> {
             'enabled': 'Game Access',
             'computer': 'Computer Mode',
             'battles': 'Student Battles',
+            'powerBattle': 'Power Battle',
             'lobbyVisible': 'Visible in Pong Lobby',
           }.entries)
             SwitchListTile.adaptive(
@@ -111,7 +112,9 @@ class _PongAccessPanelState extends State<PongAccessPanel> {
               value: _access!.toJson()[entry.key] as bool,
               onChanged: _saving ? null : (value) => _save(entry.key, value),
             ),
-          const Text('Turning a game off keeps saved progress.'),
+          const Text(
+            'Power Battle adds boosts. Classic stays available when Student Battles is on. Turning a game off keeps saved progress.',
+          ),
         ],
         if (_saving) const LinearProgressIndicator(),
         if (_error != null)

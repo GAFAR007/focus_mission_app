@@ -249,7 +249,7 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
                         ),
                         const SizedBox(height: 10),
                         const Text(
-                          'Move your paddle. Return the ball. Unlock your next level.',
+                          'Defend the bottom. Move left or right. Collect boosts as you level up.',
                         ),
                         const SizedBox(height: 20),
                         if (profile == null)
@@ -338,7 +338,7 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
                         ),
                         title: Text(level.name),
                         subtitle: Text(
-                          'Level ${level.level} · Get ${level.goal} returns${profile.progress.completedLevels.contains(level.level) ? ' · Completed' : ''}',
+                          'Level ${level.level} · Get ${level.goal} returns${level.powerUps.isEmpty ? ' · No boosts' : ' · ${level.powerUps.length} ${level.powerUps.length == 1 ? 'boost' : 'boosts'}'}${profile.progress.completedLevels.contains(level.level) ? ' · Completed' : ''}',
                         ),
                         trailing:
                             level.level <= profile.progress.highestUnlocked &&

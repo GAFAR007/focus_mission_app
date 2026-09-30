@@ -15,12 +15,14 @@ class PongAccess {
     : enabled = json['enabled'] == true,
       computer = json['computer'] == true,
       battles = json['battles'] == true,
+      powerBattle = json['powerBattle'] == true,
       lobbyVisible = json['lobbyVisible'] == true;
-  final bool enabled, computer, battles, lobbyVisible;
+  final bool enabled, computer, battles, powerBattle, lobbyVisible;
   PongJson toJson() => {
     'enabled': enabled,
     'computer': computer,
     'battles': battles,
+    'powerBattle': powerBattle,
     'lobbyVisible': lobbyVisible,
   };
 }
@@ -48,9 +50,11 @@ class PongLevel {
     : level = json['level'] as int,
       name = json['name'] as String,
       goal = json['goal'] as int,
-      arena = json['arena'] as String;
+      arena = json['arena'] as String,
+      powerUps = List<String>.from(json['powerUps'] ?? []);
   final int level, goal;
   final String name, arena;
+  final List<String> powerUps;
 }
 
 class PongProfile {
@@ -71,8 +75,10 @@ class PongOpponent {
       name = json['name'] as String,
       level = json['level'] as int,
       wins = json['wins'] as int,
-      availability = json['availability'] as String;
+      availability = json['availability'] as String,
+      powerBattle = json['powerBattle'] == true;
   final String handle, name, availability;
+  final bool powerBattle;
   final int level, wins;
 }
 
@@ -83,8 +89,9 @@ class PongInvitation {
       incoming = json['incoming'] == true,
       status = json['status'] as String,
       expiresIn = json['expiresIn'] as int,
-      match = json['match'] as String?;
-  final String handle, name, status;
+      match = json['match'] as String?,
+      ruleset = json['ruleset'] as String? ?? 'classic';
+  final String handle, name, status, ruleset;
   final bool incoming;
   final int expiresIn;
   final String? match;
@@ -95,7 +102,9 @@ class PongLobby {
     : students = pongRows(json['students']).map(PongOpponent.fromJson).toList(),
       challenges = pongRows(
         json['challenges'],
-      ).map(PongInvitation.fromJson).toList();
+      ).map(PongInvitation.fromJson).toList(),
+      powerBattle = json['powerBattle'] == true;
+  final bool powerBattle;
   final List<PongOpponent> students;
   final List<PongInvitation> challenges;
 }
@@ -119,6 +128,11 @@ class PongFrame {
   final bool paused, waiting;
   final List<PongJson> players;
   final PongJson state;
+  String get ruleset => state['ruleset'] as String? ?? 'classic';
+  List<PongJson> get effects => pongRows(state['boosts']);
+  bool get rushReady =>
+      effects.length > side &&
+      pongRows(effects[side]['active']).any((e) => e['type'] == 'rush');
   bool get computer => state['mode'] == 'computer';
   bool get ended => status != 'active';
   int get level => state['level'] as int;

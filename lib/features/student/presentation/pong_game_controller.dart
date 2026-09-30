@@ -27,7 +27,7 @@ class PongGameController extends ChangeNotifier {
   PongFrame? frame, previousFrame;
   DateTime receivedAt = DateTime.now();
   String? error, _controlToken;
-  int direction = 0, _seq = 0;
+  int direction = 0, forward = 0, _seq = 0;
   double? targetY;
   StreamSubscription<PongFrame>? _subscription;
   Timer? _heartbeat, _retry, _presence;
@@ -70,8 +70,9 @@ class PongGameController extends ChangeNotifier {
     _retry = Timer(const Duration(seconds: 2), connect);
   }
 
-  void move({int? direction, double? targetY}) {
-    this.direction = direction ?? 0;
+  void move({int? direction, double? targetY, int? forward}) {
+    this.direction = direction ?? this.direction;
+    this.forward = forward ?? this.forward;
     this.targetY = targetY?.clamp(0, 560).toDouble();
     // WHY: Releasing a key must stop the paddle even inside the drag throttle.
     sendInput(force: direction == 0 && targetY == null);
@@ -88,7 +89,14 @@ class PongGameController extends ChangeNotifier {
     _sending = true;
     _lastSent = DateTime.now();
     try {
-      await api.input(handle, _controlToken!, _seq++, direction, targetY);
+      await api.input(
+        handle,
+        _controlToken!,
+        _seq++,
+        direction,
+        targetY,
+        forward: forward,
+      );
     } catch (e) {
       if (!_disposed && frame?.ended != true) {
         error = e.toString();

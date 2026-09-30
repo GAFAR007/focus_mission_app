@@ -13,18 +13,20 @@ import '../../../shared/widgets/focus_scaffold.dart';
 import 'pong_arena_screen.dart';
 
 class PongLobbyScreen extends StatefulWidget {
-  const PongLobbyScreen({super.key, required this.token});
+  const PongLobbyScreen({super.key, required this.token, this.api});
   final String token;
+  final PongApi? api;
   @override
   State<PongLobbyScreen> createState() => _PongLobbyScreenState();
 }
 
 class _PongLobbyScreenState extends State<PongLobbyScreen> {
-  late final PongApi _api = PongApi(widget.token);
+  late final PongApi _api = widget.api ?? PongApi(widget.token);
   final _search = TextEditingController();
   Timer? _poll;
   PongLobby? _lobby;
   String? _error;
+  String _ruleset = 'classic';
   bool _loading = false, _acting = false, _inArena = false, _disabled = false;
   @override
   void initState() {
@@ -47,6 +49,7 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
       if (mounted) {
         setState(() {
           _lobby = lobby;
+          if (!lobby.powerBattle) _ruleset = 'classic';
           _error = null;
         });
       }
@@ -95,7 +98,11 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Challenge ${opponent.name}?'),
-        content: const Text('Pong Battle · First to 7'),
+        content: Text(
+          _ruleset == 'power'
+              ? 'Power Battle · First to 7 · Both players collect temporary boosts'
+              : 'Classic · First to 7 · No power-ups',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -109,7 +116,7 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
       ),
     );
     if (confirmed == true && mounted) {
-      await _act(() => _api.challenge(opponent.handle));
+      await _act(() => _api.challenge(opponent.handle, ruleset: _ruleset));
     }
   }
 
@@ -151,7 +158,32 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
               const Text(
                 'Play someone from your school · First to 7 · Equal paddles',
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+              if (_lobby != null) ...[
+                SegmentedButton<String>(
+                  segments: [
+                    const ButtonSegment(
+                      value: 'classic',
+                      label: Text('Classic'),
+                    ),
+                    ButtonSegment(
+                      value: 'power',
+                      label: const Text('Power Battle'),
+                      enabled: _lobby!.powerBattle,
+                    ),
+                  ],
+                  selected: {_ruleset},
+                  onSelectionChanged: (value) =>
+                      setState(() => _ruleset = value.first),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _ruleset == 'power'
+                      ? 'Matching boosts for both players · Collect with your paddle'
+                      : 'Classic rules · No power-ups',
+                ),
+              ],
+              const SizedBox(height: 16),
               TextField(
                 controller: _search,
                 maxLength: 60,
@@ -202,8 +234,8 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
                           const SizedBox(height: 6),
                           Text(
                             invite.incoming
-                                ? 'First to 7 · ${invite.expiresIn}s to respond'
-                                : 'Waiting for response… ${invite.expiresIn}s',
+                                ? '${invite.ruleset == 'power' ? 'Power Battle · Temporary boosts' : 'Classic · No boosts'} · First to 7 · ${invite.expiresIn}s to respond'
+                                : '${invite.ruleset == 'power' ? 'Power Battle' : 'Classic'} · Waiting for response… ${invite.expiresIn}s',
                           ),
                           const SizedBox(height: 12),
                           Wrap(
@@ -218,6 +250,7 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
                                           final match = await _api.respond(
                                             invite.handle,
                                             'accept',
+                                            ruleset: invite.ruleset,
                                           );
                                           if (match != null) await _open(match);
                                         }),
@@ -276,11 +309,15 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
                         );
                         final button = OutlinedButton(
                           onPressed:
-                              _acting || student.availability != 'Available'
+                              _acting ||
+                                  student.availability != 'Available' ||
+                                  (_ruleset == 'power' && !student.powerBattle)
                               ? null
                               : () => _challenge(student),
                           child: Text(
-                            student.availability == 'In game'
+                            _ruleset == 'power' && !student.powerBattle
+                                ? 'Classic only'
+                                : student.availability == 'In game'
                                 ? 'Busy'
                                 : 'Challenge',
                           ),

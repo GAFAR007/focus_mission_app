@@ -54,16 +54,26 @@ class PongApi {
   );
   Future<String> computer(int level) async =>
       (await request('POST', '/computer', {'level': level}))['match'] as String;
-  Future<void> challenge(String opponent, {String? rematchOf}) async {
+  Future<void> challenge(
+    String opponent, {
+    String? rematchOf,
+    String ruleset = 'classic',
+  }) async {
     await request('POST', '/challenges', {
       'opponent': opponent,
+      'ruleset': ruleset,
       'rematchOf': ?rematchOf,
     });
   }
 
-  Future<String?> respond(String handle, String action) async =>
+  Future<String?> respond(
+    String handle,
+    String action, {
+    String? ruleset,
+  }) async =>
       (await request('POST', '/challenges/$handle', {
             'action': action,
+            'ruleset': ?ruleset,
           }))['match']
           as String?;
   Future<void> control(String handle, String action) async {
@@ -75,13 +85,15 @@ class PongApi {
     String controlToken,
     int seq,
     int direction,
-    double? targetY,
-  ) async {
+    double? targetY, {
+    int forward = 0,
+  }) async {
     await request('POST', '/matches/$handle/input', {
       'controlToken': controlToken,
       'seq': seq,
       'direction': direction,
       'targetY': ?targetY,
+      'forward': forward,
     });
   }
 
