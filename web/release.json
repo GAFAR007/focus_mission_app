@@ -1,6 +1,29 @@
 {
-  "version": "2.4.0",
+  "version": "2.5.0",
   "releases": [
+    {
+      "version": "2.5.0",
+      "previousVersion": "2.4.0",
+      "releasedAt": "2026-10-03T11:05:47.545Z",
+      "title": "Cup Pong presentation, music and smoother controls",
+      "changes": {
+        "new": [
+          "Added background music and separate Music and Sound FX settings for Pong."
+        ],
+        "improved": [
+          "Pong now has a dark court, clearer player colours, compact controls and a layout that fits the screen.",
+          "Completed computer levels offer a direct Next Level action."
+        ],
+        "fixed": [
+          "Fixed local paddle jumps when pressing, releasing or reversing controls.",
+          "Smoothed ball and opponent rendering during uneven network updates."
+        ]
+      },
+      "source": {
+        "frontend": "e83073eff59c920192764c47ab78d7785192861b",
+        "backend": "ef72d466d18e3038a14092b5e8c72d7da29d2c84"
+      }
+    },
     {
       "version": "2.4.0",
       "previousVersion": "2.3.1",
