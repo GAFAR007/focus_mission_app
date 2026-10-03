@@ -14,7 +14,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:focus_mission_app/core/utils/pong_api.dart';
 import 'package:focus_mission_app/core/theme/app_theme.dart';
-import 'package:focus_mission_app/shared/widgets/release_history_button.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:focus_mission_app/shared/models/pong_models.dart';
 import 'package:focus_mission_app/shared/widgets/pong_access_panel.dart';
 import 'package:focus_mission_app/features/student/presentation/pong_home_screen.dart';
@@ -124,6 +124,7 @@ class FakePongApi extends PongApi {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   test(
     'local paddle prediction moves immediately and eases small server corrections',
     () async {
@@ -133,15 +134,14 @@ void main() {
         {'active': [], 'slot': null},
       ];
       final api = FakePongApi(data);
-      final game = PongGameController(api, 'g');
+      var instant = DateTime(2026);
+      final game = PongGameController(api, 'g', clock: () => instant);
       addTearDown(game.dispose);
       await Future<void>.delayed(Duration.zero);
 
-      game.receivedAt = DateTime.now().subtract(
-        const Duration(milliseconds: 100),
-      );
       game.move(direction: 1);
-      final predicted = game.localPaddleAt(DateTime.now());
+      instant = instant.add(const Duration(milliseconds: 100));
+      final predicted = game.localPaddleAt(instant);
       expect(predicted, closeTo(345, 2));
 
       final corrected = frame();
@@ -150,12 +150,10 @@ void main() {
       corrected['state']['boosts'] = data['state']['boosts'];
       api.stream.add(PongFrame.fromJson(corrected));
       await Future<void>.delayed(Duration.zero);
-      final reconciled = game.localPaddleAt(DateTime.now());
+      final reconciled = game.localPaddleAt(instant);
       expect(reconciled, inInclusiveRange(338, 360));
       expect(
-        game.localPaddleAt(
-          DateTime.now().add(const Duration(milliseconds: 80)),
-        ),
+        game.localPaddleAt(instant.add(const Duration(milliseconds: 80))),
         greaterThan(reconciled),
       );
       await api.stream.close();
@@ -200,16 +198,19 @@ void main() {
     'remote ball and paddle render from buffered authoritative snapshots',
     () async {
       final api = FakePongApi(frame());
-      final game = PongGameController(api, 'g');
+      var instant = DateTime(2026);
+      final game = PongGameController(api, 'g', clock: () => instant);
       addTearDown(game.dispose);
       await Future<void>.delayed(Duration.zero);
 
+      instant = instant.add(const Duration(milliseconds: 50));
       final second = frame();
       second['state']['elapsedMs'] = 50;
       second['state']['ball']['x'] = 550;
       second['state']['paddles'][1] = 300;
       api.stream.add(PongFrame.fromJson(second));
       await Future<void>.delayed(Duration.zero);
+      instant = instant.add(const Duration(milliseconds: 50));
       final third = frame();
       third['state']['elapsedMs'] = 100;
       third['state']['ball']['x'] = 600;
@@ -217,7 +218,9 @@ void main() {
       api.stream.add(PongFrame.fromJson(third));
       await Future<void>.delayed(Duration.zero);
 
-      final sample = game.renderSampleAt(DateTime.now())!;
+      final sample = game.renderSampleAt(
+        instant.add(const Duration(milliseconds: 25)),
+      )!;
       expect(sample.previous.state['elapsedMs'], 0);
       expect(sample.current.state['elapsedMs'], 50);
       expect(sample.fraction, inInclusiveRange(.4, .8));
@@ -406,7 +409,7 @@ void main() {
     },
   );
 
-  testWidgets('solo controls and instructions fit above the laptop footer', (
+  testWidgets('solo controls and court fit in the viewport without scrolling', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1512, 805);
@@ -422,10 +425,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
     final hint = find.text('A / D or ← / → · Drag to move');
-    expect(
-      tester.getBottomLeft(hint).dy,
-      lessThan(tester.getTopLeft(find.byType(ReleaseHistoryButton)).dy),
-    );
+    expect(tester.getBottomLeft(hint).dy, lessThan(805));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
@@ -633,6 +633,29 @@ void main() {
       expect(find.text('Left'), findsOneWidget);
       expect(find.text('Right'), findsOneWidget);
       expect(find.text('0'), findsNWidgets(2));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
+  testWidgets(
+    'releasing a held button sends stop without a stale position step',
+    (tester) async {
+      final api = FakePongApi(frame());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PongArenaScreen(token: 'test', handle: 'g', api: api),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Right')),
+      );
+      await tester.pump(const Duration(milliseconds: 210));
+      expect(api.inputs.any((v) => v['direction'] == 1), isTrue);
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 210));
+      expect(api.inputs.last['direction'], 0);
+      expect(api.inputs.last['targetY'], isNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
     },

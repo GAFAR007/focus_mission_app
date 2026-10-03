@@ -9,18 +9,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/utils/pong_api.dart';
 import '../../../shared/models/pong_models.dart';
-import '../../../shared/widgets/focus_scaffold.dart';
+import 'pong_theme.dart';
+import 'pong_audio.dart';
+import 'pong_audio_controls.dart';
 import 'pong_arena_screen.dart';
 
 class PongLobbyScreen extends StatefulWidget {
-  const PongLobbyScreen({super.key, required this.token, this.api});
+  const PongLobbyScreen({super.key, required this.token, this.api, this.audio});
   final String token;
   final PongApi? api;
+  final PongAudio? audio;
   @override
   State<PongLobbyScreen> createState() => _PongLobbyScreenState();
 }
 
-class _PongLobbyScreenState extends State<PongLobbyScreen> {
+class _PongLobbyScreenState extends State<PongLobbyScreen>
+    with WidgetsBindingObserver {
+  late final PongAudio _audio = widget.audio ?? PongAudio();
   late final PongApi _api = widget.api ?? PongApi(widget.token);
   final _search = TextEditingController();
   Timer? _poll;
@@ -31,6 +36,9 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (widget.audio == null) _audio.loadPreferences();
+    _audio.select(PongTrack.city);
     _load();
     _poll = Timer.periodic(const Duration(seconds: 2), (_) => _load());
   }
@@ -72,13 +80,15 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute<dynamic>(
-        builder: (_) => PongArenaScreen(token: widget.token, handle: handle),
+        builder: (_) =>
+            PongArenaScreen(token: widget.token, handle: handle, audio: _audio),
       ),
     );
     _inArena = false;
   }
 
   Future<void> _act(Future<void> Function() action) async {
+    _audio.activate();
     setState(() {
       _acting = true;
       _error = null;
@@ -121,7 +131,13 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) =>
+      _audio.background(state != AppLifecycleState.resumed);
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (widget.audio == null) _audio.dispose();
     _poll?.cancel();
     _search.dispose();
     _api.close();
@@ -129,7 +145,7 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => FocusScaffold(
+  Widget build(BuildContext context) => PongScaffold(
     child: SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Center(
@@ -148,12 +164,15 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Pong Lobby',
-                      style: Theme.of(context).textTheme.headlineMedium,
+                      'Student battles',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.headlineMedium?.copyWith(color: Colors.white),
                     ),
                   ),
                 ],
               ),
+              PongAudioControls(audio: _audio),
               const SizedBox(height: 12),
               const Text(
                 'Play someone from your school · First to 7 · Equal paddles',
@@ -299,7 +318,8 @@ class _PongLobbyScreenState extends State<PongLobbyScreen> {
                           children: [
                             Text(
                               student.name,
-                              style: Theme.of(context).textTheme.titleLarge,
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(color: Colors.white),
                             ),
                             const SizedBox(height: 6),
                             Text(

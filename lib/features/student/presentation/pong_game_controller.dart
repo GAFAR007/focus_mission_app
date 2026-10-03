@@ -7,12 +7,16 @@
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import '../../../core/utils/pong_api.dart';
 import '../../../shared/models/pong_models.dart';
 
 class PongGameController extends ChangeNotifier {
-  PongGameController(this.api, this.handle) {
+  PongGameController(this.api, this.handle, {DateTime Function()? clock}) {
+    final watch = Stopwatch()..start();
+    final epoch = DateTime.now();
+    now = clock ?? () => epoch.add(watch.elapsed);
     connect();
     _heartbeat = Timer.periodic(
       const Duration(milliseconds: 200),
@@ -23,6 +27,15 @@ class PongGameController extends ChangeNotifier {
       (_) => _keepPresence(),
     );
   }
+  late final DateTime Function() now;
+  final PongMotionDiagnostics diagnostics = PongMotionDiagnostics();
+  static const interpolationDelayMs = 100.0;
+  static const staleInputMs = 200;
+  static const correctionWindowMs = 140.0;
+  DateTime? _predictionAt, _renderAt, _arrivalAt;
+  double _localY = 280, _localDepth = 0, _remainingY = 0, _remainingDepth = 0;
+  double _renderTime = 0;
+  bool _connectionLost = false;
   final PongApi api;
   final String handle;
   PongFrame? frame, previousFrame;
@@ -37,7 +50,6 @@ class PongGameController extends ChangeNotifier {
   bool _sendAgain = false;
   DateTime _lastSent = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastUiUpdate = DateTime.fromMillisecondsSinceEpoch(0);
-  double _paddleCorrection = 0, _depthCorrection = 0;
   Future<void> connect() async {
     if (_disposed || _connecting || frame?.ended == true) return;
     _connecting = true;
@@ -47,45 +59,81 @@ class PongGameController extends ChangeNotifier {
         .frames(handle)
         .listen(
           (next) {
-            final now = DateTime.now();
+            final instant = now();
             final prior = frame;
-            final predictedPaddle = frame == null ? null : localPaddleAt(now);
-            final predictedDepth = frame == null ? null : localDepthAt(now);
-            previousFrame = frame;
-            frame = next;
-            receivedAt = now;
-            _snapshots.add(_PongSnapshot(next, now));
-            if (_snapshots.length > 8) _snapshots.removeAt(0);
-            final paddles = next.state['paddles'] as List? ?? const [];
-            final depths = next.state['depths'] as List? ?? const [];
-            if (predictedPaddle != null && next.side < paddles.length) {
-              final error =
-                  predictedPaddle - (paddles[next.side] as num).toDouble();
-              _paddleCorrection = error.abs() <= 36 ? error : 0;
-            } else {
-              _paddleCorrection = 0;
+            final newController =
+                next.controlToken != null && next.controlToken != _controlToken;
+            final boundary =
+                prior == null ||
+                _connectionLost ||
+                newController ||
+                _discontinuity(prior, next);
+            if (prior != null &&
+                !newController &&
+                !_connectionLost &&
+                _elapsed(next) < _elapsed(prior)) {
+              diagnostics.lateSnapshots++;
+              return;
             }
-            if (predictedDepth != null && next.side < depths.length) {
-              final error =
-                  predictedDepth - (depths[next.side] as num).toDouble();
-              _depthCorrection = error.abs() <= 18 ? error : 0;
+            diagnostics.arrival(
+              _arrivalAt == null
+                  ? null
+                  : instant.difference(_arrivalAt!).inMicroseconds / 1000,
+            );
+            _arrivalAt = instant;
+            _advanceLocal(instant);
+            previousFrame = prior;
+            frame = next;
+            receivedAt = instant;
+            _connectionLost = false;
+            final authoritative = (next.state['paddles'][next.side] as num)
+                .toDouble();
+            final depth =
+                ((next.state['depths'] as List? ?? [0, 0])[next.side] as num)
+                    .toDouble();
+            diagnostics.authoritative = authoritative;
+            diagnostics.predicted = _localY;
+            diagnostics.correction = authoritative - _localY;
+            if (boundary || (authoritative - _localY).abs() > 140) {
+              _localY = authoritative;
+              _localDepth = depth;
+              _remainingY = 0;
+              _remainingDepth = 0;
             } else {
-              _depthCorrection = 0;
+              // Preserve the displayed position at packet receipt. Apply only
+              // the error over subsequent render time, never retroactive input.
+              _remainingY = authoritative - _localY;
+              _remainingDepth = depth - _localDepth;
+            }
+            _predictionAt = instant;
+            if (boundary) {
+              _snapshots.clear();
+              _renderTime = _elapsed(next) - interpolationDelayMs;
+              _renderAt = instant;
+              diagnostics.resets++;
+            }
+            if (_snapshots.isEmpty ||
+                _elapsed(next) > _elapsed(_snapshots.last.frame)) {
+              _snapshots.add(_PongSnapshot(next, instant));
+              if (_snapshots.length > 32) _snapshots.removeAt(0);
+            } else {
+              diagnostics.duplicateSnapshots++;
+              _snapshots[_snapshots.length - 1] = _PongSnapshot(next, instant);
             }
             error = next.connectionError;
             if (next.controlToken != null) {
+              if (newController) _seq = 0;
               _controlToken = next.controlToken;
-              _seq = 0;
             }
             // WHY: The canvas paints from the controller at 60 Hz; HUD state
             // only needs a modest cadence and should not rebuild the whole page.
-            if (now.difference(_lastUiUpdate).inMilliseconds >= 150 ||
+            if (instant.difference(_lastUiUpdate).inMilliseconds >= 150 ||
+                boundary ||
                 next.ended ||
-                prior == null ||
                 prior.status != next.status ||
                 !listEquals(prior.score, next.score) ||
                 prior.returns != next.returns) {
-              _lastUiUpdate = now;
+              _lastUiUpdate = instant;
               notifyListeners();
             }
           },
@@ -102,20 +150,31 @@ class PongGameController extends ChangeNotifier {
   PongRenderSample? renderSampleAt(DateTime now) {
     if (_snapshots.isEmpty) return null;
     final latest = _snapshots.last;
-    if (latest.frame.ended || latest.frame.paused || latest.frame.waiting) {
+    if (_connectionLost ||
+        latest.frame.ended ||
+        latest.frame.paused ||
+        latest.frame.waiting) {
       return PongRenderSample(latest.frame, latest.frame, 1);
     }
     if (_snapshots.length == 1) {
       return PongRenderSample(latest.frame, latest.frame, 1);
     }
-    // WHY: A 75 ms render buffer spans ordinary 50 ms server ticks and absorbs
-    // modest arrival jitter without extrapolating authoritative ball physics.
-    final elapsedAfterLatest = now
-        .difference(latest.receivedAt)
-        .inMilliseconds
-        .clamp(0, 75)
-        .toDouble();
-    final target = _elapsed(latest.frame) - 75 + elapsedAfterLatest;
+    // A persistent cursor advances by render time, not packet arrival time.
+    // Network bursts cannot rewind the ball. A small clock slew absorbs drift;
+    // starvation holds the last known position and never invents a collision.
+    final dt = _renderAt == null
+        ? 0.0
+        : now.difference(_renderAt!).inMicroseconds.clamp(0, 200000) / 1000;
+    _renderAt = now;
+    final desired =
+        _elapsed(latest.frame) -
+        interpolationDelayMs +
+        now.difference(latest.receivedAt).inMicroseconds.clamp(0, 200000) /
+            1000;
+    final rate = 1 + ((desired - _renderTime) / 1000).clamp(-.05, .05);
+    _renderTime = math.min(_elapsed(latest.frame), _renderTime + dt * rate);
+    final target = _renderTime;
+    diagnostics.bufferDepthMs = _elapsed(latest.frame) - target;
     final first = _snapshots.first;
     if (target <= _elapsed(first.frame)) {
       return PongRenderSample(first.frame, first.frame, 1);
@@ -141,6 +200,9 @@ class PongGameController extends ChangeNotifier {
 
   void _reconnect() {
     if (_disposed || frame?.ended == true) return;
+    _advanceLocal(now());
+    _connectionLost = true;
+    _snapshots.clear();
     _controlToken = null;
     error ??= 'Connection interrupted. Reconnecting…';
     notifyListeners();
@@ -149,6 +211,7 @@ class PongGameController extends ChangeNotifier {
   }
 
   void move({int? direction, double? targetY, int? forward}) {
+    _advanceLocal(now());
     this.direction = direction ?? this.direction;
     this.forward = forward ?? this.forward;
     this.targetY = targetY?.clamp(0, 560).toDouble();
@@ -156,18 +219,36 @@ class PongGameController extends ChangeNotifier {
     sendInput(force: direction == 0 && targetY == null);
   }
 
-  /// Display-only prediction. The next server frame remains authoritative.
-  double localPaddleAt(DateTime now) {
+  bool _discontinuity(PongFrame a, PongFrame b) {
+    final shield = pongRows(b.state['events']).any(
+      (e) =>
+          e['type'] == 'shield' &&
+          !pongRows(a.state['events']).any((old) => old['id'] == e['id']),
+    );
+    return a.status != b.status ||
+        a.paused != b.paused ||
+        a.waiting != b.waiting ||
+        a.level != b.level ||
+        a.state['arena'] != b.state['arena'] ||
+        a.state['phase'] != b.state['phase'] ||
+        !listEquals(a.score, b.score) ||
+        shield ||
+        (_elapsed(b) - _elapsed(a)).abs() > 400;
+  }
+
+  /// Both axes integrate once per instant. Input changes checkpoint the old
+  /// trajectory before replacing it, so release/reversal cannot move backwards.
+  void _advanceLocal(DateTime instant) {
     final current = frame;
-    if (current == null) return 280;
-    final paddles = current.state['paddles'] as List? ?? const [];
-    if (current.side >= paddles.length) return 280;
-    final authoritative = (paddles[current.side] as num).toDouble();
-    if (current.ended || current.paused || current.waiting) {
-      return authoritative;
+    if (current == null) return;
+    final prior = _predictionAt ?? instant;
+    _predictionAt = instant;
+    if (_connectionLost || current.ended || current.paused || current.waiting) {
+      return;
     }
-    final elapsed =
-        now.difference(receivedAt).inMicroseconds.clamp(0, 160000) / 1000000;
+    final cutoff = receivedAt.add(const Duration(milliseconds: staleInputMs));
+    final end = instant.isAfter(cutoff) ? cutoff : instant;
+    final dt = end.difference(prior).inMicroseconds.clamp(0, 200000) / 1000000;
     final active = current.effects.length > current.side
         ? pongRows(current.effects[current.side]['active'])
         : const <PongJson>[];
@@ -176,33 +257,33 @@ class PongGameController extends ChangeNotifier {
     final half = heights.length > current.side
         ? (heights[current.side] as num).toDouble() / 2
         : 56.0;
-    final desired = targetY == null
-        ? authoritative + direction * speed * elapsed
-        : authoritative +
-              (targetY! - authoritative).clamp(
-                -speed * elapsed,
-                speed * elapsed,
-              );
-    final correction = _paddleCorrection * (1 - (elapsed / .16).clamp(0, 1));
-    return (desired + correction).clamp(half, 560 - half).toDouble();
+    final advance = targetY == null
+        ? direction * speed * dt
+        : (targetY! - _localY).clamp(-speed * dt, speed * dt);
+    final weight = 1 - math.exp(-dt * 1000 / correctionWindowMs);
+    final correctionY = _remainingY * weight,
+        correctionDepth = _remainingDepth * weight;
+    _remainingY -= correctionY;
+    _remainingDepth -= correctionDepth;
+    _localY = (_localY + advance + correctionY)
+        .clamp(half, 560 - half)
+        .toDouble();
+    _localDepth =
+        (_localDepth +
+                dt * (current.rushReady && forward > 0 ? 170 : -220) +
+                correctionDepth)
+            .clamp(0, 110)
+            .toDouble();
   }
 
-  /// Draws the local Rush depth immediately, without changing server state.
-  double localDepthAt(DateTime now) {
-    final current = frame;
-    if (current == null) return 0;
-    final depths = current.state['depths'] as List? ?? const [];
-    if (current.side >= depths.length) return 0;
-    final authoritative = (depths[current.side] as num).toDouble();
-    if (current.ended || current.paused || current.waiting) {
-      return authoritative;
-    }
-    final elapsed =
-        now.difference(receivedAt).inMicroseconds.clamp(0, 160000) / 1000000;
-    final rushActive = current.rushReady && forward > 0;
-    final desired = authoritative + elapsed * (rushActive ? 170 : -220);
-    final correction = _depthCorrection * (1 - (elapsed / .16).clamp(0, 1));
-    return (desired + correction).clamp(0, 110).toDouble();
+  double localPaddleAt(DateTime instant) {
+    _advanceLocal(instant);
+    return _localY;
+  }
+
+  double localDepthAt(DateTime instant) {
+    _advanceLocal(instant);
+    return _localDepth;
   }
 
   Future<void> sendInput({bool force = false}) async {
@@ -299,4 +380,53 @@ class _PongSnapshot {
   const _PongSnapshot(this.frame, this.receivedAt);
   final PongFrame frame;
   final DateTime receivedAt;
+}
+
+/// Development measurements contain timings and distances only, no identities.
+class PongMotionDiagnostics {
+  int snapshots = 0, lateSnapshots = 0, duplicateSnapshots = 0, resets = 0;
+  double totalIntervalMs = 0, worstIntervalMs = 0, bufferDepthMs = 0;
+  double predicted = 0, authoritative = 0, correction = 0, worstFrameMs = 0;
+  DateTime? _paintAt;
+  int paints = 0, delayedPaints = 0, arrivalGaps = 0;
+  double totalFrameMs = 0;
+  void arrival(double? interval) {
+    snapshots++;
+    if (interval == null) return;
+    totalIntervalMs += interval;
+    if (interval > 100) arrivalGaps++;
+    worstIntervalMs = math.max(worstIntervalMs, interval);
+  }
+
+  void paint(DateTime instant) {
+    paints++;
+    if (_paintAt != null) {
+      final interval = instant.difference(_paintAt!).inMicroseconds / 1000;
+      totalFrameMs += interval;
+      if (interval > 25) delayedPaints++;
+      worstFrameMs = math.max(
+        worstFrameMs,
+        instant.difference(_paintAt!).inMicroseconds / 1000,
+      );
+    }
+    _paintAt = instant;
+  }
+
+  Map<String, num> get summary => {
+    'snapshots': snapshots,
+    'meanArrivalMs': totalIntervalMs / math.max(1, snapshots - 1),
+    'worstArrivalMs': worstIntervalMs,
+    'worstFrameMs': worstFrameMs,
+    'paints': paints,
+    'meanFrameMs': totalFrameMs / math.max(1, paints - 1),
+    'delayedPaintsOver25ms': delayedPaints,
+    'arrivalGapsOver100ms': arrivalGaps,
+    'predicted': predicted,
+    'authoritative': authoritative,
+    'correction': correction,
+    'bufferMs': bufferDepthMs,
+    'late': lateSnapshots,
+    'duplicates': duplicateSnapshots,
+    'resets': resets,
+  };
 }

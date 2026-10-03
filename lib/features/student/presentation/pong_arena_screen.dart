@@ -11,7 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/utils/pong_api.dart';
 import '../../../shared/models/pong_models.dart';
-import '../../../shared/widgets/focus_scaffold.dart';
+import 'pong_theme.dart';
+import 'pong_audio_controls.dart';
 import 'pong_game_controller.dart';
 import 'pong_court_geometry.dart';
 import 'pong_audio.dart';
@@ -22,9 +23,11 @@ class PongArenaScreen extends StatefulWidget {
     required this.token,
     required this.handle,
     this.api,
+    this.audio,
   });
   final String token, handle;
   final PongApi? api;
+  final PongAudio? audio;
   @override
   State<PongArenaScreen> createState() => _PongArenaScreenState();
 }
@@ -39,10 +42,23 @@ class _PongArenaScreenState extends State<PongArenaScreen>
   )..repeat();
   final FocusNode _focus = FocusNode(debugLabel: 'Pong paddle controls');
   bool _leaving = false, _allowPop = false;
-  final PongAudio _audio = PongAudio();
+  final Set<int> _pointerButtons = {};
+  late final PongAudio _audio = widget.audio ?? PongAudio();
   void _sound() {
     final frame = _game.frame;
-    if (frame != null) _audio.events(pongRows(frame.state['events']));
+    if (frame != null) {
+      _audio.select(
+        frame.ended
+            ? null
+            : PongTrack.match(
+                power: !frame.computer && frame.ruleset == 'power',
+                level: frame.level,
+              ),
+        match: frame.handle,
+      );
+      _audio.suspend(frame.paused || frame.waiting || _game.error != null);
+      _audio.events(pongRows(frame.state['events']));
+    }
   }
 
   @override
@@ -50,10 +66,12 @@ class _PongArenaScreenState extends State<PongArenaScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _game.addListener(_sound);
+    if (widget.audio == null) _audio.loadPreferences();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _audio.background(state != AppLifecycleState.resumed);
     if (state != AppLifecycleState.resumed) {
       _game.move(direction: 0, forward: 0);
       if (_game.frame?.computer == true && _game.frame?.ended == false) {
@@ -62,7 +80,7 @@ class _PongArenaScreenState extends State<PongArenaScreen>
     }
   }
 
-  Future<void> _leave({bool restart = false}) async {
+  Future<void> _leave({bool restart = false, bool next = false}) async {
     if (_leaving) return;
     setState(() => _leaving = true);
     try {
@@ -72,7 +90,14 @@ class _PongArenaScreenState extends State<PongArenaScreen>
       // WHY: PopScope must rebuild with permission before Navigator can pop.
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted) return;
-      Navigator.pop(context, restart ? _game.frame?.level : null);
+      Navigator.pop(
+        context,
+        next
+            ? (_game.frame!.level + 1)
+            : restart
+            ? _game.frame?.level
+            : null,
+      );
     } catch (_) {
       if (mounted) setState(() => _leaving = false);
     }
@@ -111,6 +136,7 @@ class _PongArenaScreenState extends State<PongArenaScreen>
       LogicalKeyboardKey.keyW,
     ];
     if (!keys.contains(event.logicalKey)) return KeyEventResult.ignored;
+    _audio.activate();
     final pressed = HardwareKeyboard.instance.logicalKeysPressed;
     final left =
         pressed.contains(LogicalKeyboardKey.arrowLeft) ||
@@ -139,7 +165,19 @@ class _PongArenaScreenState extends State<PongArenaScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _game.removeListener(_sound);
-    _audio.dispose();
+    if (widget.audio == null) {
+      _audio.dispose();
+    } else {
+      _audio.suspend(false);
+      _audio.select(PongTrack.city);
+    }
+    if (const bool.fromEnvironment('PONG_DIAGNOSTICS')) {
+      debugPrint('[pong motion] ${_game.diagnostics.summary}');
+    }
+    assert(() {
+      debugPrint('[pong motion] ${_game.diagnostics.summary}');
+      return true;
+    }());
     _game.dispose();
     _api.close();
     _paintClock.dispose();
@@ -153,277 +191,294 @@ class _PongArenaScreenState extends State<PongArenaScreen>
     onPopInvokedWithResult: (didPop, _) {
       if (!didPop) _leave();
     },
-    child: FocusScaffold(
-      child: AnimatedBuilder(
-        animation: _game,
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Pong Challenge',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-            ),
-            IconButton(
-              tooltip: _audio.muted ? 'Unmute game' : 'Mute game',
-              onPressed: () => setState(() => _audio.muted = !_audio.muted),
-              icon: Icon(
-                _audio.muted
-                    ? Icons.volume_off_outlined
-                    : Icons.volume_up_outlined,
-              ),
-            ),
-            IconButton(
-              tooltip: 'How to play',
-              onPressed: () => _help(_game.frame),
-              icon: const Icon(Icons.help_outline),
-            ),
-            TextButton(
-              onPressed: _leaving ? null : _leave,
-              child: const Text('Exit game'),
-            ),
-          ],
-        ),
-        builder: (context, header) {
-          final frame = _game.frame;
-          final courtHeight = (MediaQuery.sizeOf(context).height - 380).clamp(
-            300.0,
-            760.0,
-          );
-          return Focus(
-            focusNode: _focus,
-            autofocus: true,
-            onKeyEvent: _key,
-            onFocusChange: (focused) {
-              if (!focused) _game.move(direction: 0, forward: 0);
-            },
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      header!,
-                      if (frame == null) ...[
-                        const LinearProgressIndicator(),
-                        const Text('Connecting to your game…'),
-                      ] else ...[
-                        Text(
-                          frame.computer
-                              ? 'Level ${frame.level} · ${frame.returns} / ${frame.goal} returns'
-                              : '${frame.ruleset == 'power' ? 'Power Battle' : 'Classic'} · First to 7',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        if (frame.computer)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 5),
-                            child: LinearProgressIndicator(
-                              value: (frame.returns / frame.goal).clamp(0, 1),
-                              borderRadius: BorderRadius.circular(8),
+    child: PongScaffold(
+      child: Focus(
+        focusNode: _focus,
+        autofocus: true,
+        onKeyEvent: _key,
+        onFocusChange: (focused) {
+          if (!focused) _game.move(direction: 0, forward: 0);
+        },
+        child: Listener(
+          onPointerDown: (_) => _audio.activate(),
+          child: AnimatedBuilder(
+            animation: _game,
+            builder: (context, _) {
+              final frame = _game.frame;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'FOCUS MISSION · CUP PONG',
+                            maxLines: 2,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1,
                             ),
                           ),
-                        _player(frame, 1 - frame.side, false),
-                        Center(
-                          child: SizedBox(
-                            width: math.min(
-                              courtHeight * .56,
-                              MediaQuery.sizeOf(context).width - 32,
-                            ),
-                            child: LayoutBuilder(
-                              builder: (context, constraints) => GestureDetector(
-                                onPanStart: (_) => _focus.requestFocus(),
-                                onPanUpdate: frame.ended
-                                    ? null
-                                    : (event) => _game.move(
-                                        direction: 0,
-                                        targetY: PongCourt.target(
-                                          event.localPosition.dx /
-                                              constraints.maxWidth,
-                                          frame.side,
+                        ),
+                        PongAudioControls(audio: _audio),
+                        IconButton(
+                          tooltip: 'How to play',
+                          onPressed: () => _help(frame),
+                          icon: const Icon(Icons.help_outline),
+                        ),
+                        IconButton(
+                          tooltip: 'Exit game',
+                          onPressed: _leaving ? null : _leave,
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    if (frame == null)
+                      const Expanded(
+                        child: Center(child: Text('Connecting to your game…')),
+                      )
+                    else ...[
+                      Text(
+                        frame.computer
+                            ? 'LEVEL ${frame.level.toString().padLeft(2, '0')} · ${frame.returns} / ${frame.goal} returns'
+                            : '${frame.ruleset == 'power' ? 'Power Battle' : 'Classic'} · First to 7',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      if (frame.computer)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: LinearProgressIndicator(
+                            value: (frame.returns / frame.goal).clamp(0, 1),
+                            minHeight: 3,
+                          ),
+                        ),
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            // The court uses the full available height. A vertical display
+                            // projection may widen on laptops; canonical physics is unchanged.
+                            final width = math.min(
+                              constraints.maxWidth,
+                              constraints.maxHeight * .70,
+                            );
+                            return Center(
+                              child: SizedBox(
+                                width: width,
+                                height: constraints.maxHeight,
+                                child: Column(
+                                  children: [
+                                    _player(frame, 1 - frame.side, false),
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onPanStart: (_) =>
+                                            _focus.requestFocus(),
+                                        onPanUpdate: frame.ended
+                                            ? null
+                                            : (e) => _game.move(
+                                                direction: 0,
+                                                targetY: PongCourt.target(
+                                                  e.localPosition.dx / width,
+                                                  frame.side,
+                                                ),
+                                              ),
+                                        onTapDown: frame.ended
+                                            ? null
+                                            : (e) {
+                                                _focus.requestFocus();
+                                                _game.move(
+                                                  direction: 0,
+                                                  targetY: PongCourt.target(
+                                                    e.localPosition.dx / width,
+                                                    frame.side,
+                                                  ),
+                                                );
+                                              },
+                                        child: Semantics(
+                                          label:
+                                              'Pong arena. You defend the bottom. Use A and D, left and right arrows, or drag horizontally. Hold W or up for Forward Rush when active.',
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              24,
+                                            ),
+                                            child: Stack(
+                                              fit: StackFit.expand,
+                                              children: [
+                                                RepaintBoundary(
+                                                  child: CustomPaint(
+                                                    key: const ValueKey(
+                                                      'pong-court',
+                                                    ),
+                                                    painter: PongArenaPainter(
+                                                      game: _game,
+                                                      initialFrame: frame,
+                                                      clock: _paintClock,
+                                                      reducedMotion:
+                                                          MediaQuery.disableAnimationsOf(
+                                                            context,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (frame.waiting &&
+                                                    !frame.ended)
+                                                  _overlay(
+                                                    'Waiting for connection…',
+                                                    '${frame.reconnectSeconds}s to reconnect · No points awarded',
+                                                  ),
+                                                if (frame.paused &&
+                                                    !frame.waiting &&
+                                                    !frame.ended)
+                                                  _overlay(
+                                                    'Paused',
+                                                    'Resume when you are ready',
+                                                  ),
+                                                if (frame.state['phase'] ==
+                                                        'ready' &&
+                                                    !frame.paused &&
+                                                    !frame.waiting &&
+                                                    !frame.ended)
+                                                  IgnorePointer(
+                                                    child: _overlay(
+                                                      'READY',
+                                                      frame.computer
+                                                          ? 'Level ${frame.level} · Defend your baseline'
+                                                          : '${frame.players[frame.side]['name']} vs ${frame.players[1 - frame.side]['name']}',
+                                                    ),
+                                                  ),
+                                                if (frame.ended)
+                                                  _overlay(
+                                                    _endTitle(frame),
+                                                    frame.reason.isNotEmpty
+                                                        ? frame.reason
+                                                        : '${frame.computer ? '${frame.returns} / ${frame.goal} returns · ' : ''}Longest rally: ${frame.longestRally} · Progress saved',
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                onTapDown: frame.ended
-                                    ? null
-                                    : (event) {
-                                        _focus.requestFocus();
-                                        _game.move(
-                                          direction: 0,
-                                          targetY: PongCourt.target(
-                                            event.localPosition.dx /
-                                                constraints.maxWidth,
-                                            frame.side,
-                                          ),
-                                        );
-                                      },
-                                child: Semantics(
-                                  label:
-                                      'Pong arena. You defend the bottom. Use A and D, left and right arrows, or drag horizontally. Hold W or up for Forward Rush when active.',
-                                  child: AspectRatio(
-                                    aspectRatio: .56,
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(24),
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          CustomPaint(
-                                            key: const ValueKey('pong-court'),
-                                            painter: PongArenaPainter(
-                                              game: _game,
-                                              initialFrame: frame,
-                                              clock: _paintClock,
-                                              reducedMotion:
-                                                  MediaQuery.disableAnimationsOf(
-                                                    context,
-                                                  ),
-                                            ),
-                                          ),
-                                          if (frame.waiting && !frame.ended)
-                                            _overlay(
-                                              'Waiting for connection…',
-                                              '${frame.reconnectSeconds}s to reconnect · No points awarded',
-                                            ),
-                                          if (frame.paused &&
-                                              !frame.waiting &&
-                                              !frame.ended)
-                                            _overlay(
-                                              'Paused',
-                                              'Resume when you are ready',
-                                            ),
-                                          if (frame.ended)
-                                            _overlay(
-                                              _endTitle(frame),
-                                              frame.reason.isNotEmpty
-                                                  ? frame.reason
-                                                  : 'Longest rally: ${frame.longestRally} · Progress saved',
-                                            ),
-                                        ],
-                                      ),
                                     ),
-                                  ),
+                                    _player(frame, frame.side, true),
+                                  ],
                                 ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                         ),
-                        _player(frame, frame.side, true),
-                        SizedBox(
-                          height: 32,
-                          child: Center(
-                            child: Text(
-                              _boostText(frame),
-                              maxLines: 2,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (!frame.ended) ...[
-                          Wrap(
-                            alignment: WrapAlignment.center,
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              _moveButton('Left', Icons.arrow_back, -1, frame),
-                              if ((frame.state['powerPool'] as List? ?? [])
-                                  .contains('rush'))
-                                _rushButton(frame),
-                              _moveButton(
-                                'Right',
-                                Icons.arrow_forward,
-                                1,
-                                frame,
-                              ),
-                            ],
-                          ),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Rally ${frame.state['rally'] ?? 0}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              if (frame.computer) ...[
-                                TextButton(
-                                  onPressed: () {
-                                    _game
-                                        .control(
-                                          frame.paused ? 'resume' : 'pause',
-                                        )
-                                        .catchError((_) {});
-                                    _focus.requestFocus();
-                                  },
-                                  child: Text(
-                                    frame.paused ? 'Resume' : 'Pause',
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: _leaving
-                                      ? null
-                                      : () => _leave(restart: true),
-                                  child: const Text('Restart'),
-                                ),
-                              ],
-                            ],
-                          ),
-                          const Text(
-                            'A / D or ← / → · Drag to move',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ] else
-                          Wrap(
-                            alignment: WrapAlignment.center,
-                            spacing: 12,
-                            runSpacing: 8,
-                            children: [
-                              if (frame.computer && frame.status == 'complete')
-                                FilledButton(
-                                  onPressed: _leaving
-                                      ? null
-                                      : () => _leave(restart: true),
-                                  child: const Text('Play again'),
-                                ),
-                              if (!frame.computer && frame.status == 'complete')
-                                FilledButton(
-                                  onPressed: _leaving
-                                      ? null
-                                      : () => _rematch(frame),
-                                  child: const Text('Request rematch'),
-                                ),
-                              OutlinedButton(
-                                onPressed: _leaving ? null : _leave,
-                                child: Text(
-                                  frame.computer
-                                      ? 'Return to levels'
-                                      : 'Return to lobby',
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
+                      ),
                       if (_game.error != null)
-                        Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(
-                            _game.error!,
-                            textAlign: TextAlign.center,
-                          ),
+                        Text(
+                          _game.error!,
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                        ),
+                      Text(
+                        _boostText(frame),
+                        maxLines: 2,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      if (!frame.ended) ...[
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            _moveButton('Left', Icons.arrow_back, -1, frame),
+                            if ((frame.state['powerPool'] as List? ?? [])
+                                .contains('rush'))
+                              _rushButton(frame),
+                            _moveButton('Right', Icons.arrow_forward, 1, frame),
+                            if (frame.computer)
+                              TextButton(
+                                onPressed: () {
+                                  _game
+                                      .control(
+                                        frame.paused ? 'resume' : 'pause',
+                                      )
+                                      .catchError((_) {});
+                                  _focus.requestFocus();
+                                },
+                                child: Text(frame.paused ? 'Resume' : 'Pause'),
+                              ),
+                          ],
+                        ),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              'Rally ${frame.state['rally'] ?? 0} · ',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const Text(
+                              'A / D or ← / → · Drag to move',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            if (frame.computer)
+                              TextButton(
+                                onPressed: _leaving
+                                    ? null
+                                    : () => _leave(restart: true),
+                                child: const Text('Restart'),
+                              ),
+                          ],
+                        ),
+                      ] else
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            if (frame.computer &&
+                                frame.status == 'complete') ...[
+                              if (frame.state['completed'] == true &&
+                                  frame.level < 15)
+                                FilledButton(
+                                  onPressed: _leaving
+                                      ? null
+                                      : () => _leave(next: true),
+                                  child: Text(
+                                    'Next · Level ${frame.level + 1}',
+                                  ),
+                                ),
+                              FilledButton(
+                                onPressed: _leaving
+                                    ? null
+                                    : () => _leave(restart: true),
+                                child: const Text('Play again'),
+                              ),
+                            ],
+                            if (!frame.computer && frame.status == 'complete')
+                              FilledButton(
+                                onPressed: _leaving
+                                    ? null
+                                    : () => _rematch(frame),
+                                child: const Text('Request rematch'),
+                              ),
+                            OutlinedButton(
+                              onPressed: _leaving ? null : _leave,
+                              child: Text(
+                                frame.computer
+                                    ? 'Return to levels'
+                                    : 'Return to lobby',
+                              ),
+                            ),
+                          ],
                         ),
                     ],
-                  ),
+                  ],
                 ),
-              ),
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ),
       ),
     ),
   );
@@ -435,7 +490,12 @@ class _PongArenaScreenState extends State<PongArenaScreen>
           child: Text(
             '${frame.players[side]['name']} · ${local ? 'You · Bottom' : 'Opponent · Top'}',
             key: ValueKey(local ? 'pong-local-player' : 'pong-opponent'),
-            style: const TextStyle(fontWeight: FontWeight.w700),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: local ? PongColors.cyan : PongColors.coral,
+            ),
           ),
         ),
         Text(
@@ -447,6 +507,9 @@ class _PongArenaScreenState extends State<PongArenaScreen>
     ),
   );
   String _boostText(PongFrame frame) {
+    if (!frame.computer && frame.ruleset != 'power') {
+      return 'Classic · No boosts · Defend your baseline';
+    }
     if (frame.effects.length <= frame.side) {
       return 'Defend the bottom · Return the ball';
     }
@@ -565,15 +628,30 @@ class _PongArenaScreenState extends State<PongArenaScreen>
     PongFrame frame,
   ) => Listener(
     onPointerDown: (_) {
+      _pointerButtons.add(direction);
       _focus.requestFocus();
       _game.move(direction: PongCourt.direction(direction, frame.side));
     },
-    onPointerUp: (_) => _game.move(direction: 0),
-    onPointerCancel: (_) => _game.move(direction: 0),
+    onPointerUp: (_) {
+      _game.move(direction: 0);
+      // Material's tap callback follows pointer-up. Do not also enqueue a step
+      // from an older server position after a held pointer has just stopped.
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _pointerButtons.remove(direction),
+      );
+    },
+    onPointerCancel: (_) {
+      _pointerButtons.remove(direction);
+      _game.move(direction: 0);
+    },
     child: FilledButton.icon(
-      style: FilledButton.styleFrom(minimumSize: const Size(100, 48)),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(80, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+      ),
       onPressed: () {
-        final y = (frame.state['paddles'][frame.side] as num).toDouble();
+        if (_pointerButtons.contains(direction)) return;
+        final y = _game.localPaddleAt(_game.now());
         _game.move(
           direction: 0,
           targetY: y + PongCourt.direction(direction, frame.side) * 60,
@@ -620,28 +698,45 @@ class PongArenaPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     // WHY: The animation clock reads buffered server snapshots directly, so
     // 50 ms game frames do not rebuild the surrounding learner screen.
-    final now = DateTime.now();
+    final now = game.now();
+    game.diagnostics.paint(now);
     final sample = game.renderSampleAt(now);
     final frame = sample?.current ?? game.frame ?? initialFrame;
     final previous = sample?.previous ?? game.previousFrame;
-    canvas.scale(size.width / PongCourt.width, size.height / PongCourt.height);
+    final scaleX = size.width / PongCourt.width;
+    final scaleY = size.height / PongCourt.height;
+    canvas.scale(scaleX, scaleY);
+    // The court projection expands to the viewport, but a ball stays round.
+    void circle(Offset center, double radius, Paint paint) => canvas.drawOval(
+      Rect.fromCenter(
+        center: center,
+        width: radius * 2 * scaleY / scaleX,
+        height: radius * 2,
+      ),
+      paint,
+    );
     Offset point(double x, double y) =>
         PongCourt.project(Offset(x, y), frame.side);
     canvas.drawRect(
       const Rect.fromLTWH(0, 0, 560, 1000),
-      Paint()..color = const Color(0xFF10213B),
+      Paint()..color = const Color(0xFF0C1928),
     );
+    final grid = Paint()
+      ..color = const Color(0x12389CBE)
+      ..strokeWidth = 1;
+    for (double x = 28; x < 560; x += 56) {
+      canvas.drawLine(Offset(x, 0), Offset(x, 1000), grid);
+    }
+    for (double y = 50; y < 1000; y += 50) {
+      canvas.drawLine(Offset(0, y), Offset(560, y), grid);
+    }
     final guide = Paint()
       ..color = const Color(0xFF355174)
       ..strokeWidth = 2;
     for (double x = 20; x < 560; x += 32) {
       canvas.drawLine(Offset(x, 500), Offset(x + 14, 500), guide);
     }
-    canvas.drawCircle(
-      const Offset(280, 500),
-      60,
-      guide..style = PaintingStyle.stroke,
-    );
+    circle(const Offset(280, 500), 60, guide..style = PaintingStyle.stroke);
     final state = frame.state;
     if (state['arena'] == 'speed') {
       for (final y in [270.0, 650.0]) {
@@ -652,7 +747,7 @@ class PongArenaPainter extends CustomPainter {
       }
     }
     if (state['arena'] == 'gravity') {
-      canvas.drawCircle(
+      circle(
         const Offset(280, 500),
         155,
         Paint()..color = const Color(0x226B91FF),
@@ -672,7 +767,9 @@ class PongArenaPainter extends CustomPainter {
     double value(PongJson v, String key) => (v[key] as num).toDouble();
     final ball = pongMap(state['ball']),
         before = previous == null ? ball : pongMap(previous.state['ball']);
-    final jump = (value(ball, 'x') - value(before, 'x')).abs() > 100;
+    final jump =
+        (value(ball, 'x') - value(before, 'x')).abs() > 100 ||
+        (value(ball, 'y') - value(before, 'y')).abs() > 100;
     final center = point(
       lerpDouble(value(before, 'x'), value(ball, 'x'), jump ? 1 : fraction)!,
       lerpDouble(value(before, 'y'), value(ball, 'y'), jump ? 1 : fraction)!,
@@ -704,8 +801,10 @@ class PongArenaPainter extends CustomPainter {
         ),
       );
       final tail = point(
-        value(ball, 'x') - value(velocity, 'x') * trailLength / speed,
-        value(ball, 'y') - value(velocity, 'y') * trailLength / speed,
+        lerpDouble(value(before, 'x'), value(ball, 'x'), fraction)! -
+            value(velocity, 'x') * trailLength / speed,
+        lerpDouble(value(before, 'y'), value(ball, 'y'), fraction)! -
+            value(velocity, 'y') * trailLength / speed,
       );
       final trail = center - tail;
       final vector = trail.distance > .01
@@ -722,22 +821,33 @@ class PongArenaPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round,
       );
       for (int i = 1; i <= (intensity * 5).floor(); i++) {
-        canvas.drawCircle(
+        circle(
           center - vector * (length * i / 5),
           3 - i * .35,
           Paint()..color = ballColor.withValues(alpha: .35),
         );
       }
     }
+    final visualMs = lerpDouble(
+      (previous?.state['elapsedMs'] as num? ?? 0).toDouble(),
+      (state['elapsedMs'] as num? ?? 0).toDouble(),
+      fraction,
+    )!;
     for (final e in pongRows(state['events'])) {
-      final age = ((state['elapsedMs'] as num? ?? 0) - (e['at'] as num))
-          .toDouble();
-      if (reducedMotion || age > 350 || !moving) continue;
+      final age = (visualMs - (e['at'] as num)).toDouble();
+      if (reducedMotion || age < 0 || age > 350 || !moving) continue;
+      if (e['type'] == 'point') {
+        canvas.drawRect(
+          const Rect.fromLTWH(0, 0, 560, 1000),
+          Paint()
+            ..color = PongColors.cyan.withValues(alpha: .10 * (1 - age / 350)),
+        );
+      }
       final hit = point(value(e, 'x'), value(e, 'y'));
       final strength = e['type'] == 'strongHit' ? 1.0 : .6;
       for (int i = 0; i < 5; i++) {
         final angle = i * math.pi * 2 / 5;
-        canvas.drawCircle(
+        circle(
           hit + Offset(math.cos(angle), math.sin(angle)) * (10 + age * .055),
           2.5 * strength,
           Paint()
@@ -747,7 +857,8 @@ class PongArenaPainter extends CustomPainter {
         );
       }
     }
-    canvas.drawCircle(center, 9 + intensity * 1.5, Paint()..color = ballColor);
+    circle(center, 18, Paint()..color = ballColor.withValues(alpha: .08));
+    circle(center, 9 + intensity * 1.5, Paint()..color = ballColor);
     for (int side = 0; side < 2; side++) {
       final width = (state['paddleHeights'][side] as num).toDouble();
       final py = (state['paddles'][side] as num).toDouble();
@@ -770,12 +881,13 @@ class PongArenaPainter extends CustomPainter {
         side == 0 ? 28 + interpolatedDepth : 972 - interpolatedDepth,
         interpolatedY,
       );
-      final color = local ? const Color(0xFF6EC5FF) : const Color(0xFFFFCE85);
+      final color = local ? PongColors.cyan : PongColors.coral;
       final recentHit = pongRows(state['events']).any(
         (e) =>
             e['side'] == side &&
             ['hit', 'strongHit'].contains(e['type']) &&
-            (state['elapsedMs'] as num? ?? 0) - (e['at'] as num) < 150,
+            visualMs - (e['at'] as num) >= 0 &&
+            visualMs - (e['at'] as num) < 150,
       );
       canvas.drawRRect(
         RRect.fromRectAndRadius(

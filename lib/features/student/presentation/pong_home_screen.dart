@@ -9,7 +9,9 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_palette.dart';
 import '../../../core/utils/pong_api.dart';
 import '../../../shared/models/pong_models.dart';
-import '../../../shared/widgets/focus_scaffold.dart';
+import 'pong_theme.dart';
+import 'pong_audio.dart';
+import 'pong_audio_controls.dart';
 import 'pong_arena_screen.dart';
 import 'pong_lobby_screen.dart';
 
@@ -129,20 +131,27 @@ class _PongDashboardCardState extends State<PongDashboardCard> {
 }
 
 class PongHomeScreen extends StatefulWidget {
-  const PongHomeScreen({super.key, required this.token});
+  const PongHomeScreen({super.key, required this.token, this.api, this.audio});
+  final PongApi? api;
+  final PongAudio? audio;
   final String token;
   @override
   State<PongHomeScreen> createState() => _PongHomeScreenState();
 }
 
-class _PongHomeScreenState extends State<PongHomeScreen> {
-  late final PongApi _api = PongApi(widget.token);
+class _PongHomeScreenState extends State<PongHomeScreen>
+    with WidgetsBindingObserver {
+  late final PongAudio _audio = widget.audio ?? PongAudio();
+  late final PongApi _api = widget.api ?? PongApi(widget.token);
   PongProfile? _profile;
   String? _error;
   bool _busy = false;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (widget.audio == null) _audio.loadPreferences();
+    _audio.select(PongTrack.city);
     _load();
   }
 
@@ -162,6 +171,7 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
 
   Future<void> _play(int level, {String? resume}) async {
     if (_busy) return;
+    _audio.activate();
     setState(() {
       _busy = true;
       _error = null;
@@ -174,7 +184,7 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
         await Navigator.push<void>(
           context,
           MaterialPageRoute(
-            builder: (_) => PongLobbyScreen(token: widget.token),
+            builder: (_) => PongLobbyScreen(token: widget.token, audio: _audio),
           ),
         );
         await _load();
@@ -186,7 +196,11 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
       final replay = await Navigator.push<int>(
         context,
         MaterialPageRoute(
-          builder: (_) => PongArenaScreen(token: widget.token, handle: handle),
+          builder: (_) => PongArenaScreen(
+            token: widget.token,
+            handle: handle,
+            audio: _audio,
+          ),
         ),
       );
       await _load();
@@ -203,7 +217,13 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) =>
+      _audio.background(state != AppLifecycleState.resumed);
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (widget.audio == null) _audio.dispose();
     _api.close();
     super.dispose();
   }
@@ -211,7 +231,7 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final profile = _profile;
-    return FocusScaffold(
+    return PongScaffold(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Center(
@@ -230,12 +250,33 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Pong Challenge',
-                        style: Theme.of(context).textTheme.headlineMedium,
+                        'Focus Mission Cup Pong',
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(color: Colors.white),
                       ),
                     ),
                   ],
                 ),
+                PongAudioControls(audio: _audio),
+                if (profile?.access.battles == true &&
+                    profile?.access.lobbyVisible == true)
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      _audio.activate();
+                      await Navigator.push<void>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PongLobbyScreen(
+                            token: widget.token,
+                            audio: _audio,
+                          ),
+                        ),
+                      );
+                      if (mounted) _load();
+                    },
+                    icon: const Icon(Icons.people_outline),
+                    label: const Text('Challenge a student'),
+                  ),
                 const SizedBox(height: 24),
                 Card(
                   child: Padding(
@@ -245,13 +286,22 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
                       children: [
                         Text(
                           'One ball. Fifteen challenges.',
-                          style: Theme.of(context).textTheme.headlineSmall,
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(color: Colors.white),
                         ),
                         const SizedBox(height: 10),
                         const Text(
                           'Defend the bottom. Move left or right. Collect boosts as you level up.',
                         ),
                         const SizedBox(height: 20),
+                        if (profile != null && profile.levels.isNotEmpty)
+                          Text(
+                            'UP NEXT · ${profile.levels.firstWhere((l) => l.level == profile.progress.highestUnlocked, orElse: () => profile.levels.last).name}',
+                            style: const TextStyle(
+                              color: PongColors.cyan,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         if (profile == null)
                           const LinearProgressIndicator()
                         else ...[
@@ -311,7 +361,9 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
                 if (profile != null) ...[
                   Text(
                     'Your levels',
-                    style: Theme.of(context).textTheme.titleLarge,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.titleLarge?.copyWith(color: Colors.white),
                   ),
                   const SizedBox(height: 10),
                   for (final level in profile.levels)
@@ -324,16 +376,19 @@ class _PongHomeScreenState extends State<PongHomeScreen> {
                         leading: CircleAvatar(
                           backgroundColor:
                               level.level <= profile.progress.highestUnlocked
-                              ? AppPalette.navy
-                              : const Color(0xFFE4EAF3),
+                              ? PongColors.cyan
+                              : PongColors.surface,
                           child: level.level > profile.progress.highestUnlocked
                               ? const Icon(
                                   Icons.lock_outline,
-                                  color: AppPalette.navy,
+                                  color: Colors.white54,
                                 )
                               : Text(
                                   '${level.level}',
-                                  style: const TextStyle(color: Colors.white),
+                                  style: const TextStyle(
+                                    color: PongColors.background,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
                         ),
                         title: Text(level.name),
