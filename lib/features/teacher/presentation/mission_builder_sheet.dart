@@ -31,6 +31,7 @@ import '../../../shared/widgets/learning_video_card.dart';
 import '../../../shared/widgets/question_evidence_panel.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'assessment_mode_screen.dart';
+import 'population_source_dialog.dart';
 
 // Solid editor surfaces are local to this teacher workspace.
 const _builderNavy = Color(0xFF1F315D);
@@ -178,6 +179,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
   bool _isExtractingSource = false;
   _SourceUploadMode? _activeSourceUploadMode;
   bool _isReextractingSource = false;
+  _SourceUploadMode? _lastSourceUploadMode;
   bool _isSaving = false;
   bool _createdDraftThisSession = false;
   String? _errorMessage;
@@ -1225,10 +1227,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           ),
         ],
         const SizedBox(height: 16),
-        Text('Source file', style: Theme.of(context).textTheme.titleMedium),
+        Text('Source content', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Text(
-          'Choose one path for this upload. You can send lesson text to Groq for drafting, or import a structured file directly into Objective, Theory, or Essay format.',
+          'Use AI draft for lesson notes, or Populate to choose Upload File or Paste Text for structured content.',
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: _builderMuted),
@@ -1339,7 +1341,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Objective, Theory, and Essay imports stay file-only. They do not call Groq, rewrite wording, or fill missing sections automatically.',
+          'Populate accepts Upload File or Paste Text. It keeps your wording and shows missing details for teacher review without AI.',
           style: Theme.of(
             context,
           ).textTheme.bodySmall?.copyWith(color: _builderMuted),
@@ -1368,7 +1370,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             sourceFileType: _resolvedSourceFileType,
             xpReward: _effectiveXpReward,
             sourceUploadMode:
-                _activeSourceUploadMode ?? _SourceUploadMode.aiDraft,
+                _activeSourceUploadMode ??
+                _lastSourceUploadMode ??
+                _SourceUploadMode.aiDraft,
           ),
         ],
         if (_sourceUploadReadiness != null) ...[
@@ -1377,7 +1381,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             readiness: _sourceUploadReadiness!,
             hasPrefilledMission: _uploadedSource?.prefilledMission != null,
             sourceUploadMode:
-                _activeSourceUploadMode ?? _SourceUploadMode.aiDraft,
+                _activeSourceUploadMode ??
+                _lastSourceUploadMode ??
+                _SourceUploadMode.aiDraft,
           ),
         ],
         if (_uploadedSource != null) ...[
@@ -1386,7 +1392,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
             draft: _uploadedSource!,
             appliedXpReward: _effectiveXpReward,
             sourceUploadMode:
-                _activeSourceUploadMode ?? _SourceUploadMode.aiDraft,
+                _activeSourceUploadMode ??
+                _lastSourceUploadMode ??
+                _SourceUploadMode.aiDraft,
           ),
         ],
         const SizedBox(height: 16),
@@ -3918,6 +3926,9 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     _SourceUploadMode mode, {
     String? draftFormatOverride,
   }) async {
+    if (_isExtractingSource) return;
+    // WHY: Lock before opening the source chooser, not only after it returns.
+    setState(() => _isExtractingSource = true);
     try {
       final resolvedDraftFormat = (draftFormatOverride ?? _draftFormat)
           .trim()
@@ -3930,26 +3941,49 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         draftFormat: resolvedDraftFormat,
       );
       final hadDraftBeforeUpload = _draftMission != null;
-      final result = await FilePicker.platform.pickFiles(
-        withData: true,
-        type: FileType.custom,
-        allowedExtensions: const [
-          'pdf',
-          'docx',
-          'txt',
-          'png',
-          'jpg',
-          'jpeg',
-          'webp',
-          'bmp',
-        ],
+      Future<UploadedSourceDraft> upload(
+        PlatformFile file, {
+        bool previewOnly = false,
+      }) => widget.api.uploadTeacherSourceDraft(
+        token: widget.session.token,
+        subjectId: widget.subject.id,
+        studentId: widget.student.id,
+        sessionType: _selectedSessionType,
+        targetDate: _dateKey(_resolvedTargetDate),
+        fileBytes: file.bytes ?? const [],
+        fileName: file.name,
+        previewOnly: previewOnly,
+        uploadMode: mode == _SourceUploadMode.populateDraft
+            ? 'populate_draft'
+            : 'ai_draft',
+        title: _titleController.text.trim(),
+        draftFormat: resolvedDraftFormat,
+        essayMode: resolvedEssayMode,
+        difficulty: _effectiveDifficulty,
+        questionCount: resolvedQuestionCount,
+        taskCodes: _selectedTaskCodes,
+        missionDraftId: _draftMission?.id ?? '',
       );
-
-      if (result == null || result.files.isEmpty) {
-        return;
+      final PlatformFile? file;
+      if (mode == _SourceUploadMode.populateDraft) {
+        file = await showPopulationSourceDialog(
+          context: context,
+          format: resolvedDraftFormat,
+          requiredQuestionCount: _isAssessmentMode ? 10 : null,
+          preview: (source) => upload(source, previewOnly: true),
+        );
+      } else {
+        final result = await FilePicker.platform.pickFiles(
+          withData: true,
+          type: FileType.custom,
+          allowedExtensions: populationSourceExtensions,
+        );
+        file = result == null || result.files.isEmpty
+            ? null
+            : result.files.single;
       }
+      if (!mounted || file == null) return;
 
-      final file = result.files.single;
       final bytes = file.bytes;
 
       if (bytes == null || bytes.isEmpty) {
@@ -3968,25 +4002,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         _sourceUploadReadiness = null;
       });
 
-      final extracted = await widget.api.uploadTeacherSourceDraft(
-        token: widget.session.token,
-        subjectId: widget.subject.id,
-        studentId: widget.student.id,
-        sessionType: _selectedSessionType,
-        targetDate: _dateKey(_resolvedTargetDate),
-        fileBytes: bytes,
-        fileName: file.name,
-        uploadMode: mode == _SourceUploadMode.populateDraft
-            ? 'populate_draft'
-            : 'ai_draft',
-        title: _titleController.text.trim(),
-        draftFormat: resolvedDraftFormat,
-        essayMode: resolvedEssayMode,
-        difficulty: _effectiveDifficulty,
-        questionCount: resolvedQuestionCount,
-        taskCodes: _selectedTaskCodes,
-        missionDraftId: _draftMission?.id ?? '',
-      );
+      final extracted = await upload(file);
 
       if (!mounted) {
         return;
@@ -3994,6 +4010,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
       setState(() {
         _uploadedSource = extracted;
+        _lastSourceUploadMode = mode;
         _sourceUploadReadiness = extracted.draftReadiness;
         _selectedSourceFileName = extracted.fileName;
         _selectedSourceFileType = extracted.mimeType;
@@ -5081,7 +5098,7 @@ class _SourceReadinessCard extends StatelessWidget {
                   children: [
                     Text(
                       hasPrefilledMission
-                          ? 'Draft populated from upload'
+                          ? 'Draft populated from source'
                           : needsAttention
                           ? isPopulateImport
                                 ? 'Import needs attention'
@@ -5336,7 +5353,7 @@ class _UnitPlanDraftCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.item),
             Text(
               isPopulateImport
-                  ? 'What the file contained'
+                  ? 'What the source contained'
                   : 'Key points Groq found',
               style: Theme.of(context).textTheme.titleSmall,
             ),

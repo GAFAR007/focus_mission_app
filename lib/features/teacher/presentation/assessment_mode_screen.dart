@@ -21,6 +21,7 @@ import '../../../core/constants/app_palette.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/utils/focus_mission_api.dart';
 import '../../../shared/models/focus_mission_models.dart';
+import 'population_source_dialog.dart';
 
 const int maxAssessmentDraftsPerTaskCode = 2;
 
@@ -385,7 +386,7 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Source file',
+                        'Source content',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 8),
@@ -433,7 +434,7 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
                                       ? 'Importing...'
                                       : 'Populate objective',
                                   subtitle:
-                                      'Import a ready 10-question objective assessment directly from the file.',
+                                      'Choose Upload File or Paste Text for a structured 10-question assessment.',
                                   icon: Icons.quiz_outlined,
                                   colors: const [
                                     AppPalette.primaryBlue,
@@ -661,6 +662,7 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
   }
 
   Future<void> _pickAndPopulateAssessmentDraft() async {
+    if (_isPopulatingDraft || _isExtractingSource) return;
     if (_selectedDateOption == null) {
       setState(() {
         _sourceErrorMessage =
@@ -677,18 +679,34 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
       return;
     }
 
+    setState(() => _isPopulatingDraft = true);
     try {
-      final result = await FilePicker.platform.pickFiles(
-        withData: true,
-        type: FileType.custom,
-        allowedExtensions: _allowedSourceExtensions,
+      Future<UploadedSourceDraft> upload(
+        PlatformFile source, {
+        bool previewOnly = false,
+      }) => _api.uploadTeacherSourceDraft(
+        token: widget.authToken,
+        subjectId: widget.subjectId,
+        sessionType: _selectedDateOption!.sessionType,
+        fileBytes: source.bytes ?? const [],
+        fileName: source.name,
+        uploadMode: 'populate_draft',
+        previewOnly: previewOnly,
+        studentId: widget.studentId,
+        targetDate: _dateKey(_selectedDateOption!.date),
+        missionDraftId: widget.missionDraftId,
+        draftFormat: 'QUESTIONS',
+        difficulty: 'hard',
+        questionCount: 10,
+        taskCodes: _selectedTaskCodes,
       );
-
-      if (result == null || result.files.isEmpty) {
-        return;
-      }
-
-      final selected = result.files.single;
+      final selected = await showPopulationSourceDialog(
+        context: context,
+        format: 'QUESTIONS',
+        requiredQuestionCount: 10,
+        preview: (source) => upload(source, previewOnly: true),
+      );
+      if (!mounted || selected == null) return;
       final bytes = selected.bytes;
       if (bytes == null || bytes.isEmpty) {
         throw Exception(
@@ -701,21 +719,7 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
         _sourceErrorMessage = null;
       });
 
-      final extracted = await _api.uploadTeacherSourceDraft(
-        token: widget.authToken,
-        subjectId: widget.subjectId,
-        sessionType: _selectedDateOption!.sessionType,
-        fileBytes: bytes,
-        fileName: selected.name,
-        uploadMode: 'populate_draft',
-        studentId: widget.studentId,
-        targetDate: _dateKey(_selectedDateOption!.date),
-        missionDraftId: widget.missionDraftId,
-        draftFormat: 'QUESTIONS',
-        difficulty: 'hard',
-        questionCount: 10,
-        taskCodes: _selectedTaskCodes,
-      );
+      final extracted = await upload(selected);
 
       if (!mounted) {
         return;
@@ -723,7 +727,9 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
 
       final prefilledMission = extracted.prefilledMission;
       final importedQuestionCount =
-          prefilledMission?.questions.length ?? prefilledMission?.questionCount ?? 0;
+          prefilledMission?.questions.length ??
+          prefilledMission?.questionCount ??
+          0;
 
       setState(() {
         _uploadedSource = extracted;
@@ -732,7 +738,10 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
 
       if (prefilledMission == null) {
         setState(() {
-          _sourceErrorMessage = extracted.draftReadiness.summary;
+          _sourceErrorMessage = [
+            extracted.draftReadiness.summary,
+            ...extracted.draftReadiness.missingRequirements,
+          ].join('\n');
         });
         return;
       }
@@ -740,7 +749,7 @@ class _AssessmentModeScreenState extends State<AssessmentModeScreen> {
       if (importedQuestionCount != 10) {
         setState(() {
           _sourceErrorMessage =
-              'Assessment populate only accepts files with exactly 10 imported objective questions.';
+              'This assessment needs exactly 10 imported objective questions.';
         });
         return;
       }

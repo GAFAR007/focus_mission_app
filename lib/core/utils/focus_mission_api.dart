@@ -1895,6 +1895,7 @@ class FocusMissionApi {
     required List<int> fileBytes,
     required String fileName,
     String uploadMode = 'ai_draft',
+    bool previewOnly = false,
     String studentId = '',
     String targetDate = '',
     String title = '',
@@ -1911,6 +1912,7 @@ class FocusMissionApi {
     );
 
     request.headers['Authorization'] = 'Bearer $token';
+    if (previewOnly) request.fields['previewOnly'] = 'true';
     request.fields['subjectId'] = subjectId;
     request.fields['sessionType'] = sessionType;
     request.fields['uploadMode'] = uploadMode.trim().isEmpty

@@ -559,6 +559,7 @@ class _AssessmentSuggestionApi extends FocusMissionApi {
     required List<int> fileBytes,
     required String fileName,
     String uploadMode = 'ai_draft',
+    bool previewOnly = false,
     String studentId = '',
     String targetDate = '',
     String title = '',

@@ -1784,6 +1784,7 @@ class UploadedSourceDraft {
     required this.unitPlan,
     required this.draftReadiness,
     this.prefilledMission,
+    this.populationFields = const [],
   });
 
   final String fileName;
@@ -1794,9 +1795,15 @@ class UploadedSourceDraft {
   final UploadedUnitPlanDraft unitPlan;
   final MissionSourceReadiness draftReadiness;
   final MissionPayload? prefilledMission;
+  final List<Map<String, dynamic>> populationFields;
 
   factory UploadedSourceDraft.fromJson(Map<String, dynamic> json) {
     return UploadedSourceDraft(
+      populationFields:
+          (_asMap(json['populationPreview'])['fields'] as List<dynamic>? ??
+                  const [])
+              .map((field) => _asMap(field))
+              .toList(growable: false),
       fileName: (json['fileName'] ?? '').toString(),
       mimeType: (json['mimeType'] ?? '').toString(),
       sourceKind: (json['sourceKind'] ?? '').toString(),
