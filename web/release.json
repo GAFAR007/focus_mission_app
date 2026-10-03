@@ -1,6 +1,27 @@
 {
-  "version": "2.3.1",
+  "version": "2.4.0",
   "releases": [
+    {
+      "version": "2.4.0",
+      "previousVersion": "2.3.1",
+      "releasedAt": "2026-10-03T09:34:42.948Z",
+      "title": "Paste text into mission builders",
+      "changes": {
+        "new": [
+          "Populate Objective, Theory, Essay Builder and assessments by pasting structured text."
+        ],
+        "improved": [
+          "Review recognised fields and repair missing content before applying it to a draft."
+        ],
+        "fixed": [
+          "Empty import headings no longer swallow the next field, and Essay teaching text stays separate from sentence sections."
+        ]
+      },
+      "source": {
+        "frontend": "d36c03bafa605117e183d916ba695f4c6630be0f",
+        "backend": "0c00990f42ce48ffa1aaacb956f3afef04741022"
+      }
+    },
     {
       "version": "2.3.1",
       "previousVersion": "2.3.0",
