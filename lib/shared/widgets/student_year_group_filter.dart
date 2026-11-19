@@ -1,6 +1,6 @@
 /**
  * WHAT:
- * StudentYearGroupFilter renders the shared All, Year 9, Year 10, and Year 11
+ * StudentYearGroupFilter renders the shared All and Year 8 through Year 11
  * filter used by teacher student-selection flows.
  * WHY:
  * Teachers need a short, consistent way to narrow authorised rosters without
@@ -20,7 +20,7 @@ import '../models/focus_mission_models.dart';
 const String kAllStudentYearGroups = 'All';
 final List<String> kStudentPickerYearGroups = <String>[
   kAllStudentYearGroups,
-  ...kStudentYearGroupOptions.sublist(8, 11),
+  ...kStudentYearGroupOptions.sublist(7, 11),
 ];
 
 List<StudentSummary> filterStudentsByYearGroup(

@@ -28,6 +28,7 @@ const _student = StudentSummary(
 
 class _DashboardApi extends FocusMissionApi {
   final bool empty;
+  List<ResultHistoryItem>? resultHistory;
   String? savedYearGroup;
   String? savedStudentId;
   String? markedNotificationId;
@@ -112,16 +113,18 @@ class _DashboardApi extends FocusMissionApi {
   Future<List<ResultHistoryItem>> fetchManagementStudentResults({
     required String token,
     required String studentId,
-  }) async => empty
-      ? []
-      : [
-          ResultHistoryItem.fromJson({
-            'id': 'result',
-            'title': 'Saved result example',
-            'createdAt': '2026-09-25T12:00:00Z',
-            'subject': {'id': 'business', 'name': 'Business'},
-          }),
-        ];
+  }) async =>
+      resultHistory ??
+      (empty
+          ? []
+          : [
+              ResultHistoryItem.fromJson({
+                'id': 'result',
+                'title': 'Saved result example',
+                'createdAt': '2026-09-25T12:00:00Z',
+                'subject': {'id': 'business', 'name': 'Business'},
+              }),
+            ]);
 
   @override
   Future<ManagementTargetHistory> fetchManagementStudentTargets({
@@ -204,6 +207,67 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets(
+    'management results combine existing subject/date with task/type',
+    (tester) async {
+      final api = _DashboardApi();
+      ResultHistoryItem result(
+        String id,
+        String subject,
+        String code,
+        String date,
+        String sequence,
+      ) => ResultHistoryItem.fromJson({
+        'resultPackageId': id,
+        'missionId': 'mission-$id',
+        'title': 'Saved $id',
+        'draftFormat': 'QUESTIONS',
+        'taskCodes': [code],
+        'questionCount': 10,
+        'assessmentSequenceByTaskCode': {code: sequence},
+        'subject': {'id': subject, 'name': subject},
+        'availableOnDate': date,
+      });
+      api.resultHistory = [
+        result('business-a', 'Business', 'P1', '2026-11-18', 'A'),
+        result('business-b', 'Business', 'P1', '2026-11-18', 'B'),
+        result('older-b', 'Business', 'P1', '2026-11-17', 'B'),
+        result('p2-b', 'Business', 'P2', '2026-11-18', 'B'),
+        result('sport-b', 'Sport', 'P1', '2026-11-18', 'B'),
+      ];
+      await _pump(tester, width: 1440, api: api);
+      final open = find.byKey(const Key('management_view_results'));
+      await tester.ensureVisible(open);
+      await tester.tap(open);
+      await tester.pumpAndSettle();
+      final bar = find.byKey(const Key('result_task_filter_p1'));
+      final subject = find.widgetWithText(InkWell, 'Business').last;
+      await tester.ensureVisible(subject);
+      await tester.tap(subject);
+      await tester.pumpAndSettle();
+      final date = find.byType(DropdownButtonFormField<String>).last;
+      await tester.ensureVisible(date);
+      await tester.tap(date);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('2026-11-18').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(bar);
+      await tester.tap(bar);
+      await tester.pumpAndSettle();
+      final type = find.byKey(const Key('result_type_filter_assessmentB'));
+      await tester.ensureVisible(type);
+      await tester.tap(type);
+      await tester.pumpAndSettle();
+      expect(find.text('Saved business-b'), findsOneWidget);
+      for (final id in ['business-a', 'older-b', 'p2-b', 'sport-b']) {
+        expect(find.text('Saved $id'), findsNothing);
+      }
+      expect(find.text('1 saved result'), findsOneWidget);
+      expect(find.text('Download filtered results'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'desktop shows two-column summaries before opening detail tools',
     (tester) async {

@@ -10,6 +10,7 @@
  * Load management workspace data from the API, show management-focused summary
  * cards, allow creation of student/teacher accounts, expose active/archived
  * roster controls, and provide subject-filtered result review for students.
+ * Result review also combines date, saved task-focus and activity-type filters.
  * Compact two-column summaries open the existing tools on demand; the
  * timetable retains its existing layout and behaviour. Navy headers, solid
  * surfaces and status accents provide the approved management visual hierarchy.
@@ -31,6 +32,7 @@ import '../../../shared/widgets/notification_panel.dart';
 import '../../../shared/widgets/profile_avatar_button.dart';
 import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
+import '../../../shared/widgets/result_history_filter_bar.dart';
 import '../../../shared/widgets/student_year_group_filter.dart';
 import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
@@ -131,6 +133,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
   String _selectedStudentId = '';
   String _selectedSubject = _allSubjectsFilterLabel;
   String _selectedResultDate = _allResultDatesFilterLabel;
+  String _selectedResultTaskCode = 'All';
+  ResultHistoryTypeFilter _selectedResultType = ResultHistoryTypeFilter.all;
   String _selectedTargetDate = _allTargetDatesFilterLabel;
   String _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
   String _selectedCertificationEditorSubjectId = '';
@@ -1360,10 +1364,17 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
               targetDateFilters.contains(_selectedTargetDate)
               ? _selectedTargetDate
               : _allTargetDatesFilterLabel;
-          final filteredResults = _filterResults(
+          final resultFilterBase = _filterResults(
             data.recentResults,
             subject: selectedSubject,
             dateKey: selectedResultDate,
+          );
+          // WHY: Narrow only the authorised result view, leaving saved
+          // evidence and qualification progress unchanged.
+          final filteredResults = filterResultHistory(
+            resultFilterBase,
+            taskCode: _selectedResultTaskCode,
+            type: _selectedResultType,
           );
           final filteredTargetSections = _filterTargetSections(
             data.targetDateSections,
@@ -3209,7 +3220,7 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                         _ManagementExpandableHeader(
                           title: 'Student Results',
                           subtitle:
-                              'Filter by subject or result date, download the selected result set, or export each mission result or paper assessment.',
+                              'Filter by subject, result date, task focus or result type, then view or download the selected results.',
                           summary: _buildStudentResultsSummary(
                             filteredResults: filteredResults,
                             selectedSubject: selectedSubject,
@@ -3239,13 +3250,27 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
                                               label: subject,
                                               selected:
                                                   subject == selectedSubject,
-                                              onTap: () => setState(
-                                                () =>
-                                                    _selectedSubject = subject,
-                                              ),
+                                              onTap: () => setState(() {
+                                                _selectedSubject = subject;
+                                                _selectedResultTaskCode = 'All';
+                                                _selectedResultType =
+                                                    ResultHistoryTypeFilter.all;
+                                              }),
                                             ),
                                           )
                                           .toList(growable: false),
+                                    ),
+                                    const SizedBox(height: AppSpacing.compact),
+                                    ResultHistoryFilterBar(
+                                      results: resultFilterBase,
+                                      selectedTaskCode: _selectedResultTaskCode,
+                                      selectedType: _selectedResultType,
+                                      onTaskCodeSelected: (value) => setState(
+                                        () => _selectedResultTaskCode = value,
+                                      ),
+                                      onTypeSelected: (value) => setState(
+                                        () => _selectedResultType = value,
+                                      ),
                                     ),
                                     const SizedBox(height: AppSpacing.compact),
                                     LayoutBuilder(
@@ -3560,6 +3585,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
       _selectedStudentId = studentId;
       _selectedSubject = _allSubjectsFilterLabel;
       _selectedResultDate = _allResultDatesFilterLabel;
+      _selectedResultTaskCode = 'All';
+      _selectedResultType = ResultHistoryTypeFilter.all;
       _selectedTargetDate = _allTargetDatesFilterLabel;
       _showTimetableEditor = false;
       _showCertificationProgressPanel = false;
@@ -3679,6 +3706,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           _selectedStudentId = '';
           _selectedSubject = _allSubjectsFilterLabel;
           _selectedResultDate = _allResultDatesFilterLabel;
+          _selectedResultTaskCode = 'All';
+          _selectedResultType = ResultHistoryTypeFilter.all;
           _selectedTargetDate = _allTargetDatesFilterLabel;
           _selectedCertificationSubject = _allCertificationSubjectsFilterLabel;
           _notificationInbox = null;
@@ -3894,6 +3923,8 @@ class _ManagementOverviewScreenState extends State<ManagementOverviewScreen> {
           _selectedStudentId = createdUser.id;
           _selectedSubject = _allSubjectsFilterLabel;
           _selectedResultDate = _allResultDatesFilterLabel;
+          _selectedResultTaskCode = 'All';
+          _selectedResultType = ResultHistoryTypeFilter.all;
           _selectedTargetDate = _allTargetDatesFilterLabel;
           _showTimetableEditor = false;
           _showCertificationProgressPanel = false;

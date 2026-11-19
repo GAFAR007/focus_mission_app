@@ -902,6 +902,84 @@ void main() {
     },
   );
 
+  testWidgets('Student Results combines subject, date, task and A/B filters', (
+    tester,
+  ) async {
+    final api = _ControlledTeacherWorkspaceApi();
+    await _pumpTeacherScreen(tester, api);
+    ResultHistoryItem result(
+      String id,
+      String subject,
+      String code,
+      String date,
+      String sequence,
+    ) => ResultHistoryItem.fromJson({
+      'resultPackageId': id,
+      'missionId': 'mission-$id',
+      'title': 'Saved $id',
+      'draftFormat': 'QUESTIONS',
+      'taskCodes': [code],
+      'questionCount': 10,
+      'assessmentSequenceByTaskCode': {code: sequence},
+      'subject': {'id': subject, 'name': subject},
+      'availableOnDate': date,
+    });
+    api.supplementalByStudent['student-a']!.complete(
+      TeacherWorkspaceSupplementalData(
+        criteria: const [],
+        draftMissions: const [],
+        recentMissions: const [],
+        targets: const [],
+        notificationInbox: const NotificationInboxData(
+          unreadCount: 0,
+          notifications: [],
+        ),
+        studentResults: [
+          result('business-a', 'Business', 'P1', '2026-11-18', 'A'),
+          result('business-b', 'Business', 'P1', '2026-11-18', 'B'),
+          result('business-old', 'Business', 'P1', '2026-11-17', 'B'),
+          result('business-p2', 'Business', 'P2', '2026-11-18', 'B'),
+          result('sport-b', 'Sport', 'P1', '2026-11-18', 'B'),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('open_student_results')));
+    await tester.pump();
+    final panel = find.byKey(const Key('teacher_student_results'));
+    final subject = find
+        .descendant(of: panel, matching: find.text('Business'))
+        .first;
+    await tester.ensureVisible(subject);
+    await tester.tap(subject);
+    await tester.pump();
+    final date = find.descendant(
+      of: panel,
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
+    await tester.ensureVisible(date);
+    await tester.tap(date);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2026-11-18').last);
+    await tester.pumpAndSettle();
+    for (final key in [
+      'result_task_filter_p1',
+      'result_type_filter_assessmentB',
+    ]) {
+      await tester.ensureVisible(find.byKey(Key(key)));
+      await tester.tap(find.byKey(Key(key)));
+      await tester.pump();
+    }
+    expect(find.text('Saved business-b'), findsOneWidget);
+    for (final id in ['business-a', 'business-old', 'business-p2', 'sport-b']) {
+      expect(find.text('Saved $id'), findsNothing);
+    }
+    expect(find.text('View Result'), findsOneWidget);
+    expect(find.text('Download Result'), findsOneWidget);
+    expect(find.text('1 saved result'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Draft Missions filters by task focus without changing data', (
     tester,
   ) async {

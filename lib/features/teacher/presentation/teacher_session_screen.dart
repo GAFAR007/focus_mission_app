@@ -11,6 +11,7 @@
  * the selected date plus the current teacher's ownership of that slot, then
  * keep mission and paper-result actions separated inside one workspace. Mission
  * results use local search, sorting, and eight-item pages without changing data.
+ * Saved results combine subject/date filters with task-focus and type filters.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -34,6 +35,7 @@ import '../../../shared/widgets/notification_panel.dart';
 import '../../../shared/widgets/profile_avatar_button.dart';
 import '../../../shared/widgets/profile_sheet.dart';
 import '../../../shared/widgets/soft_panel.dart';
+import '../../../shared/widgets/result_history_filter_bar.dart';
 import '../../../shared/widgets/student_year_group_filter.dart';
 import '../../../shared/widgets/student_year_group_panel.dart';
 import '../../../shared/widgets/weekly_timetable_calendar.dart';
@@ -110,6 +112,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
   String _selectedStudentId = '';
   String _selectedResultSubject = _allTeacherResultSubjectsFilterLabel;
   String _selectedResultDate = _allTeacherResultDatesFilterLabel;
+  String _selectedResultTaskCode = 'All';
+  ResultHistoryTypeFilter _selectedResultType = ResultHistoryTypeFilter.all;
   String _createStudentYearGroup = '';
   String _selectedStudentYearGroup = '';
 
@@ -431,6 +435,8 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
     _savedTeacherSessionCommentOverrides.clear();
     _selectedResultSubject = _allTeacherResultSubjectsFilterLabel;
     _selectedResultDate = _allTeacherResultDatesFilterLabel;
+    _selectedResultTaskCode = 'All';
+    _selectedResultType = ResultHistoryTypeFilter.all;
     _isSelectingDraftMissions = false;
     _isDeletingDraftMissions = false;
     _selectedDraftMissionIds.clear();
@@ -533,13 +539,20 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
           final resultDateFilters = _buildStudentResultDateFilters(
             studentResults,
           );
-          final filteredStudentResults = _filterStudentResults(
+          final resultFilterBase = _filterStudentResults(
             studentResults,
             subject: _selectedResultSubject,
             dateKey: _selectedResultDate,
           );
+          // WHY: All result filters compose locally inside the existing
+          // authorised history; no score or qualification state is changed.
+          final filteredStudentResults = filterResultHistory(
+            resultFilterBase,
+            taskCode: _selectedResultTaskCode,
+            type: _selectedResultType,
+          );
           final downloadDayResults = _resultsForSelectedDownloadDay(
-            studentResults,
+            filteredStudentResults,
           );
           final targets = _targets ?? workspace.targets;
           final studentCertification =
@@ -783,12 +796,22 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
                       selectedSubject: _selectedResultSubject,
                       dateFilters: resultDateFilters,
                       selectedDate: _selectedResultDate,
+                      resultFilterBase: resultFilterBase,
+                      selectedTaskCode: _selectedResultTaskCode,
+                      selectedType: _selectedResultType,
+                      onSelectTaskCode: (value) =>
+                          setState(() => _selectedResultTaskCode = value),
+                      onSelectType: (value) =>
+                          setState(() => _selectedResultType = value),
                       filteredResults: filteredStudentResults,
                       allResults: studentResults,
                       isExpanded: _isStudentResultsExpanded,
                       onToggleExpanded: _toggleStudentResultsExpanded,
-                      onSelectSubject: (value) =>
-                          setState(() => _selectedResultSubject = value),
+                      onSelectSubject: (value) => setState(() {
+                        _selectedResultSubject = value;
+                        _selectedResultTaskCode = 'All';
+                        _selectedResultType = ResultHistoryTypeFilter.all;
+                      }),
                       onSelectDate: (value) =>
                           setState(() => _selectedResultDate = value),
                       onOpenResult: (mission) =>
@@ -6982,6 +7005,11 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
     required this.selectedSubject,
     required this.dateFilters,
     required this.selectedDate,
+    required this.resultFilterBase,
+    required this.selectedTaskCode,
+    required this.selectedType,
+    required this.onSelectTaskCode,
+    required this.onSelectType,
     required this.filteredResults,
     required this.allResults,
     required this.isExpanded,
@@ -7005,6 +7033,11 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
   final String selectedSubject;
   final List<String> dateFilters;
   final String selectedDate;
+  final List<ResultHistoryItem> resultFilterBase;
+  final String selectedTaskCode;
+  final ResultHistoryTypeFilter selectedType;
+  final ValueChanged<String> onSelectTaskCode;
+  final ValueChanged<ResultHistoryTypeFilter> onSelectType;
   final List<ResultHistoryItem> filteredResults;
   final List<ResultHistoryItem> allResults;
   final bool isExpanded;
@@ -7030,6 +7063,8 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
       selectedDate == _allTeacherResultDatesFilterLabel
           ? 'All result dates'
           : selectedDate,
+      if (selectedTaskCode != 'All') selectedTaskCode,
+      if (selectedType != ResultHistoryTypeFilter.all) selectedType.label,
     ];
 
     return SoftPanel(
@@ -7140,6 +7175,14 @@ class _TeacherStudentResultsPanel extends StatelessWidget {
                   ],
                 );
               },
+            ),
+            const SizedBox(height: AppSpacing.compact),
+            ResultHistoryFilterBar(
+              results: resultFilterBase,
+              selectedTaskCode: selectedTaskCode,
+              selectedType: selectedType,
+              onTaskCodeSelected: onSelectTaskCode,
+              onTypeSelected: onSelectType,
             ),
             const SizedBox(height: AppSpacing.item),
             if (filteredResults.isEmpty)

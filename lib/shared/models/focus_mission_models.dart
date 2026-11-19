@@ -1381,6 +1381,7 @@ class ResultHistoryItem {
     required this.sessionType,
     required this.difficulty,
     required this.taskCodes,
+    this.assessmentSequenceByTaskCode = const {},
     required this.xpReward,
     required this.xpEarned,
     required this.questionCount,
@@ -1432,6 +1433,9 @@ class ResultHistoryItem {
   final String sessionType;
   final String difficulty;
   final List<String> taskCodes;
+  // WHY: A/B identity must survive result parsing and title edits so filters
+  // match the saved assessment rather than guessing from its visible name.
+  final Map<String, String> assessmentSequenceByTaskCode;
   final int xpReward;
   final int xpEarned;
   final int questionCount;
@@ -1480,6 +1484,7 @@ class ResultHistoryItem {
       sessionType: sessionType,
       difficulty: difficulty,
       taskCodes: taskCodes,
+      assessmentSequenceByTaskCode: assessmentSequenceByTaskCode,
       xpReward: xpReward,
       xpEarned: xpEarned,
       questionCount: questionCount,
@@ -1542,6 +1547,9 @@ class ResultHistoryItem {
       sessionType: (json['sessionType'] ?? '').toString(),
       difficulty: (json['difficulty'] ?? '').toString(),
       taskCodes: _asStringList(json['taskCodes']),
+      assessmentSequenceByTaskCode: _asStringMap(
+        json['assessmentSequenceByTaskCode'],
+      ),
       xpReward: _asInt(json['xpReward']) > 0
           ? _asInt(json['xpReward'])
           : normalizedResultKind == 'paper_assessment'
