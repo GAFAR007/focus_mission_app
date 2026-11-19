@@ -87,6 +87,13 @@ to identify the exact Render commit, version and source digest. Then it publishe
 the validated archive to the existing Netlify site and checks canonical and
 unique deploy URL bytes for index, JavaScript, bootstrap and both version files.
 
+Canonical public artifacts must match byte for byte. On Netlify deploy URLs
+only, `index.html` may include Netlify's exact hosting comment for this site
+immediately after its UTF-8 charset tag. The verifier removes that single known
+comment before comparing the hash; any other changed byte, duplicate comment,
+different site identifier, or modification to another artifact still blocks
+deployment. This narrowly scoped exception was approved by the owner.
+
 Render still auto-deploys from main. Its production startup now rejects missing,
 pending or stale release evidence before connecting to the database. The health
 commit uses Render's documented `RENDER_GIT_COMMIT` environment variable:

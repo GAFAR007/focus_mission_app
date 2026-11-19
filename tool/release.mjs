@@ -226,11 +226,23 @@ function finalize(backend) {
   }
   return receipt;
 }
+export function publicArtifactMatches(file, bytes, expected, allowHostingComment = false) {
+  if (hash(bytes) === expected) return true;
+  // WHY: The owner approved only Netlify's exact non-rendering hosting comment
+  // on deploy URLs. Canonical responses and every other byte remain exact.
+  if (!allowHostingComment || file !== 'index.html') return false;
+  const comment = `\n<!-- This site is hosted on Netlify. Anyone can build and deploy a site\n     like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=${site}\n     Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->`;
+  const text = bytes.toString('utf8');
+  const anchor = '<meta charset="UTF-8">';
+  if (!text.includes(anchor + comment) || text.split(comment).length !== 2) return false;
+  return hash(Buffer.from(text.replace(anchor + comment, anchor))) === expected;
+}
 async function verifyPublic(receipt, deployUrl) {
   for (const base of [canonical, deployUrl]) {
     for (const [file, expected] of Object.entries(receipt.artifacts)) {
       const response = await fetch(`${base}/${file}?release=${receipt.version}-${Date.now()}`);
-      if (!response.ok || hash(Buffer.from(await response.arrayBuffer())) !== expected) throw new Error(`Public artifact mismatch: ${base}/${file}`);
+      const allowHostingComment = base !== canonical && new URL(base).hostname.endsWith('.netlify.app');
+      if (!response.ok || !publicArtifactMatches(file, Buffer.from(await response.arrayBuffer()), expected, allowHostingComment)) throw new Error(`Public artifact mismatch: ${base}/${file}`);
     }
   }
 }

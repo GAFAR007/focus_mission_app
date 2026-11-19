@@ -8,8 +8,28 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { nextVersion, snapshot, git, verifyReview, dartHistory } from './release.mjs';
+import { nextVersion, snapshot, git, verifyReview, dartHistory, publicArtifactMatches } from './release.mjs';
+
+test('public artifacts tolerate only the approved exact Netlify index comment', () => {
+  const original = Buffer.from('<html><head>\n  <meta charset="UTF-8">\n</head><body>Reviewed app</body></html>');
+  const expected = crypto.createHash('sha256').update(original).digest('hex');
+  const comment = '\n<!-- This site is hosted on Netlify. Anyone can build and deploy a site\n     like this one for free: https://netlify.new/?utm_campaign=loops&utm_source=ai-legible&utm_medium=owned&utm_content=comment&utm_id=574455f0-7d1a-4b99-ab18-18e79d65b648\n     Netlify hosting facts for this site: static/SSR served via Netlify Edge. -->';
+  const transformed = Buffer.from(original.toString().replace('<meta charset="UTF-8">', '<meta charset="UTF-8">' + comment));
+  assert.equal(publicArtifactMatches('index.html', original, expected), true);
+  assert.equal(publicArtifactMatches('index.html', transformed, expected), false, 'canonical must remain byte-exact');
+  assert.equal(publicArtifactMatches('index.html', transformed, expected, true), true);
+  assert.equal(publicArtifactMatches('main.dart.js', transformed, expected, true), false);
+  for (const changed of [
+    transformed.toString().replace('Reviewed app', 'Changed app'),
+    transformed.toString().replace('Reviewed app', '<script>unreviewed()</script>'),
+    transformed.toString().replace('574455f0-7d1a-4b99-ab18-18e79d65b648', 'another-site'),
+    transformed.toString().replace(comment, comment + comment),
+    transformed.toString().replace(comment, comment.replace('hosting facts', 'changed comment')),
+    original.toString().replace('</body>', comment + '</body>'),
+  ]) assert.equal(publicArtifactMatches('index.html', Buffer.from(changed), expected, true), false);
+});
 
 test('semantic bumps combine features and fixes and require explicit major review', () => {
   assert.equal(nextVersion('2.0.0', { fixed: ['Mission fix'] }), '2.0.1');
