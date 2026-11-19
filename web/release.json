@@ -1,6 +1,27 @@
 {
-  "version": "2.5.0",
+  "version": "2.6.0",
   "releases": [
+    {
+      "version": "2.6.0",
+      "previousVersion": "2.5.0",
+      "releasedAt": "2026-11-19T01:38:32.761Z",
+      "title": "Student result filters and Year 8 selection",
+      "changes": {
+        "new": [
+          "Filter Student Results by task focus and activity type, including Assessment A and Assessment B."
+        ],
+        "improved": [
+          "Combine subject, date, criterion and type filters in teacher and management result views; downloads follow the selection."
+        ],
+        "fixed": [
+          "Include Year 8 in student picker filters."
+        ]
+      },
+      "source": {
+        "frontend": "400b7cea679144131571f739877e5210226e2c48",
+        "backend": "1053c422182d339885e252ecb45340534982d271"
+      }
+    },
     {
       "version": "2.5.0",
       "previousVersion": "2.4.0",
