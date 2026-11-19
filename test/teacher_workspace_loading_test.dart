@@ -345,6 +345,39 @@ Future<void> _pumpTeacherScreen(
 }
 
 void main() {
+  testWidgets('Tests & Exams opens the selected learner library', (
+    tester,
+  ) async {
+    final api = _ControlledTeacherWorkspaceApi(scheduled: true);
+    await _pumpTeacherScreen(tester, api);
+    api.supplementalByStudent['student-a']!.complete(
+      _supplementalWithDraftMissions(),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Switch student'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Student Beta').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    api.supplementalByStudent['student-b']!.complete(
+      _supplementalFor('student-b', 'Beta ready'),
+    );
+    await tester.pumpAndSettle();
+    final action = find.byKey(const Key('open_tests_exams'));
+    await tester.ensureVisible(action);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    final library = tester.widget<StandalonePaperLibraryScreen>(
+      find.byType(StandalonePaperLibraryScreen),
+    );
+    expect(library.student.id, 'student-b');
+    expect(
+      find.text('Student Beta · Review drafts and published questions.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   for (final label in ['Objective', 'Theory', 'Essay']) {
     testWidgets('Create $label carries the selected lesson into its builder', (
       tester,

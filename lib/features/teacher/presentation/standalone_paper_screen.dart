@@ -7,8 +7,8 @@
  * import, typed item editing, and clean teacher/student export controls.
  * HOW:
  * Load standalone paper drafts for the selected student and subject, let the
- * teacher populate from a structured upload or edit items manually, then save
- * and export the reviewed draft.
+ * teacher browse draft and published papers, preview questions, populate from a
+ * structured upload, then use the existing save and publish controls.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -25,6 +25,419 @@ import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/safe_link_text.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import '../models/standalone_paper_models.dart';
+
+class StandalonePaperLibraryScreen extends StatefulWidget {
+  const StandalonePaperLibraryScreen({
+    super.key,
+    required this.session,
+    required this.student,
+    this.api,
+  });
+
+  final AuthSession session;
+  final StudentSummary student;
+  final FocusMissionApi? api;
+
+  @override
+  State<StandalonePaperLibraryScreen> createState() =>
+      _StandalonePaperLibraryScreenState();
+}
+
+class _StandalonePaperLibraryScreenState
+    extends State<StandalonePaperLibraryScreen> {
+  late final FocusMissionApi _api;
+  List<StandalonePaperDraft> _papers = const [];
+  String _kind = '';
+  String _status = '';
+  String _subjectId = '';
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _api = widget.api ?? FocusMissionApi();
+    _loadPapers();
+  }
+
+  Future<void> _loadPapers() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      // WHY: Existing teacher-scoped APIs provide both statuses for this learner;
+      // browsing must not depend on today's timetable subject or publish date.
+      final groups = await Future.wait([
+        for (final kind in ['TEST', 'EXAM'])
+          _api.fetchStandalonePapers(
+            token: widget.session.token,
+            studentId: widget.student.id,
+            paperKind: kind,
+          ),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _papers = groups.expand((group) => group).toList()
+          ..sort((a, b) => b.targetDate.compareTo(a.targetDate));
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _openPaper(StandalonePaperDraft paper) async {
+    final subject = paper.subject;
+    if (subject == null || subject.id.isEmpty) return;
+    // WHY: Reuse the existing editor and server publishing checks, including
+    // protection against editing published content or active student sittings.
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => StandalonePaperScreen(
+          session: widget.session,
+          students: [widget.student],
+          subject: SubjectSummary(
+            id: subject.id,
+            name: subject.name,
+            icon: subject.icon,
+            color: subject.color,
+          ),
+          initialTargetDate:
+              DateTime.tryParse(paper.targetDate) ?? DateTime.now(),
+          initialSessionType: paper.sessionType,
+          paperKind: paper.paperKind,
+          initialPaperId: paper.id,
+          api: _api,
+        ),
+      ),
+    );
+    if (mounted) await _loadPapers();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final subjects = <String, String>{
+      for (final paper in _papers)
+        if (paper.subject != null) paper.subject!.id: paper.subject!.name,
+    };
+    final filtered = _papers
+        .where(
+          (paper) =>
+              (_kind.isEmpty || paper.paperKind == _kind) &&
+              (_status.isEmpty || paper.status == _status) &&
+              (_subjectId.isEmpty || paper.subject?.id == _subjectId),
+        )
+        .toList();
+    return FocusScaffold(
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.screen),
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                ),
+                Expanded(
+                  child: Text(
+                    'Tests & Exams',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh papers',
+                  onPressed: _isLoading ? null : _loadPapers,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            Text(
+              '${widget.student.name} · Review drafts and published questions.',
+            ),
+            const SizedBox(height: AppSpacing.item),
+            SoftPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final entry in const {
+                        '': 'All papers',
+                        'TEST': 'Tests',
+                        'EXAM': 'Exams',
+                      }.entries)
+                        ChoiceChip(
+                          label: Text(entry.value),
+                          selected: _kind == entry.key,
+                          onSelected: (_) => setState(() => _kind = entry.key),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final entry in const {
+                        '': 'All statuses',
+                        'draft': 'Drafts',
+                        'published': 'Published',
+                      }.entries)
+                        ChoiceChip(
+                          label: Text(entry.value),
+                          selected: _status == entry.key,
+                          onSelected: (_) =>
+                              setState(() => _status = entry.key),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('paper-subject-$_subjectId'),
+                    initialValue: subjects.containsKey(_subjectId)
+                        ? _subjectId
+                        : '',
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Subject'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('All subjects'),
+                      ),
+                      for (final entry in subjects.entries)
+                        DropdownMenuItem(
+                          value: entry.key,
+                          child: Text(entry.value),
+                        ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _subjectId = value ?? ''),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.item),
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (_error != null)
+              SoftPanel(
+                child: Column(
+                  children: [
+                    Text(_error!),
+                    TextButton(
+                      onPressed: _loadPapers,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            else ...[
+              Text(
+                '${filtered.length} ${filtered.length == 1 ? 'paper' : 'papers'}',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              if (filtered.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('No Tests or Exams match these filters.'),
+                ),
+              for (final paper in filtered)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.item),
+                  child: SoftPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          paper.title,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _InfoPill(
+                              label: paper.paperKind == 'EXAM'
+                                  ? 'Exam'
+                                  : 'Test',
+                            ),
+                            _InfoPill(
+                              label: paper.isDraft ? 'Draft' : 'Published',
+                            ),
+                            if (paper.subject != null)
+                              _InfoPill(label: paper.subject!.name),
+                            _InfoPill(
+                              label: paper.targetDate.isEmpty
+                                  ? 'No date'
+                                  : paper.targetDate,
+                            ),
+                            _InfoPill(
+                              label: paper.sessionType == 'afternoon'
+                                  ? 'Afternoon'
+                                  : 'Morning',
+                            ),
+                            _InfoPill(label: '${paper.items.length} questions'),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            OutlinedButton.icon(
+                              key: ValueKey('preview-paper-${paper.id}'),
+                              onPressed: () => Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      _PaperQuestionsScreen(paper: paper),
+                                ),
+                              ),
+                              icon: const Icon(Icons.visibility_outlined),
+                              label: const Text('View questions'),
+                            ),
+                            FilledButton.icon(
+                              key: ValueKey('manage-paper-${paper.id}'),
+                              onPressed: paper.subject == null
+                                  ? null
+                                  : () => _openPaper(paper),
+                              icon: Icon(
+                                paper.isDraft
+                                    ? Icons.edit_note_rounded
+                                    : Icons.settings_outlined,
+                              ),
+                              label: Text(
+                                paper.isDraft
+                                    ? 'Review & publish'
+                                    : 'Manage published',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PaperQuestionsScreen extends StatelessWidget {
+  const _PaperQuestionsScreen({required this.paper});
+
+  final StandalonePaperDraft paper;
+
+  @override
+  Widget build(BuildContext context) {
+    // WHY: A read-only teacher preview exposes the actual saved questions and
+    // answer keys without changing the draft or any student's submitted work.
+    return FocusScaffold(
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.screen),
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                ),
+                Expanded(
+                  child: Text(
+                    paper.title,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ],
+            ),
+            Text(
+              '${paper.isDraft ? 'Draft' : 'Published'} · ${paper.items.length} questions · Read-only preview',
+            ),
+            if (paper.sourceUnitText.isNotEmpty)
+              ExpansionTile(
+                title: const Text('Unit text'),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(AppSpacing.item),
+                    child: SelectableText(paper.sourceUnitText),
+                  ),
+                ],
+              ),
+            for (final (index, item) in paper.items.indexed)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.item),
+                child: SoftPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Question ${index + 1} · ${item.itemType == 'FILL_GAP'
+                            ? 'Essay / Fill gap'
+                            : item.itemType == 'THEORY'
+                            ? 'Theory'
+                            : 'Objective'}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      if (item.learningText.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        const Text('Learn First'),
+                        SelectableText(item.learningText),
+                      ],
+                      const SizedBox(height: 10),
+                      SelectableText(item.prompt),
+                      for (final (optionIndex, option) in item.options.indexed)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: SelectableText(
+                            '${String.fromCharCode(65 + optionIndex)}) $option',
+                          ),
+                        ),
+                      if (item.minWordCount > 0)
+                        Text('Minimum ${item.minWordCount} words'),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text('Answer & marking notes'),
+                        children: [
+                          if (item.itemType == 'OBJECTIVE' &&
+                              item.correctIndex >= 0 &&
+                              item.correctIndex < item.options.length)
+                            SelectableText(
+                              'Correct answer: ${String.fromCharCode(65 + item.correctIndex)}) ${item.options[item.correctIndex]}',
+                            ),
+                          if (item.expectedAnswer.isNotEmpty)
+                            SelectableText(
+                              'Expected answer: ${item.expectedAnswer}',
+                            ),
+                          if (item.acceptedAnswers.isNotEmpty)
+                            SelectableText(
+                              'Accepted answers: ${item.acceptedAnswers.join('; ')}',
+                            ),
+                          if (item.explanation.isNotEmpty)
+                            SelectableText(item.explanation),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class StandaloneTestScreen extends StatelessWidget {
   const StandaloneTestScreen({
@@ -99,6 +512,7 @@ class StandalonePaperScreen extends StatefulWidget {
     required this.initialTargetDate,
     required this.initialSessionType,
     required this.paperKind,
+    this.initialPaperId,
     this.api,
   });
 
@@ -108,6 +522,7 @@ class StandalonePaperScreen extends StatefulWidget {
   final DateTime initialTargetDate;
   final String initialSessionType;
   final String paperKind;
+  final String? initialPaperId;
   final FocusMissionApi? api;
 
   @override
@@ -233,6 +648,14 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
       setState(() {
         _papers = papers;
         _isLoading = false;
+        // WHY: Library navigation opens the selected saved paper rather than a
+        // blank draft, using freshly fetched content within the existing editor.
+        for (final paper in papers) {
+          if (paper.id == widget.initialPaperId) {
+            _applyPaper(paper);
+            break;
+          }
+        }
       });
     } catch (error) {
       if (!mounted) {
@@ -1501,7 +1924,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
               const SizedBox(height: AppSpacing.section),
               if (!_isBulkMode) ...[
                 _DraftListPanel(
-                  title: 'Saved $_paperLabel drafts',
+                  title: 'Saved $_paperLabel papers',
                   isLoading: _isLoading,
                   papers: _papers,
                   activePaperId: _activePaperId,
@@ -2751,6 +3174,11 @@ class _DraftListPanel extends StatelessWidget {
                           spacing: 10,
                           runSpacing: 10,
                           children: [
+                            _InfoPill(
+                              label: paper.isDraft ? 'Draft' : 'Published',
+                            ),
+                            if (paper.subject != null)
+                              _InfoPill(label: paper.subject!.name),
                             _InfoPill(
                               label: paper.targetDate.isEmpty
                                   ? 'No date'

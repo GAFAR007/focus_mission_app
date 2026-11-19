@@ -12,6 +12,7 @@
  * keep mission and paper-result actions separated inside one workspace. Mission
  * results use local search, sorting, and eight-item pages without changing data.
  * Saved results combine subject/date filters with task-focus and type filters.
+ * Tests & Exams opens the selected learner's saved draft and published papers.
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
@@ -578,6 +579,25 @@ class _TeacherSessionScreenState extends State<TeacherSessionScreen> {
               ? schedule?.morningMission
               : schedule?.afternoonMission;
           final paperActions = <Widget>[
+            // WHY: Saved papers need a visible entry separate from creation,
+            // without adding another row to the compact student context card.
+            OutlinedButton.icon(
+              key: const Key('open_tests_exams'),
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => StandalonePaperLibraryScreen(
+                    session: _session,
+                    student: workspace.selectedStudent,
+                    api: _api,
+                  ),
+                ),
+              ),
+              style: _missionOutlinedActionStyle(
+                foregroundColor: _draftMissionAccent,
+              ),
+              icon: const Icon(Icons.folder_open_rounded, size: 16),
+              label: const Text('Tests & Exams'),
+            ),
             for (final preset in const [
               (DailyMissionFormat.objective, 'Objective', Icons.quiz_outlined),
               (DailyMissionFormat.theory, 'Theory', Icons.short_text_rounded),
