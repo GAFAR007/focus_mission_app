@@ -1,6 +1,27 @@
 {
-  "version": "2.6.0",
+  "version": "2.7.0",
   "releases": [
+    {
+      "version": "2.7.0",
+      "previousVersion": "2.6.0",
+      "releasedAt": "2026-11-19T08:06:48.381Z",
+      "title": "Teacher Tests and Exams library",
+      "changes": {
+        "new": [
+          "Teachers can browse draft and published Tests and Exams by subject and status, view saved questions and marking notes, and open a paper for review and publishing."
+        ],
+        "improved": [
+          "Saved paper lists clearly label draft and published papers."
+        ],
+        "fixed": [
+          "Release verification accepts only the approved exact Netlify hosting comment on deploy URLs while keeping canonical artifacts byte-exact."
+        ]
+      },
+      "source": {
+        "frontend": "cf4fa22633c3cf61da8dbd52f09ae7d2d0d69cfe",
+        "backend": "3b6218056469e593b3b6f9e2cbc44d1994b78b72"
+      }
+    },
     {
       "version": "2.6.0",
       "previousVersion": "2.5.0",
