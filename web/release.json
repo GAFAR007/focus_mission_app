@@ -1,6 +1,25 @@
 {
-  "version": "2.8.0",
+  "version": "2.8.1",
   "releases": [
+    {
+      "version": "2.8.1",
+      "previousVersion": "2.8.0",
+      "releasedAt": "2026-11-26T07:04:48.400Z",
+      "title": "Keep reinstated tests available when learners return",
+      "changes": {
+        "new": [],
+        "improved": [
+          "Teacher-reinstated tests and exams remain available on later days while published."
+        ],
+        "fixed": [
+          "Removed the midnight access expiry for reinstated papers and clarified the teacher confirmation."
+        ]
+      },
+      "source": {
+        "frontend": "4a4b131596c2b7749a2a5c1b52e916f7fd02c396",
+        "backend": "31ab8964cfdd62992c73e2aa866d942eb02df09e"
+      }
+    },
     {
       "version": "2.8.0",
       "previousVersion": "2.7.0",
