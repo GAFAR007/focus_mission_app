@@ -569,6 +569,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
   bool _isPublishing = false;
   bool _isRefreshingSession = false;
   bool _isResettingSession = false;
+  bool _isReinstating = false;
   bool _isScoringSession = false;
   bool _bulkPublished = false;
   String? _pendingImportKind;
@@ -1505,6 +1506,50 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
     await _loadLatestSessionForPaper(_activePaperId, showBusy: true);
   }
 
+  Future<void> _reinstatePaper() async {
+    if (_isReinstating || _activePaperId.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reinstate / resume test'),
+        content: const Text(
+          'Make this paper available today. Saved answers are kept and timed papers get a fresh timer when the student returns. Completed results stay on record in a previous attempt.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reinstate / resume'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _isReinstating = true);
+    try {
+      await _api.reinstateStandalonePaper(
+        token: widget.session.token,
+        paperId: _activePaperId,
+      );
+      await _refreshLatestSession();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Paper reopened for today. The student can resume from their dashboard.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _errorMessage = error.toString());
+    } finally {
+      if (mounted) setState(() => _isReinstating = false);
+    }
+  }
+
   Future<void> _resetLatestSession() async {
     final session = _latestSession;
     if (session == null || session.id.trim().isEmpty || _isResettingSession) {
@@ -1852,6 +1897,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
         _isImporting ||
         _isPublishing ||
         _isRefreshingSession ||
+        _isReinstating ||
         _isResettingSession ||
         _isScoringSession;
     StandalonePaperDraft? activePaper;
@@ -1980,6 +2026,9 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                     reviewControllers: _theoryReviewControllers,
                     onRefresh: _refreshLatestSession,
                     onReset: _resetLatestSession,
+                    onReinstate: isBusy || !isPublished
+                        ? null
+                        : _reinstatePaper,
                     onSaveReview: _scoreLatestSession,
                   ),
                 ),
@@ -2817,6 +2866,7 @@ class _StandaloneSessionPanel extends StatelessWidget {
     required this.reviewControllers,
     required this.onRefresh,
     required this.onReset,
+    required this.onReinstate,
     required this.onSaveReview,
   });
 
@@ -2831,6 +2881,7 @@ class _StandaloneSessionPanel extends StatelessWidget {
   final Map<int, _TheoryReviewController> reviewControllers;
   final VoidCallback onRefresh;
   final VoidCallback onReset;
+  final VoidCallback? onReinstate;
   final VoidCallback onSaveReview;
 
   @override
@@ -2858,7 +2909,7 @@ class _StandaloneSessionPanel extends StatelessWidget {
                 ? isPublished
                       ? 'This $paperLabel is published for the $sessionTypeLabel slot. A live session summary will appear once the student begins.'
                       : 'Save and publish this $paperLabel to let the student begin in the $sessionTypeLabel slot.'
-                : 'Track the live sitting, reset it if needed, and finish any theory review here.',
+                : 'Resume saved answers, track the sitting, and review theory answers here.',
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: AppPalette.textMuted),
@@ -2870,6 +2921,12 @@ class _StandaloneSessionPanel extends StatelessWidget {
             children: [
               _InfoPill(label: isPublished ? 'Published' : 'Draft only'),
               _InfoPill(label: sessionTypeLabel),
+              const SizedBox(height: AppSpacing.item),
+              FilledButton.icon(
+                onPressed: onReinstate,
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text('Reinstate / resume'),
+              ),
               if (latestSession != null) ...[
                 _InfoPill(
                   label: 'Status: ${_sessionStatusLabel(latestSession.status)}',

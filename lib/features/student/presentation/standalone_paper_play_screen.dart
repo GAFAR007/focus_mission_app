@@ -235,7 +235,7 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
       }
     });
     _focusMonitor.start(
-      onTabHidden: () => _recordIntegrityEvent('tab_hidden'),
+      onTabHidden: () => _recordIntegrityEvent('page_hidden'),
       onWindowBlur: () => _recordIntegrityEvent('window_blur'),
       onFullscreenExit: () {
         if (_isExam) {
@@ -334,12 +334,12 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
       return;
     }
 
-    final lastAt = _recentIntegrityEvents[eventType];
+    final lastAt = _recentIntegrityEvents['departure'];
     if (lastAt != null &&
         DateTime.now().difference(lastAt) < _integrityEventCooldown) {
       return;
     }
-    _recentIntegrityEvents[eventType] = DateTime.now();
+    _recentIntegrityEvents['departure'] = DateTime.now();
     _isIntegrityRequestRunning = true;
 
     try {
@@ -656,7 +656,7 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
     if (!_isSessionActive) {
       return true;
     }
-    await _recordIntegrityEvent('back_navigation_attempt');
+    await _recordIntegrityEvent('manual_back_attempt');
     if (!mounted) {
       return false;
     }
@@ -720,9 +720,9 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
       return _StandalonePaperStatusShell(
         title: '${paper.isExam ? 'Exam' : 'Test'} locked',
         subtitle:
-            'This ${paper.isExam ? 'exam' : 'test'} was locked after the focus rules were broken. Ask your teacher to reset it before trying again.',
-        primaryLabel: 'Back to dashboard',
-        onPrimary: () => Navigator.of(context).pop(),
+            'This ${paper.isExam ? 'exam' : 'test'} was locked after the focus rules were broken. Your answers are saved. Ask your teacher to reinstate it, then choose Resume.',
+        primaryLabel: 'Resume',
+        onPrimary: _startOrResumePaper,
         secondaryLabel: session.resultPackageId.trim().isEmpty
             ? null
             : 'Open result',

@@ -2177,6 +2177,17 @@ class FocusMissionApi {
     );
   }
 
+  Future<void> reinstateStandalonePaper({
+    required String token,
+    required String paperId,
+  }) async {
+    await _requestJson(
+      'POST',
+      '/teacher/standalone-papers/$paperId/reinstate',
+      token: token,
+    );
+  }
+
   Future<StandalonePaperSessionState> resetStandalonePaperSession({
     required String token,
     required String sessionId,
