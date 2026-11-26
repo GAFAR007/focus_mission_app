@@ -15,6 +15,7 @@ class _FeedbackApi extends FocusMissionApi {
   final String kind;
   final bool theory;
   int selected = -1;
+  bool isFlagged = false;
   StartedStandalonePaperSession state() =>
       StartedStandalonePaperSession.fromJson({
         'paper': {
@@ -39,6 +40,7 @@ class _FeedbackApi extends FocusMissionApi {
               'itemIndex': 0,
               'itemType': theory ? 'THEORY' : 'OBJECTIVE',
               'selectedOptionIndex': selected,
+              'flagged': isFlagged,
               'isCorrect': theory || selected < 0 ? null : selected == 2,
             },
           ],
@@ -62,6 +64,7 @@ class _FeedbackApi extends FocusMissionApi {
     int? currentItemIndex,
   }) async {
     selected = selectedOptionIndex ?? selected;
+    isFlagged = flagged ?? isFlagged;
     return state();
   }
 }
@@ -89,6 +92,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Green = correct'), findsOneWidget);
       expect(find.text('Red = incorrect'), findsOneWidget);
+      Color? navigatorColor() =>
+          (tester
+                      .widget<Container>(
+                        find.byKey(
+                          const ValueKey('paper-question-navigator-0'),
+                        ),
+                      )
+                      .decoration!
+                  as BoxDecoration)
+              .color;
+      expect(navigatorColor(), Colors.white.withValues(alpha: 0.92));
       await tester.tap(find.text('Beta'));
       await tester.pumpAndSettle();
       expect(find.text('Incorrect answer'), findsOneWidget);
@@ -96,6 +110,13 @@ void main() {
         tester.widget<Text>(find.text('Incorrect answer')).style!.color,
         const Color(0xFFB3261E),
       );
+      expect(navigatorColor(), const Color(0xFFFFDAD6));
+      await tester.tap(find.text('Flag question'));
+      await tester.pumpAndSettle();
+      expect(navigatorColor(), const Color(0xFFFFD8A8));
+      await tester.tap(find.text('Question flagged'));
+      await tester.pumpAndSettle();
+      expect(navigatorColor(), const Color(0xFFFFDAD6));
       await tester.tap(find.text('Gamma'));
       await tester.pumpAndSettle();
       expect(find.text('Correct answer'), findsOneWidget);
@@ -103,6 +124,10 @@ void main() {
         tester.widget<Text>(find.text('Correct answer')).style!.color,
         const Color(0xFF176B3A),
       );
+      expect(navigatorColor(), const Color(0xFFE8FFF0));
+      await tester.tap(find.text('Flag question'));
+      await tester.pumpAndSettle();
+      expect(navigatorColor(), const Color(0xFFFFD8A8));
       expect(api.selected, 2);
       await tester.pumpWidget(const SizedBox());
     });

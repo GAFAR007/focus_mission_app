@@ -1074,6 +1074,11 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 10),
+                  const Text(
+                    'Green = correct · Red = incorrect · Orange = flagged\n'
+                    'Blue = saved, not marked · White = unanswered · Outline = current question',
+                  ),
+                  const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -1086,37 +1091,58 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
                           ? itemResponse.selectedOptionIndex >= 0
                           : itemResponse.textAnswer.trim().isNotEmpty;
                       final flagged = itemResponse?.flagged == true;
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: () => _goToItem(index),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: index == _currentIndex
-                                ? AppPalette.primaryBlue
-                                : answered
-                                ? const Color(0xFFE8FFF0)
-                                : Colors.white.withValues(alpha: 0.92),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: flagged
-                                  ? const Color(0xFFE58E3F)
-                                  : index == _currentIndex
-                                  ? AppPalette.primaryBlue
-                                  : const Color(0xFFDCE7F8),
-                              width: flagged ? 2 : 1,
+                      // WHY: Flagging takes priority; selection uses an outline
+                      // so visiting a question never hides its answer status.
+                      final correctness =
+                          answered &&
+                              itemResponse?.itemType.trim().toUpperCase() ==
+                                  'OBJECTIVE'
+                          ? itemResponse?.isCorrect
+                          : null;
+                      final status = flagged
+                          ? 'flagged'
+                          : correctness == true
+                          ? 'correct'
+                          : correctness == false
+                          ? 'incorrect'
+                          : answered
+                          ? 'saved, not marked'
+                          : 'unanswered';
+                      final statusColor = flagged
+                          ? const Color(0xFFFFD8A8)
+                          : correctness == true
+                          ? const Color(0xFFE8FFF0)
+                          : correctness == false
+                          ? const Color(0xFFFFDAD6)
+                          : answered
+                          ? const Color(0xFFE3ECFF)
+                          : Colors.white.withValues(alpha: 0.92);
+                      return Semantics(
+                        label: 'Question ${index + 1}, $status',
+                        selected: index == _currentIndex,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: () => _goToItem(index),
+                          child: Container(
+                            key: ValueKey('paper-question-navigator-$index'),
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: statusColor,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: index == _currentIndex
+                                    ? AppPalette.navy
+                                    : const Color(0xFFDCE7F8),
+                                width: index == _currentIndex ? 3 : 1,
+                              ),
                             ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '${index + 1}',
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(
-                                    color: index == _currentIndex
-                                        ? Colors.white
-                                        : AppPalette.navy,
-                                  ),
+                            child: Center(
+                              child: Text(
+                                '${index + 1}',
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(color: AppPalette.navy),
+                              ),
                             ),
                           ),
                         ),
