@@ -1,6 +1,25 @@
 {
-  "version": "2.10.0",
+  "version": "2.11.0",
   "releases": [
+    {
+      "version": "2.11.0",
+      "previousVersion": "2.10.0",
+      "releasedAt": "2026-11-26T17:26:54.289Z",
+      "title": "Clear objective feedback in Tests and Exams",
+      "changes": {
+        "new": [
+          "Tests and Exams show green Correct and red Incorrect feedback for saved objective answers, with a colour legend."
+        ],
+        "improved": [
+          "Theory answers clearly remain for teacher marking."
+        ],
+        "fixed": []
+      },
+      "source": {
+        "frontend": "6e5194c22dfacbb72b83a5994acd0e35f428f481",
+        "backend": "fa238dd684be5bbbbf730bd85ceba6840b5b7212"
+      }
+    },
     {
       "version": "2.10.0",
       "previousVersion": "2.9.1",
