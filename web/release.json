@@ -1,6 +1,28 @@
 {
-  "version": "2.7.0",
+  "version": "2.8.0",
   "releases": [
+    {
+      "version": "2.8.0",
+      "previousVersion": "2.7.0",
+      "releasedAt": "2026-11-26T06:54:54.214Z",
+      "title": "Reliable test starts and teacher-controlled recovery",
+      "changes": {
+        "new": [
+          "Teachers can reinstate or resume published tests and exams while preserving saved answers and completed result history."
+        ],
+        "improved": [
+          "Reinstated papers are available on the recovery day, with timed sittings starting a fresh timer when the learner returns."
+        ],
+        "fixed": [
+          "Fixed validation that prevented new test and exam attempts from starting.",
+          "Corrected page-departure event names and reduced duplicate warnings from one departure."
+        ]
+      },
+      "source": {
+        "frontend": "a49ceccb90a3e5699b4f3442c2573431986e50de",
+        "backend": "fd31a707e911ef1c383b635fa39abf3bf6849409"
+      }
+    },
     {
       "version": "2.7.0",
       "previousVersion": "2.6.0",
