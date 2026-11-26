@@ -972,6 +972,8 @@ class MissionQuestion {
     required this.id,
     required this.answerMode,
     required this.learningText,
+    this.imageDataUrl = '',
+    this.imageDescription = '',
     this.learningVideoUrl = '',
     this.learningVideoPlacement = 'afterLearnFirst',
     required this.prompt,
@@ -986,6 +988,8 @@ class MissionQuestion {
   final String id;
   final String answerMode;
   final String learningText;
+  final String imageDataUrl;
+  final String imageDescription;
   final String learningVideoUrl;
   final String learningVideoPlacement;
   final String prompt;
@@ -1002,6 +1006,8 @@ class MissionQuestion {
     String? id,
     String? answerMode,
     String? learningText,
+    String? imageDataUrl,
+    String? imageDescription,
     String? learningVideoUrl,
     String? learningVideoPlacement,
     String? prompt,
@@ -1016,6 +1022,8 @@ class MissionQuestion {
       id: id ?? this.id,
       answerMode: answerMode ?? this.answerMode,
       learningText: learningText ?? this.learningText,
+      imageDataUrl: imageDataUrl ?? this.imageDataUrl,
+      imageDescription: imageDescription ?? this.imageDescription,
       learningVideoUrl: learningVideoUrl ?? this.learningVideoUrl,
       learningVideoPlacement:
           learningVideoPlacement ?? this.learningVideoPlacement,
@@ -1045,6 +1053,8 @@ class MissionQuestion {
                   json['explanation'] ??
                   '')
               .toString(),
+      imageDataUrl: (json['imageDataUrl'] ?? '').toString(),
+      imageDescription: (json['imageDescription'] ?? '').toString(),
       learningVideoUrl: (json['learningVideoUrl'] ?? '').toString(),
       learningVideoPlacement:
           (json['learningVideoPlacement'] ?? 'afterLearnFirst').toString(),
@@ -1650,12 +1660,16 @@ class EssaySentenceLearnFirst {
 
 class EssayBuilderSentence {
   const EssayBuilderSentence({
+    this.imageDataUrl = '',
+    this.imageDescription = '',
     required this.id,
     required this.role,
     required this.learnFirst,
     required this.parts,
   });
 
+  final String imageDataUrl;
+  final String imageDescription;
   final String id;
   final String role;
   final EssaySentenceLearnFirst learnFirst;
@@ -1663,6 +1677,8 @@ class EssayBuilderSentence {
 
   factory EssayBuilderSentence.fromJson(Map<String, dynamic> json) {
     return EssayBuilderSentence(
+      imageDataUrl: (json['imageDataUrl'] ?? '').toString(),
+      imageDescription: (json['imageDescription'] ?? '').toString(),
       id: (json['id'] ?? '').toString(),
       role: (json['role'] ?? '').toString(),
       learnFirst: EssaySentenceLearnFirst.fromJson(_asMap(json['learnFirst'])),

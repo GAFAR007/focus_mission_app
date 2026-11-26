@@ -28,6 +28,7 @@ import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/learning_video_card.dart';
 import '../../../shared/widgets/question_evidence_panel.dart';
+import '../../../shared/widgets/question_picture.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'celebration_sound_stub.dart'
     if (dart.library.html) 'celebration_sound_web.dart'
@@ -820,6 +821,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                         ),
                         const SizedBox(height: AppSpacing.section),
                       ],
+                      QuestionPicture(
+                        dataUrl: question.imageDataUrl,
+                        description: question.imageDescription,
+                      ),
                       Text(
                         question.prompt,
                         style: Theme.of(context).textTheme.headlineSmall,
@@ -1164,6 +1169,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
                         ),
                         const SizedBox(height: AppSpacing.section),
                       ],
+                      QuestionPicture(
+                        dataUrl: question.imageDataUrl,
+                        description: question.imageDescription,
+                      ),
                       Text(
                         question.prompt,
                         style: Theme.of(context).textTheme.headlineSmall,
@@ -2112,6 +2121,10 @@ class _MissionPlayScreenState extends State<MissionPlayScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                QuestionPicture(
+                  dataUrl: sentence.imageDataUrl,
+                  description: sentence.imageDescription,
+                ),
                 Text(
                   'Sentence $displayIndex · ${sentence.role}',
                   style: Theme.of(context).textTheme.titleSmall,

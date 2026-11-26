@@ -29,6 +29,7 @@ import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/models/mission_display_name.dart';
 import '../../../shared/widgets/learning_video_card.dart';
 import '../../../shared/widgets/question_evidence_panel.dart';
+import '../../../shared/widgets/question_picture_editor.dart';
 import '../../../shared/widgets/soft_panel.dart';
 import 'assessment_mode_screen.dart';
 import 'population_source_dialog.dart';
@@ -1850,6 +1851,23 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
                     ],
                   ),
                   const SizedBox(height: 8),
+                  QuestionPictureEditor(
+                    key: ValueKey('essay-picture-$index-${sentence.id}'),
+                    dataUrl: sentence.imageDataUrl,
+                    description: sentence.imageDescription,
+                    onChanged: (dataUrl, description) {
+                      final draftCopy = _cloneEssayDraftJson();
+                      if (draftCopy == null) return;
+                      final item = _essaySentenceMapAt(
+                        draftJson: draftCopy,
+                        sentenceIndex: index,
+                      );
+                      if (item == null) return;
+                      item['imageDataUrl'] = dataUrl;
+                      item['imageDescription'] = description;
+                      _applyEssayDraftJsonUpdate(draftCopy);
+                    },
+                  ),
                   Text(
                     sentence.learnFirst.title.isEmpty
                         ? 'LEARN FIRST'
@@ -2737,6 +2755,11 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         ..writeln(_buildRichTextHtml(editor.learningTextController.text.trim()))
         ..writeln('<div class="field-label">Prompt</div>')
         ..writeln(_buildRichTextHtml(editor.promptController.text.trim()));
+      if (editor.imageDataUrl.isNotEmpty) {
+        buffer.writeln(
+          '<img style="max-width:100%;height:auto" src="${_escapeHtml(editor.imageDataUrl)}" alt="${_escapeHtml(editor.imageDescription)}">',
+        );
+      }
 
       if (_draftFormat == 'THEORY') {
         buffer.writeln(
@@ -2867,6 +2890,11 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
           '<p class="sentence-preview">${_escapeHtml(_sentencePreviewText(sentence))}</p>',
         );
 
+      if (sentence.imageDataUrl.isNotEmpty) {
+        buffer.writeln(
+          '<img style="max-width:100%;height:auto" src="${_escapeHtml(sentence.imageDataUrl)}" alt="${_escapeHtml(sentence.imageDescription)}">',
+        );
+      }
       final blankParts = sentence.parts
           .where((part) => part.isBlank)
           .toList(growable: false);
@@ -3278,6 +3306,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
         sentenceIndex += 1
       ) {
         final sentence = draft.sentences[sentenceIndex];
+        if (sentence.imageDataUrl.isNotEmpty &&
+            sentence.imageDescription.trim().isEmpty) {
+          return 'Sentence ${sentenceIndex + 1} needs a picture description.';
+        }
         final learnFirstBullets = sentence.learnFirst.bullets
             .map((bullet) => bullet.trim())
             .where((bullet) => bullet.isNotEmpty)
@@ -3331,6 +3363,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
 
     for (var index = 0; index < _questionEditors.length; index += 1) {
       final question = _questionEditors[index];
+      if (question.imageDataUrl.isNotEmpty &&
+          question.imageDescription.trim().isEmpty) {
+        return 'Question ${index + 1} needs a picture description.';
+      }
       final learnFirstReviewError = question.learnFirstReviewError(
         questionNumber: index + 1,
       );
@@ -3834,7 +3870,10 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     }
 
     final sentenceCount =
-        (_listValue(draftJson['sentences']) ?? const []).length;
+        (_listValue(draftJson['sentences']) ??
+                _listValue(_mapValue(draftJson['builder'])?['sentences']) ??
+                const [])
+            .length;
     setState(() {
       // WHY: Saving edits back into draftJson keeps teacher-reviewed answers and
       // sentence wording as the single source of truth for publish.
@@ -3864,7 +3903,11 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
     required Map<String, dynamic> draftJson,
     required int sentenceIndex,
   }) {
-    final sentences = _listValue(draftJson['sentences']);
+    // WHY: Preserve older nested essay scaffolds while editing their pictures.
+    final container = draftJson['sentences'] is List
+        ? draftJson
+        : _mapValue(draftJson['builder']) ?? draftJson;
+    final sentences = _listValue(container['sentences']);
     if (sentences == null ||
         sentenceIndex < 0 ||
         sentenceIndex >= sentences.length) {
@@ -3882,7 +3925,7 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       return null;
     }
     sentences[sentenceIndex] = sentenceMap;
-    draftJson['sentences'] = sentences;
+    container['sentences'] = sentences;
     return sentenceMap;
   }
 
@@ -4299,6 +4342,8 @@ class _MissionBuilderSheetState extends State<_MissionBuilderSheet> {
       'questions': _questionEditors
           .map(
             (editor) => {
+              'imageDataUrl': editor.imageDataUrl,
+              'imageDescription': editor.imageDescription,
               'learningText': editor.learningTextController.text,
               'learningVideoUrl': editor.learningVideoUrlController.text,
               'learningVideoPlacement': editor.learningVideoPlacement,
@@ -5427,7 +5472,9 @@ class _EditableQuestionController {
         growable: false,
       ),
       correctIndex = 0,
-      allowStudentUpload = false;
+      allowStudentUpload = false,
+      imageDataUrl = '',
+      imageDescription = '';
 
   _EditableQuestionController.fromMissionQuestion(MissionQuestion question)
     : id = question.id,
@@ -5471,7 +5518,9 @@ class _EditableQuestionController {
         growable: false,
       ),
       correctIndex = question.correctIndex.clamp(0, 3),
-      allowStudentUpload = question.allowStudentUpload;
+      allowStudentUpload = question.allowStudentUpload,
+      imageDataUrl = question.imageDataUrl,
+      imageDescription = question.imageDescription;
 
   final String id;
   final String answerMode;
@@ -5491,6 +5540,8 @@ class _EditableQuestionController {
   String learningVideoPlacement;
   int correctIndex;
   bool allowStudentUpload;
+  String imageDataUrl;
+  String imageDescription;
 
   bool get isTheoryShortAnswer => answerMode == 'short_answer';
   bool get hasLearnFirstChanged =>
@@ -5561,6 +5612,8 @@ class _EditableQuestionController {
     return MissionQuestion(
       id: id,
       answerMode: answerMode,
+      imageDataUrl: imageDataUrl,
+      imageDescription: imageDescription.trim(),
       learningText: learningTextController.text.trim(),
       learningVideoUrl:
           parseYouTubeVideoUrl(learningVideoUrlController.text)?.canonicalUrl ??
@@ -5653,6 +5706,14 @@ class _QuestionEditorCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.item),
+          QuestionPictureEditor(
+            dataUrl: editor.imageDataUrl,
+            description: editor.imageDescription,
+            onChanged: (dataUrl, description) {
+              editor.imageDataUrl = dataUrl;
+              editor.imageDescription = description;
+            },
+          ),
           const _EditorSectionLabel(
             icon: Icons.menu_book_rounded,
             label: 'LEARN FIRST',
@@ -5853,6 +5914,14 @@ class _TheoryQuestionEditorCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.item),
+          QuestionPictureEditor(
+            dataUrl: editor.imageDataUrl,
+            description: editor.imageDescription,
+            onChanged: (dataUrl, description) {
+              editor.imageDataUrl = dataUrl;
+              editor.imageDescription = description;
+            },
+          ),
           const _EditorSectionLabel(
             icon: Icons.menu_book_rounded,
             label: 'LEARN FIRST',

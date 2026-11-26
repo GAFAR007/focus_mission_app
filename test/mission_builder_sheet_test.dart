@@ -21,11 +21,61 @@ import 'package:focus_mission_app/core/utils/focus_mission_api.dart';
 import 'package:focus_mission_app/features/teacher/presentation/mission_builder_sheet.dart';
 import 'package:focus_mission_app/features/teacher/presentation/assessment_mode_screen.dart';
 import 'package:focus_mission_app/shared/models/focus_mission_models.dart';
+import 'package:focus_mission_app/shared/widgets/question_picture_editor.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  for (final spec in [
+    ('QUESTIONS', 5),
+    ('QUESTIONS', 8),
+    ('QUESTIONS', 10),
+    ('THEORY', 2),
+    ('ESSAY_BUILDER', 0),
+  ]) {
+    testWidgets('${spec.$1} ${spec.$2} exposes optional picture authoring', (
+      tester,
+    ) async {
+      await _setViewport(tester, const Size(1440, 1100));
+      final base = _draft();
+      final draft = base.copyWith(
+        draftFormat: spec.$1,
+        questionCount: spec.$2,
+        questions: List.generate(
+          spec.$2,
+          (i) => base.questions.first.copyWith(
+            id: 'q$i',
+            answerMode: spec.$1 == 'THEORY'
+                ? 'short_answer'
+                : 'multiple_choice',
+          ),
+        ),
+        draftJson: spec.$1 == 'ESSAY_BUILDER'
+            ? {
+                'sentences': [
+                  {
+                    'id': 's1',
+                    'role': 'Introduction',
+                    'learnFirst': {
+                      'title': 'Read',
+                      'bullets': ['One', 'Two', 'Three'],
+                    },
+                    'parts': [],
+                  },
+                ],
+              }
+            : null,
+      );
+      await _openReviewDraft(tester, draft: draft);
+      expect(
+        find.byType(QuestionPictureEditor),
+        findsNWidgets(spec.$2 == 0 ? 1 : spec.$2),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('dedicated assessment entry still opens assessment workflow', (
     tester,
