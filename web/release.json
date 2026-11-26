@@ -1,6 +1,28 @@
 {
-  "version": "2.9.1",
+  "version": "2.10.0",
   "releases": [
+    {
+      "version": "2.10.0",
+      "previousVersion": "2.9.1",
+      "releasedAt": "2026-11-26T16:22:08.319Z",
+      "title": "Mission pictures and stable test pages",
+      "changes": {
+        "new": [
+          "Teachers can add optional pictures to Q5, Q8, Assessment A/B, Theory and Essay missions.",
+          "Students can enlarge mission pictures and read accessible descriptions."
+        ],
+        "improved": [
+          "Pictures are retained when saving, reopening, reusing and exporting mission drafts."
+        ],
+        "fixed": [
+          "Fixed test pictures blinking and shifting answers during countdown and heartbeat updates."
+        ]
+      },
+      "source": {
+        "frontend": "6a775b86ae6c1a53fa1ac2fee435c62bc74e5a1e",
+        "backend": "f3a12e33af19f6897d229ccb32d780eb7af74a30"
+      }
+    },
     {
       "version": "2.9.1",
       "previousVersion": "2.9.0",
