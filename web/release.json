@@ -1,6 +1,26 @@
 {
-  "version": "2.8.1",
+  "version": "2.9.0",
   "releases": [
+    {
+      "version": "2.9.0",
+      "previousVersion": "2.8.1",
+      "releasedAt": "2026-11-26T07:45:48.431Z",
+      "title": "Pictures in Tests and Exams",
+      "changes": {
+        "new": [
+          "Teachers can add code screenshots and pictures to Test and Exam questions.",
+          "Students can enlarge question pictures without leaving their test."
+        ],
+        "improved": [
+          "Teachers can update pictures on published papers while preserving saved answers."
+        ],
+        "fixed": []
+      },
+      "source": {
+        "frontend": "68531f6fc778bacfdc92640566dbea336adc507a",
+        "backend": "ca21bf2b984412e497b20029fc111c55ba9c9bb6"
+      }
+    },
     {
       "version": "2.8.1",
       "previousVersion": "2.8.0",
