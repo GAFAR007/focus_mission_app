@@ -933,10 +933,17 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
                   ),
                   const SizedBox(height: AppSpacing.item),
                   if (item.itemType.trim().toUpperCase() == 'OBJECTIVE')
+                    _ObjectiveAnswerFeedback(response: response),
+                  if (item.itemType.trim().toUpperCase() == 'OBJECTIVE')
                     ...item.options.asMap().entries.map((entry) {
                       final optionIndex = entry.key;
                       final selected =
                           response?.selectedOptionIndex == optionIndex;
+                      final feedbackColor = response?.isCorrect == true
+                          ? const Color(0xFF176B3A)
+                          : response?.isCorrect == false
+                          ? const Color(0xFFB3261E)
+                          : AppPalette.primaryBlue;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: InkWell(
@@ -948,12 +955,12 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: selected
-                                  ? const Color(0xFFEAF3FF)
+                                  ? feedbackColor.withValues(alpha: 0.10)
                                   : Colors.white.withValues(alpha: 0.92),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
                                 color: selected
-                                    ? AppPalette.primaryBlue
+                                    ? feedbackColor
                                     : const Color(0xFFDCE7F8),
                               ),
                             ),
@@ -964,7 +971,7 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
                                   height: 34,
                                   decoration: BoxDecoration(
                                     color: selected
-                                        ? AppPalette.primaryBlue
+                                        ? feedbackColor
                                         : const Color(0xFFEAF2FF),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
@@ -998,6 +1005,10 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
                       );
                     })
                   else ...[
+                    if (item.itemType.trim().toUpperCase() == 'THEORY') ...[
+                      const Text('Your teacher will mark this answer.'),
+                      const SizedBox(height: 12),
+                    ],
                     TextFormField(
                       controller: _textControllers.putIfAbsent(
                         _currentIndex,
@@ -1470,4 +1481,88 @@ String _formatCountdown(int seconds) {
   final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
   final remainderSeconds = (seconds % 60).toString().padLeft(2, '0');
   return '$minutes:$remainderSeconds';
+}
+
+// WHY: Text and icons accompany colour so feedback remains accessible.
+class _ObjectiveAnswerFeedback extends StatelessWidget {
+  const _ObjectiveAnswerFeedback({required this.response});
+  final StandalonePaperSessionResponse? response;
+  @override
+  Widget build(BuildContext context) {
+    final answered = (response?.selectedOptionIndex ?? -1) >= 0;
+    final correct = response?.isCorrect;
+    final color = correct == true
+        ? const Color(0xFF176B3A)
+        : correct == false
+        ? const Color(0xFFB3261E)
+        : AppPalette.primaryBlue;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 12,
+          runSpacing: 6,
+          children: const [
+            Text(
+              'Green = correct',
+              style: TextStyle(
+                color: Color(0xFF176B3A),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              'Red = incorrect',
+              style: TextStyle(
+                color: Color(0xFFB3261E),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              'Blue = saved, not checked',
+              style: TextStyle(color: AppPalette.primaryBlue),
+            ),
+            Text('White = not selected'),
+          ],
+        ),
+        // WHY: Reserve feedback space so saving an answer does not shift the options.
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Semantics(
+              liveRegion: true,
+              child: Row(
+                children: [
+                  Icon(
+                    correct == true
+                        ? Icons.check_circle_outline
+                        : correct == false
+                        ? Icons.cancel_outlined
+                        : Icons.info_outline,
+                    color: color,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      !answered
+                          ? 'Choose an answer to see feedback.'
+                          : correct == true
+                          ? 'Correct answer'
+                          : correct == false
+                          ? 'Incorrect answer'
+                          : 'Answer saved. Feedback is not available yet.',
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

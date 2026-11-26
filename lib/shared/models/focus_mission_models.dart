@@ -2000,6 +2000,7 @@ class StartedMission {
 
 class StandalonePaperSessionResponse {
   const StandalonePaperSessionResponse({
+    this.isCorrect,
     required this.itemIndex,
     required this.itemType,
     required this.selectedOptionIndex,
@@ -2010,6 +2011,7 @@ class StandalonePaperSessionResponse {
     required this.teacherFeedback,
   });
 
+  final bool? isCorrect;
   final int itemIndex;
   final String itemType;
   final int selectedOptionIndex;
@@ -2021,6 +2023,7 @@ class StandalonePaperSessionResponse {
 
   factory StandalonePaperSessionResponse.fromJson(Map<String, dynamic> json) {
     return StandalonePaperSessionResponse(
+      isCorrect: json['isCorrect'] is bool ? json['isCorrect'] as bool : null,
       itemIndex: _asInt(json['itemIndex']),
       itemType: (json['itemType'] ?? '').toString(),
       selectedOptionIndex: _asNullableInt(json['selectedOptionIndex']) ?? -1,
