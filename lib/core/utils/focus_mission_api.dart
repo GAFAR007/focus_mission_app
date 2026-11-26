@@ -2118,6 +2118,27 @@ class FocusMissionApi {
     );
   }
 
+  Future<StandalonePaperDraft> updateStandalonePaperImage({
+    required String token,
+    required String paperId,
+    required int itemIndex,
+    required String imageDataUrl,
+    required String imageDescription,
+  }) async {
+    final json = await _requestJson(
+      'PATCH',
+      '/teacher/standalone-papers/$paperId/items/$itemIndex/image',
+      token: token,
+      body: {
+        'imageDataUrl': imageDataUrl,
+        'imageDescription': imageDescription,
+      },
+    );
+    return StandalonePaperDraft.fromJson(
+      (json['paper'] as Map<dynamic, dynamic>).cast<String, dynamic>(),
+    );
+  }
+
   Future<void> deleteStandalonePaper({
     required String token,
     required String paperId,

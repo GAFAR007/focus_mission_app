@@ -25,6 +25,7 @@ import '../../../shared/models/focus_mission_models.dart';
 import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/soft_panel.dart';
+import '../../../shared/widgets/question_picture.dart';
 import 'standalone_paper_focus_monitor_stub.dart'
     if (dart.library.html) 'standalone_paper_focus_monitor_web.dart';
 import 'student_result_report_screen.dart';
@@ -899,6 +900,10 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 10),
+                  QuestionPicture(
+                    dataUrl: item.imageDataUrl,
+                    description: item.imageDescription,
+                  ),
                   if (item.learningText.trim().isNotEmpty) ...[
                     Container(
                       width: double.infinity,

@@ -12,6 +12,7 @@
  */
 // ignore_for_file: dangling_library_doc_comments, slash_for_doc_comments
 
+import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -24,6 +25,7 @@ import '../../../shared/widgets/focus_scaffold.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/safe_link_text.dart';
 import '../../../shared/widgets/soft_panel.dart';
+import '../../../shared/widgets/question_picture.dart';
 import '../models/standalone_paper_models.dart';
 
 class StandalonePaperLibraryScreen extends StatefulWidget {
@@ -396,6 +398,10 @@ class _PaperQuestionsScreen extends StatelessWidget {
                         SelectableText(item.learningText),
                       ],
                       const SizedBox(height: 10),
+                      QuestionPicture(
+                        dataUrl: item.imageDataUrl,
+                        description: item.imageDescription,
+                      ),
                       SelectableText(item.prompt),
                       for (final (optionIndex, option) in item.options.indexed)
                         Padding(
@@ -1799,6 +1805,11 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
           '<span class="question-pill">Item ${index + 1}</span><span class="copy-pill">${_escapeHtml(item.itemType.replaceAll('_', ' '))}</span>',
         )
         ..writeln('</div>');
+      if (item.imageDataUrl.isNotEmpty) {
+        buffer.writeln(
+          '<img src="${_escapeHtml(item.imageDataUrl)}" alt="${_escapeHtml(item.imageDescription)}" style="max-width:100%;height:auto" />',
+        );
+      }
       if (item.learningText.trim().isNotEmpty) {
         buffer
           ..writeln('<div class="field-label">Learn First</div>')
@@ -2213,8 +2224,47 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
                         child: _StandalonePaperItemCard(
                           index: entry.key,
                           editor: entry.value,
+                          onSavePicture: isPublished && !_isBulkMode
+                              ? () async {
+                                  try {
+                                    final updatedPaper = await _api
+                                        .updateStandalonePaperImage(
+                                          token: widget.session.token,
+                                          paperId: _activePaperId,
+                                          itemIndex: entry.key,
+                                          imageDataUrl:
+                                              entry.value.imageDataUrl,
+                                          imageDescription:
+                                              entry.value.imageDescription,
+                                        );
+                                    if (!context.mounted) return;
+                                    setState(() {
+                                      _papers = _papers
+                                          .map(
+                                            (paper) =>
+                                                paper.id == updatedPaper.id
+                                                ? updatedPaper
+                                                : paper,
+                                          )
+                                          .toList();
+                                    });
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Picture saved. Students see it when they open or resume the paper.',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (error) {
+                                    if (!mounted) return;
+                                    setState(
+                                      () => _errorMessage = error.toString(),
+                                    );
+                                  }
+                                }
+                              : null,
                           onChanged: () => setState(() {}),
-                          onRemove: _itemEditors.length <= 1
+                          onRemove: isPublished || _itemEditors.length <= 1
                               ? null
                               : () => _removeItem(entry.key),
                         ),
@@ -2255,6 +2305,8 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
 
 class _StandalonePaperItemController {
   _StandalonePaperItemController({
+    this.imageDataUrl = '',
+    this.imageDescription = '',
     required this.itemType,
     required this.learningTextController,
     required this.promptController,
@@ -2285,6 +2337,8 @@ class _StandalonePaperItemController {
 
   factory _StandalonePaperItemController.fromItem(StandalonePaperItem item) {
     return _StandalonePaperItemController(
+      imageDataUrl: item.imageDataUrl,
+      imageDescription: item.imageDescription,
       itemType: item.itemType,
       learningTextController: TextEditingController(text: item.learningText),
       promptController: TextEditingController(text: item.prompt),
@@ -2308,6 +2362,8 @@ class _StandalonePaperItemController {
     );
   }
 
+  String imageDataUrl;
+  String imageDescription;
   String itemType;
   final TextEditingController learningTextController;
   final TextEditingController promptController;
@@ -2329,6 +2385,8 @@ class _StandalonePaperItemController {
 
     return StandalonePaperItem(
       itemType: itemType,
+      imageDataUrl: imageDataUrl,
+      imageDescription: imageDescription,
       learningText: learningTextController.text.trim(),
       prompt: promptController.text.trim(),
       options: optionControllers
@@ -2405,6 +2463,7 @@ class _StandalonePaperItemController {
 
 class _StandalonePaperItemCard extends StatelessWidget {
   const _StandalonePaperItemCard({
+    this.onSavePicture,
     required this.index,
     required this.editor,
     required this.onChanged,
@@ -2412,6 +2471,7 @@ class _StandalonePaperItemCard extends StatelessWidget {
   });
 
   final int index;
+  final Future<void> Function()? onSavePicture;
   final _StandalonePaperItemController editor;
   final VoidCallback onChanged;
   final VoidCallback? onRemove;
@@ -2479,6 +2539,103 @@ class _StandalonePaperItemCard extends StatelessWidget {
                 ),
             ],
           ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                label: Text(
+                  editor.imageDataUrl.isEmpty
+                      ? 'Add picture'
+                      : 'Replace picture',
+                ),
+                onPressed: () async {
+                  final result = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['png', 'jpg', 'jpeg'],
+                    withData: true,
+                  );
+                  if (result == null || !context.mounted) return;
+                  final file = result.files.single;
+                  final bytes = file.bytes;
+                  // WHY: Keep authored papers bounded and decode only raster types.
+                  if (bytes == null ||
+                      bytes.isEmpty ||
+                      bytes.length > 512 * 1024) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Choose a PNG or JPEG up to 512 KB.'),
+                      ),
+                    );
+                    return;
+                  }
+                  final png =
+                      bytes.length > 8 &&
+                      bytes[0] == 137 &&
+                      bytes[1] == 80 &&
+                      bytes[2] == 78 &&
+                      bytes[3] == 71;
+                  final jpeg =
+                      bytes.length > 3 &&
+                      bytes[0] == 255 &&
+                      bytes[1] == 216 &&
+                      bytes[2] == 255;
+                  if (!png && !jpeg) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Choose a valid PNG or JPEG picture.'),
+                      ),
+                    );
+                    return;
+                  }
+                  editor.imageDataUrl =
+                      'data:image/${png ? 'png' : 'jpeg'};base64,${base64Encode(bytes)}';
+                  editor.imageDescription = file.name;
+                  onChanged();
+                },
+              ),
+              if (editor.imageDataUrl.isNotEmpty)
+                TextButton(
+                  onPressed: () {
+                    editor.imageDataUrl = '';
+                    editor.imageDescription = '';
+                    onChanged();
+                  },
+                  child: const Text('Remove picture'),
+                ),
+            ],
+          ),
+          if (editor.imageDataUrl.isNotEmpty) ...[
+            QuestionPicture(
+              dataUrl: editor.imageDataUrl,
+              description: editor.imageDescription,
+            ),
+            TextFormField(
+              initialValue: editor.imageDescription,
+              key: ValueKey(
+                'picture-description-${editor.imageDataUrl.hashCode}',
+              ),
+              maxLength: 6000,
+              minLines: 1,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                labelText: 'Picture description',
+                hintText:
+                    'Describe the picture or paste its code for screen readers.',
+              ),
+              onChanged: (value) {
+                editor.imageDescription = value;
+              },
+            ),
+            if (onSavePicture == null)
+              const Text('Save the draft to keep picture changes.'),
+          ],
+          if (onSavePicture != null)
+            OutlinedButton(
+              onPressed: onSavePicture,
+              child: const Text('Save picture'),
+            ),
           const SizedBox(height: 12),
           TextFormField(
             controller: editor.learningTextController,

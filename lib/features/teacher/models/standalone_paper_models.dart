@@ -36,6 +36,8 @@ class StandalonePaperSubjectSummary {
 
 class StandalonePaperItem {
   const StandalonePaperItem({
+    this.imageDataUrl = '',
+    this.imageDescription = '',
     required this.itemType,
     required this.learningText,
     required this.prompt,
@@ -47,6 +49,8 @@ class StandalonePaperItem {
     required this.minWordCount,
   });
 
+  final String imageDataUrl;
+  final String imageDescription;
   final String itemType;
   final String learningText;
   final String prompt;
@@ -59,6 +63,8 @@ class StandalonePaperItem {
 
   factory StandalonePaperItem.fromJson(Map<String, dynamic> json) {
     return StandalonePaperItem(
+      imageDataUrl: (json['imageDataUrl'] ?? '').toString(),
+      imageDescription: (json['imageDescription'] ?? '').toString(),
       itemType: (json['itemType'] ?? '').toString(),
       learningText: (json['learningText'] ?? '').toString(),
       prompt: (json['prompt'] ?? '').toString(),
@@ -72,6 +78,8 @@ class StandalonePaperItem {
   }
 
   StandalonePaperItem copyWith({
+    String? imageDataUrl,
+    String? imageDescription,
     String? itemType,
     String? learningText,
     String? prompt,
@@ -83,6 +91,8 @@ class StandalonePaperItem {
     int? minWordCount,
   }) {
     return StandalonePaperItem(
+      imageDataUrl: imageDataUrl ?? this.imageDataUrl,
+      imageDescription: imageDescription ?? this.imageDescription,
       itemType: itemType ?? this.itemType,
       learningText: learningText ?? this.learningText,
       prompt: prompt ?? this.prompt,
@@ -97,6 +107,8 @@ class StandalonePaperItem {
 
   Map<String, dynamic> toJson() {
     return {
+      'imageDataUrl': imageDataUrl,
+      'imageDescription': imageDescription,
       'itemType': itemType,
       'learningText': learningText,
       'prompt': prompt,

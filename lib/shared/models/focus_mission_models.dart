@@ -2137,6 +2137,8 @@ class StandalonePaperSessionState {
 
 class StandalonePaperPlayerItem {
   const StandalonePaperPlayerItem({
+    this.imageDataUrl = '',
+    this.imageDescription = '',
     required this.itemIndex,
     required this.itemType,
     required this.learningText,
@@ -2145,6 +2147,8 @@ class StandalonePaperPlayerItem {
     required this.minWordCount,
   });
 
+  final String imageDataUrl;
+  final String imageDescription;
   final int itemIndex;
   final String itemType;
   final String learningText;
@@ -2154,6 +2158,8 @@ class StandalonePaperPlayerItem {
 
   factory StandalonePaperPlayerItem.fromJson(Map<String, dynamic> json) {
     return StandalonePaperPlayerItem(
+      imageDataUrl: (json['imageDataUrl'] ?? '').toString(),
+      imageDescription: (json['imageDescription'] ?? '').toString(),
       itemIndex: _asInt(json['itemIndex']),
       itemType: (json['itemType'] ?? '').toString(),
       learningText: (json['learningText'] ?? '').toString(),
