@@ -1513,7 +1513,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Reinstate / resume test'),
         content: const Text(
-          'Make this paper available today. Saved answers are kept and timed papers get a fresh timer when the student returns. Completed results stay on record in a previous attempt.',
+          'Keep this paper available until you unpublish it. Saved answers are kept and timed papers get a fresh timer when the student returns. Completed results stay on record in a previous attempt.',
         ),
         actions: [
           TextButton(
@@ -1539,7 +1539,7 @@ class _StandalonePaperScreenState extends State<StandalonePaperScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Paper reopened for today. The student can resume from their dashboard.',
+            'Paper reinstated. The student can resume from their dashboard.',
           ),
         ),
       );

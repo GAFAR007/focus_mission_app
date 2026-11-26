@@ -161,14 +161,12 @@ void main() {
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(find.text('Reinstate / resume test'), findsOneWidget);
-    await tester.tap(
-      find.text('Reinstate / resume').last,
-    );
+    await tester.tap(find.text('Reinstate / resume').last);
     await tester.pumpAndSettle();
     expect(api.reinstatedIds, ['test-live']);
     expect(
       find.text(
-        'Paper reopened for today. The student can resume from their dashboard.',
+        'Paper reinstated. The student can resume from their dashboard.',
       ),
       findsOneWidget,
     );
