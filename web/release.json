@@ -1,6 +1,23 @@
 {
-  "version": "2.9.0",
+  "version": "2.9.1",
   "releases": [
+    {
+      "version": "2.9.1",
+      "previousVersion": "2.9.0",
+      "releasedAt": "2026-11-26T07:54:18.511Z",
+      "title": "Keep picture descriptions when replacing images",
+      "changes": {
+        "new": [],
+        "improved": [],
+        "fixed": [
+          "Replacing a question picture keeps its existing accessible description."
+        ]
+      },
+      "source": {
+        "frontend": "7ec45b2cde9f692f2d5625ad1359a460fc3f048a",
+        "backend": "8118745eecadb09a35d37e6fcd836e3534c91b36"
+      }
+    },
     {
       "version": "2.9.0",
       "previousVersion": "2.8.1",
