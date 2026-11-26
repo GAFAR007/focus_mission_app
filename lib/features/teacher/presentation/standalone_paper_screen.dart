@@ -2591,7 +2591,10 @@ class _StandalonePaperItemCard extends StatelessWidget {
                   }
                   editor.imageDataUrl =
                       'data:image/${png ? 'png' : 'jpeg'};base64,${base64Encode(bytes)}';
-                  editor.imageDescription = file.name;
+                  // WHY: Replacing a picture must keep the teacher's accessible description.
+                  if (editor.imageDescription.trim().isEmpty) {
+                    editor.imageDescription = file.name;
+                  }
                   onChanged();
                 },
               ),
