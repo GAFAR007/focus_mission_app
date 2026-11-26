@@ -1095,9 +1095,9 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
                       // so visiting a question never hides its answer status.
                       final correctness =
                           answered &&
-                              itemResponse?.itemType.trim().toUpperCase() ==
+                              itemResponse.itemType.trim().toUpperCase() ==
                                   'OBJECTIVE'
-                          ? itemResponse?.isCorrect
+                          ? itemResponse.isCorrect
                           : null;
                       final status = flagged
                           ? 'flagged'
