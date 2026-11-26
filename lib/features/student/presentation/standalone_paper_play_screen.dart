@@ -66,7 +66,7 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
   final Map<String, DateTime> _recentIntegrityEvents = <String, DateTime>{};
   Timer? _heartbeatTimer;
   Timer? _countdownTimer;
-  DateTime _clockTick = DateTime.now();
+  final ValueNotifier<DateTime> _clockTick = ValueNotifier(DateTime.now());
 
   int _currentIndex = 0;
   bool _showUnitText = false;
@@ -110,6 +110,7 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopRuntimeMonitors();
+    _clockTick.dispose();
     _restoreSystemUiMode();
     for (final timer in _textAutosaveTimers.values) {
       timer.cancel();
@@ -230,7 +231,9 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
       if (!mounted) {
         return;
       }
-      setState(() => _clockTick = DateTime.now());
+      // WHY: Only the clock label changes each second; rebuilding the paper
+      // needlessly reloads media and can interrupt the student's visual focus.
+      _clockTick.value = DateTime.now();
       if (_secondsRemaining == 0) {
         _refreshSessionFromServer();
       }
@@ -639,7 +642,7 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
     if (parsed == null) {
       return null;
     }
-    return parsed.difference(_clockTick).inSeconds.clamp(0, 1 << 31);
+    return parsed.difference(_clockTick.value).inSeconds.clamp(0, 1 << 31);
   }
 
   bool _shouldShowBeforeBeginGate(StandalonePaperAvailability? availability) {
@@ -818,10 +821,13 @@ class _StandalonePaperPlayScreenState extends State<StandalonePaperPlayScreen>
                       _StandalonePaperPill(
                         label: _sessionTypeLabel(paper.sessionType),
                       ),
-                      _StandalonePaperPill(
-                        label: _secondsRemaining == null
-                            ? 'No timer'
-                            : 'Time left ${_formatCountdown(_secondsRemaining!)}',
+                      ValueListenableBuilder<DateTime>(
+                        valueListenable: _clockTick,
+                        builder: (context, value, child) => _StandalonePaperPill(
+                          label: _secondsRemaining == null
+                              ? 'No timer'
+                              : 'Time left ${_formatCountdown(_secondsRemaining!)}',
+                        ),
                       ),
                       _StandalonePaperPill(
                         label:

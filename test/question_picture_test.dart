@@ -39,6 +39,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('HTML source'), findsOneWidget);
   });
+  testWidgets(
+    'parent timer rebuilds keep the decoded picture and layout stable',
+    (tester) async {
+      final tick = ValueNotifier<int>(0);
+      addTearDown(tick.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ValueListenableBuilder<int>(
+              valueListenable: tick,
+              builder: (context, value, child) => Column(
+                children: [
+                  Text('Time $value'),
+                  QuestionPicture(dataUrl: png, description: 'Code'),
+                  const Text('Answer stays here'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final provider = tester.widget<Image>(find.byType(Image)).image;
+      final answerPosition = tester.getTopLeft(find.text('Answer stays here'));
+      for (var i = 1; i <= 3; i++) {
+        tick.value = i;
+        await tester.pump();
+        expect(
+          tester.widget<Image>(find.byType(Image)).image,
+          provider,
+          reason:
+              'A countdown tick must reuse the decoded image, not restart image loading.',
+        );
+        expect(
+          tester.getTopLeft(find.text('Answer stays here')),
+          answerPosition,
+        );
+      }
+    },
+  );
   testWidgets('malformed picture leaves readable description', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

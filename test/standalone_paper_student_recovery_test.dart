@@ -10,9 +10,11 @@ import 'package:focus_mission_app/core/theme/app_theme.dart';
 import 'package:focus_mission_app/core/utils/focus_mission_api.dart';
 import 'package:focus_mission_app/features/student/presentation/standalone_paper_play_screen.dart';
 import 'package:focus_mission_app/shared/models/focus_mission_models.dart';
+import 'package:focus_mission_app/shared/widgets/question_picture.dart';
 
 class _RecoveryApi extends FocusMissionApi {
   int starts = 0;
+  int heartbeats = 0;
   @override
   Future<StartedStandalonePaperSession> startStandalonePaperSession({
     required String token,
@@ -28,6 +30,9 @@ class _RecoveryApi extends FocusMissionApi {
         'items': [
           {
             'itemIndex': 0,
+            'imageDataUrl':
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ1sAAAAASUVORK5CYII=',
+            'imageDescription': 'Code reference',
             'itemType': 'OBJECTIVE',
             'prompt': 'Which answer was saved?',
             'options': ['Saved answer', 'B', 'C', 'D'],
@@ -45,6 +50,20 @@ class _RecoveryApi extends FocusMissionApi {
         ],
       },
     });
+  }
+
+  @override
+  Future<StartedStandalonePaperSession> recordStandalonePaperHeartbeat({
+    required String token,
+    required String studentId,
+    required String sessionId,
+  }) {
+    heartbeats++;
+    return startStandalonePaperSession(
+      token: token,
+      studentId: studentId,
+      paperId: 'paper',
+    );
   }
 }
 
@@ -73,6 +92,35 @@ void main() {
     expect(api.starts, 2);
     expect(find.text('Which answer was saved?'), findsOneWidget);
     expect(find.text('Saved answer'), findsOneWidget);
+    final picture = tester.widget<QuestionPicture>(
+      find.byType(QuestionPicture),
+    );
+    final imageProvider = tester.widget<Image>(find.byType(Image)).image;
+    final promptPosition = tester.getTopLeft(
+      find.text('Which answer was saved?'),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      identical(
+        tester.widget<QuestionPicture>(find.byType(QuestionPicture)),
+        picture,
+      ),
+      isTrue,
+      reason: 'The countdown must not rebuild the question body.',
+    );
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pump();
+    expect(api.heartbeats, 1);
+    expect(
+      tester.widget<Image>(find.byType(Image)).image,
+      imageProvider,
+      reason: 'Heartbeat sync must retain the decoded picture.',
+    );
+    expect(
+      tester.getTopLeft(find.text('Which answer was saved?')),
+      promptPosition,
+    );
+
     await tester.pumpWidget(const SizedBox());
   });
 }

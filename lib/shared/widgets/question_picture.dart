@@ -8,7 +8,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
-class QuestionPicture extends StatelessWidget {
+class QuestionPicture extends StatefulWidget {
   const QuestionPicture({
     super.key,
     required this.dataUrl,
@@ -18,12 +18,42 @@ class QuestionPicture extends StatelessWidget {
   final String description;
 
   @override
-  Widget build(BuildContext context) {
-    if (dataUrl.isEmpty) return const SizedBox.shrink();
-    Uint8List bytes;
+  State<QuestionPicture> createState() => _QuestionPictureState();
+}
+
+class _QuestionPictureState extends State<QuestionPicture> {
+  Uint8List? _bytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _decodePicture();
+  }
+
+  @override
+  void didUpdateWidget(covariant QuestionPicture oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dataUrl != widget.dataUrl) _decodePicture();
+  }
+
+  void _decodePicture() {
+    // WHY: MemoryImage compares byte identity. Decoding on every timer/heartbeat
+    // rebuild causes a new image load, briefly collapsing the image and moving answers.
     try {
-      bytes = base64Decode(dataUrl.split(',').last);
+      _bytes = widget.dataUrl.isEmpty
+          ? null
+          : base64Decode(widget.dataUrl.split(',').last);
     } catch (_) {
+      _bytes = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.dataUrl.isEmpty) return const SizedBox.shrink();
+    final bytes = _bytes;
+    final description = widget.description;
+    if (bytes == null) {
       // WHY: A damaged image must not prevent saved answers from loading.
       return Text('Picture unavailable. $description');
     }
