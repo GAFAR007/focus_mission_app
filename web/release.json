@@ -1,6 +1,24 @@
 {
-  "version": "2.11.0",
+  "version": "2.11.1",
   "releases": [
+    {
+      "version": "2.11.1",
+      "previousVersion": "2.11.0",
+      "releasedAt": "2026-11-26T18:51:16.447Z",
+      "title": "Question navigator status colours",
+      "changes": {
+        "new": [],
+        "improved": [
+          "Question navigator circles show green for correct, red for incorrect and orange for flagged answers in Tests and Exams.",
+          "A colour key and current-question outline keep navigation clear; unmarked written answers stay neutral."
+        ],
+        "fixed": []
+      },
+      "source": {
+        "frontend": "600391dd8d7a0e71a0925f5ace3f0ceda836eddb",
+        "backend": "24060bd23629c1a48c37f5755f8adb45205ad582"
+      }
+    },
     {
       "version": "2.11.0",
       "previousVersion": "2.10.0",
